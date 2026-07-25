@@ -193,6 +193,27 @@ def _resolve_promoter(ref) -> User:
     return u
 
 
+def referral_name(ref) -> str | None:
+    """`?ref=` → PRIMEIRO nome do promotor, pro selo "Indicado por …" da tela 1 (funil v2).
+
+    Deliberadamente MAGRO porque é público: só o primeiro nome, nunca sobrenome/contato — o `ref`
+    circula em link compartilhável, então este endpoint não pode virar consulta de cadastro.
+    Ref inválido/suspenso/travado no treino → None e o front esconde o selo. **NÃO** cai no promotor
+    padrão como o `_resolve_promoter`: atribuir a captação por dentro é uma coisa, escrever o nome
+    de outra pessoa na tela do lead é outra.
+    """
+    if not ref:
+        return None
+    from users.roles.promoter import service as promoter_iface
+
+    user = promoter_iface.validate_ref(ref)
+    if user is None:
+        return None
+    profile = profiles.get(user)
+    name = (profile.name or "").strip() if profile else ""
+    return name.split()[0] if name else None
+
+
 def _create_checkout_row(lead: Lead, method: str) -> Checkout:
     """Cria a LINHA do checkout (local, sem rede) com o token do link curto já gerado.
 

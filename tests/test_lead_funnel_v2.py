@@ -137,6 +137,61 @@ def test_check_sem_whatsapp_nao_cria(client, default_hub, monkeypatch):
     assert User.objects.count() == total
 
 
+# ── [1] telefone: o selo "Indicado por …" do `?ref=` (público) ───────────────
+
+
+@pytest.fixture
+def promoter(default_hub):
+    """Promotor ATIVO com nome no profile — a fonte do selo "Indicado por …" da tela 1."""
+    from hub.models import Hub
+    from users.auth.models import User
+    from users.profiles import interface as profiles
+    from users.roles.promoter.models import Promoter
+
+    user = User.objects.create_user(external_id=uuid.uuid4())
+    profiles.create(
+        user=user, cpf=None, phone="5511987659999", name="Joana Ribeiro dos Santos"
+    )
+    Promoter.objects.create(user=user, hub=Hub.objects.get(is_default=True))
+    return user
+
+
+def test_referral_devolve_so_o_primeiro_nome(client, promoter):
+    """`?ref=` de promotor ativo → SÓ o primeiro nome: a rota é pública, não pode virar
+    consulta de cadastro (o ref circula em link compartilhável)."""
+    r = client.get(f"{BASE}/referral/{promoter.external_id}")
+    assert r.status_code == 200, r.content
+    assert r.json() == {"name": "Joana"}
+
+
+def test_referral_que_nao_vale_devolve_null_sem_erro(client, promoter):
+    """Ref malformado / inexistente / de promotor SUSPENSO → 200 `name:null`, nunca 404: o link
+    velho continua abrindo o funil (atribuído ao promotor padrão), só não desenha o selo."""
+    from users.roles.promoter.models import Promoter
+
+    assert client.get(f"{BASE}/referral/nao-e-uuid").json() == {"name": None}
+    assert client.get(f"{BASE}/referral/{uuid.uuid4()}").json() == {"name": None}
+
+    Promoter.objects.filter(user=promoter).update(status=Promoter.Status.SUSPENDED)
+    assert client.get(f"{BASE}/referral/{promoter.external_id}").json() == {
+        "name": None
+    }
+
+
+def test_referral_de_promotor_sem_nome_devolve_null(client, default_hub):
+    """Promotor ativo mas com o profile ainda sem `name` (nasce vazio) → null, não string vazia."""
+    from hub.models import Hub
+    from users.auth.models import User
+    from users.profiles import interface as profiles
+    from users.roles.promoter.models import Promoter
+
+    user = User.objects.create_user(external_id=uuid.uuid4())
+    profiles.create(user=user, cpf=None, phone="5511987659998")
+    Promoter.objects.create(user=user, hub=Hub.objects.get(is_default=True))
+
+    assert client.get(f"{BASE}/referral/{user.external_id}").json() == {"name": None}
+
+
 # ── [3] CPF: identidade (pergaminho) + contrato de segurança ─────────────────
 
 
