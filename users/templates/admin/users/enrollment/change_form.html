@@ -1,0 +1,10 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {% if original %}
+    <li><a class="addlink" href="{% url 'admin:users_enrollment_action' original.pk 'fee-pay' %}">Pagar 1ª parcela</a></li>
+    <li><a class="addlink" href="{% url 'admin:users_enrollment_action' original.pk 'fee-schedule' %}">Agendar 2ª parcela</a></li>
+    <li><a class="addlink" href="{% url 'admin:users_enrollment_action' original.pk 'conclude' %}">Concluir matrícula</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
