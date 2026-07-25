@@ -1,6 +1,7 @@
 """Config do lead — preço da matrícula por gateway + descrição (lido do `.env`, CONVENTION §10).
 
-DEV (Victor 2026-06-04): **Cartão R$1** / **PIX R$5** (mínimo do Asaas). PROD = pedir ao Victor (§8).
+PROD (Victor 2026-07-25): **PIX R$999** / **cartão 12x de R$99** (= R$1188 total) — são os defaults.
+Teste de gateway sobrescreve no `.env` com os mínimos do Asaas (PIX 5 / cartão 100 centavos).
 Valores em REAIS (Decimal); o InfinitePay converte pra centavos internamente (×100).
 """
 
@@ -16,8 +17,8 @@ def _money(name: str, default: str) -> Decimal:
 
 
 def card_cents() -> int:
-    """Preço do cartão em CENTAVOS (total), do `.env`. **Fonte única**: cobrança + vitrine. DEV=100 (R$1)."""
-    return int(getattr(settings, "ENROLLMENT_PRICE_CARD_CENTS", 100))
+    """Preço do cartão em CENTAVOS (total), do `.env`. **Fonte única**: cobrança + vitrine. PROD=118800."""
+    return int(getattr(settings, "ENROLLMENT_PRICE_CARD_CENTS", 118800))
 
 
 def price_card() -> Decimal:
@@ -26,8 +27,8 @@ def price_card() -> Decimal:
 
 
 def price_pix() -> Decimal:
-    """Preço da matrícula no PIX (Asaas), valor CHEIO em reais, do `.env`. DEV=5 (mínimo do gateway)."""
-    return _money("ENROLLMENT_PRICE_PIX", "5")
+    """Preço da matrícula no PIX (Asaas), valor CHEIO em reais, do `.env`. PROD=999."""
+    return _money("ENROLLMENT_PRICE_PIX", "999")
 
 
 # ── auto-matrícula do PROMOTOR (Victor 2026-06-16): preço PRÓPRIO, fluxo próprio, SEM comissão. ──

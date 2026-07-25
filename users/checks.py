@@ -4,6 +4,9 @@
   (`from_role=None`) → ninguém consegue se registrar. Trava o boot (config quebrada).
 - `users.W001` (Warning): WhatsApp não configurado → o OTP (mecanismo de login) não tem como ser
   enviado. Não trava (o whatsapp tem seu próprio E001/E002); aqui só lembra que o auth depende dele.
+- `users.W002` (Warning): preço da matrícula em valores de TESTE de gateway (PIX < R$100) fora do
+  ambiente de teste — a vitrine e a cobrança leem a MESMA fonte (§10), então preço de teste no ar
+  significa cobrar errado de cliente real (visto em produção 2026-06-14, mascarado pela landing).
 """
 
 from django.conf import settings
@@ -35,6 +38,19 @@ def check_users(app_configs, **kwargs):
                 "WhatsApp não configurado — o OTP (login passwordless do auth) não tem canal de envio.",
                 hint="Configure WHATSAPP_API_BASE_URL/WHATSAPP_GLOBAL_API_KEY no .env.",
                 id="users.W001",
+            )
+        )
+
+    from users.roles.lead import config as lead_config
+
+    if getattr(settings, "APP_ENV", "prod") != "test" and lead_config.price_pix() < 100:
+        errors.append(
+            DjangoWarning(
+                f"Preço da matrícula em valor de TESTE (PIX R${lead_config.price_pix()}) fora do "
+                "ambiente de teste — vitrine e cobrança leem a mesma fonte; cliente real pagaria isso.",
+                hint="Remova ENROLLMENT_PRICE_PIX/ENROLLMENT_PRICE_CARD_CENTS do .env (os defaults "
+                "já são os de produção: PIX 999 / cartão 118800) ou defina os valores reais.",
+                id="users.W002",
             )
         )
 
