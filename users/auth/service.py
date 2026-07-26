@@ -622,7 +622,8 @@ def set_email(*, user_external_id: str, email: str) -> dict:
 
     - formato inválido → 422 `EMAIL_INVALID` (o front já valida; aqui é a última linha).
     - e-mail de OUTRA conta → 409 `EMAIL_CONFLICT` ("esse e-mail já tem dono").
-    - mesmo e-mail já na PRÓPRIA conta → segue (idempotente).
+    - mesmo e-mail já na PRÓPRIA conta → segue (idempotente), com `already_yours=True`
+      para o front trocar a celebração ("Perfeito, já é o seu e-mail").
     """
     from django.core.exceptions import ValidationError as DjangoValidationError
     from django.core.validators import validate_email as django_validate_email
@@ -639,7 +640,7 @@ def set_email(*, user_external_id: str, email: str) -> dict:
 
     own = profiles.get(user)
     if own is not None and own.email == email:
-        return {"email": email}  # idempotente
+        return {"email": email, "already_yours": True}  # idempotente
     other_has = profiles.exists_email(email)
     if other_has:
         raise Conflict(
@@ -648,7 +649,7 @@ def set_email(*, user_external_id: str, email: str) -> dict:
     if profiles.set_email(user, email) is None:
         raise NotFound("Perfil não encontrado.", code="PROFILE_NOT_FOUND")
     logger.info("auth.email_set", external_id=str(user.external_id))
-    return {"email": email}
+    return {"email": email, "already_yours": False}
 
 
 # ── login ────────────────────────────────────────────────────────────────
