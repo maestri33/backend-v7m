@@ -32,6 +32,11 @@ logger = structlog.get_logger()
 
 _TEMPLATE_PATH = Path(__file__).parent / "otp.md"
 
+# Desfechos de `verify` — o front do funil escolhe a tela por eles (ver docstring de verify).
+OK = "ok"
+INVALID = "invalid"
+EXPIRED = "expired"
+
 
 def _generate_code() -> str:
     return "".join(str(secrets.randbelow(10)) for _ in range(settings.OTP_NUM_DIGITS))
@@ -168,11 +173,25 @@ def generate_and_send(user) -> OtpCode:
     return otp
 
 
-def verify(user, code: str) -> bool:
-    """Valida o último OTP pendente do user. Conta tentativas; invalida no máximo configurado."""
+def verify(user, code: str) -> str:
+    """Valida o último OTP pendente do user. Conta tentativas; invalida no máximo configurado.
+
+    Devolve o MOTIVO, não um bool (funil v2, tela 2 — protótipo 2026-07-18): "código errado" e
+    "código morto" são telas diferentes pro usuário (👀 "confere e digita de novo" × ⏳ "já te
+    mandei um novo"), e um bool só não deixava o front escolher. Valores:
+
+    - `OK`      → conferiu; o código foi consumido.
+    - `INVALID` → errou o código, mas o código AINDA VALE: é só digitar de novo.
+    - `EXPIRED` → não existe código utilizável (venceu, esgotou tentativas ou nunca houve um
+      pendente). O caminho de saída é PEDIR OUTRO — tentar de novo aqui nunca vai passar.
+
+    Tentativas esgotadas entram em EXPIRED de propósito: o código já morreu, então insistir é um
+    beco sem saída. Antes disso a pessoa via "código incorreto" pra sempre — inclusive digitando
+    o código certo — sem nenhuma pista de que precisava pedir outro.
+    """
     if not settings.OTP_ACTIVE:
         logger.warning("otp.verify.blocked_inactive", user=user.id)
-        return False
+        return EXPIRED
 
     otp = (
         OtpCode.objects.filter(user=user, status__in=[STATUS_GENERATED, STATUS_SENT])
@@ -180,8 +199,10 @@ def verify(user, code: str) -> bool:
         .first()
     )
     if otp is None:
+        # Sem pendente = já verificado, já expirado ou queimado nas tentativas. Em todos, o
+        # que destrava é um código NOVO.
         logger.info("otp.verify.no_pending", user=user.id)
-        return False
+        return EXPIRED
 
     age_s = (timezone.now() - otp.created_at).total_seconds()
     if age_s > settings.OTP_TTL_S:
@@ -189,7 +210,7 @@ def verify(user, code: str) -> bool:
         otp.failure_reason = "expired"
         otp.save(update_fields=["status", "failure_reason"])
         logger.info("otp.verify.expired", id=otp.id)
-        return False
+        return EXPIRED
 
     if not secrets.compare_digest(otp.code_hash, _hash_code(code)):
         otp.attempts += 1
@@ -201,13 +222,13 @@ def verify(user, code: str) -> bool:
                 update_fields=["attempts", "status", "failure_reason", "error_detail"]
             )
             logger.info("otp.verify.max_attempts", id=otp.id, attempts=otp.attempts)
-        else:
-            otp.save(update_fields=["attempts"])
-            logger.info("otp.verify.invalid", id=otp.id, attempts=otp.attempts)
-        return False
+            return EXPIRED
+        otp.save(update_fields=["attempts"])
+        logger.info("otp.verify.invalid", id=otp.id, attempts=otp.attempts)
+        return INVALID
 
     otp.status = STATUS_VERIFIED
     otp.verified_at = timezone.now()
     otp.save(update_fields=["status", "verified_at"])
     logger.info("otp.verify.ok", id=otp.id, user=user.id)
-    return True
+    return OK

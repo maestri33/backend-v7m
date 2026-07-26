@@ -103,7 +103,12 @@ amigável, o link continua valendo).
 - **Resposta `200`** (`TokenOut`): `{ access_token, refresh_token, token_type }`.
 - Resolve o papel **mais avançado** do funil do cliente (`lead→enrollment→student`; `veteran` exige
   `student`) e emite o JWT com TODAS as roles ativas.
-- **Erros:** `404` usuário não encontrado; `403` não faz parte do funil do aluno; `401` `OTP_INVALID`.
+- **Erros:** `404` `USER_NOT_FOUND`; `403` não faz parte do funil do aluno; `401` em **dois sabores**:
+  - `OTP_INVALID` — errou o código, mas ele **ainda vale**: é só digitar de novo.
+  - `OTP_EXPIRED` — **não existe código utilizável** (venceu o TTL, queimou as tentativas ou já foi
+    consumido). Tentar de novo aqui nunca passa — o caminho é **pedir outro** (`POST /auth/check`).
+  - O front do funil (tela 2) usa a diferença pra escolher a tela: 👀 "confere e digita de novo"
+    × ⏳ "esse venceu, já mandei um novo" (com reenvio automático).
 
 ### `GET /pricing` — preço (público, fora do `/auth`)
 O que o cliente VÊ na landing — **é o MESMO valor que será COBRADO** (Victor 2026-06-07: vitrine = cobrança,
