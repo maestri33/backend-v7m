@@ -458,14 +458,13 @@ def test_email_grava_e_conflita(client, default_hub):
     r = _json(client, "post", "/lead/email", {"email": "Maria@Gmail.com"}, token_a)
     assert r.status_code == 200, r.content
     assert r.json()["email"] == "maria@gmail.com"  # normalizado
+    assert r.json()["already_yours"] is False  # novo → front celebra "Excelente!"
 
-    # o próprio e-mail de novo → idempotente
-    assert (
-        _json(
-            client, "post", "/lead/email", {"email": "maria@gmail.com"}, token_a
-        ).status_code
-        == 200
-    )
+    # o próprio e-mail de novo → idempotente, e o front troca a celebração
+    # ("Perfeito, já é o seu e-mail") — por isso o flag no corpo
+    r = _json(client, "post", "/lead/email", {"email": "maria@gmail.com"}, token_a)
+    assert r.status_code == 200
+    assert r.json()["already_yours"] is True
 
     # e-mail de OUTRA conta → 409 EMAIL_CONFLICT
     token_b = _enter(client, "11987650021")
