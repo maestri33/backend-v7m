@@ -545,7 +545,9 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
     - CPFHub fora → 502 `CPF_SERVICE_DOWN`; CPF não encontrado → 422 `CPF_NOT_FOUND`.
     - Idempotente: mesmo CPF já confirmado nesta conta → devolve a identidade gravada.
 
-    `photo` é sempre None por enquanto (o CPFHub não entrega foto; o front usa placeholder)."""
+    `photo` = foto de perfil do WhatsApp (Profile.whatsapp_photo_url, capturada em task async
+    quando a conta nasce no check). O CPFHub não entrega foto; sem foto no zap → None e o
+    front desenha o monograma. É ilustração — NUNCA prova de identidade."""
     user = User.objects.filter(external_id=user_external_id).first()
     if user is None:
         raise NotFound("Usuário não encontrado.", code="USER_NOT_FOUND")
@@ -565,7 +567,7 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
             "name": own.name,
             "birth_date": own.birth_date.isoformat() if own.birth_date else None,
             "sex": own.gender,
-            "photo": None,
+            "photo": own.whatsapp_photo_url or None,
         }
     if own is not None and own.cpf:
         # conta JÁ tem identidade confirmada — não deixa trocar por aqui (suporte resolve).
@@ -609,7 +611,9 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
         "name": profile.name,
         "birth_date": profile.birth_date.isoformat() if profile.birth_date else None,
         "sex": profile.gender,
-        "photo": None,
+        # Foto do WhatsApp capturada em task async na criação da conta (lead.tasks).
+        # Ausente/expirada → o front usa o monograma; nunca é erro.
+        "photo": profile.whatsapp_photo_url or None,
     }
 
 
@@ -618,7 +622,8 @@ def set_email(*, user_external_id: str, email: str) -> dict:
 
     - formato inválido → 422 `EMAIL_INVALID` (o front já valida; aqui é a última linha).
     - e-mail de OUTRA conta → 409 `EMAIL_CONFLICT` ("esse e-mail já tem dono").
-    - mesmo e-mail já na PRÓPRIA conta → segue (idempotente).
+    - mesmo e-mail já na PRÓPRIA conta → segue (idempotente), com `already_yours=True`
+      para o front trocar a celebração ("Perfeito, já é o seu e-mail").
     """
     from django.core.exceptions import ValidationError as DjangoValidationError
     from django.core.validators import validate_email as django_validate_email
@@ -635,7 +640,7 @@ def set_email(*, user_external_id: str, email: str) -> dict:
 
     own = profiles.get(user)
     if own is not None and own.email == email:
-        return {"email": email}  # idempotente
+        return {"email": email, "already_yours": True}  # idempotente
     other_has = profiles.exists_email(email)
     if other_has:
         raise Conflict(
@@ -644,16 +649,23 @@ def set_email(*, user_external_id: str, email: str) -> dict:
     if profiles.set_email(user, email) is None:
         raise NotFound("Perfil não encontrado.", code="PROFILE_NOT_FOUND")
     logger.info("auth.email_set", external_id=str(user.external_id))
-    return {"email": email}
+    return {"email": email, "already_yours": False}
 
 
 # ── login ────────────────────────────────────────────────────────────────
 
 
 def verify_otp_for_user(*, user: User, otp: str) -> None:
-    """Consome um OTP válido do usuário ou levanta o erro público canônico."""
-    if not otp_service.verify(user, otp):
-        raise Unauthorized("OTP inválido ou expirado.", code="OTP_INVALID")
+    """Consome um OTP válido do usuário ou levanta o erro público canônico.
+
+    Dois 401 distintos (funil v2, tela 2): `OTP_INVALID` = errou, o código ainda vale, digite de
+    novo · `OTP_EXPIRED` = não há código utilizável, o único caminho é pedir outro. O front
+    depende dessa diferença (👀 × ⏳ com reenvio automático) — mesma HTTP, `code` diferente."""
+    reason = otp_service.verify(user, otp)
+    if reason == otp_service.EXPIRED:
+        raise Unauthorized("Código expirado. Peça um novo código.", code="OTP_EXPIRED")
+    if reason != otp_service.OK:
+        raise Unauthorized("Código incorreto.", code="OTP_INVALID")
 
 
 def issue_tokens_for_user(user: User) -> dict:
@@ -743,8 +755,7 @@ def login_staff(*, external_id: str, otp: str) -> dict:
         logger.warning("auth.login_staff_denied", external_id=external_id)
         raise Forbidden("Acesso restrito ao staff.", code="NOT_STAFF")
 
-    if not otp_service.verify(user, otp):
-        raise Unauthorized("OTP inválido ou expirado.", code="OTP_INVALID")
+    verify_otp_for_user(user=user, otp=otp)
 
     active = roles.active_roles(user)
     tokens = jwt_service.issue(external_id, active)

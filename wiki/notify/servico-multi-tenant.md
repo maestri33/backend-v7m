@@ -105,6 +105,7 @@ mídia com MinIO/S3 opcional, QR pairing, Docker/binário leve.
 | `POST /v1/send-event` | evento + destinatário (phone/email/nome/gender já resolvidos pelo caller) + ctx + overrides (`body_md_override` incluso) — o Template DA CONTA resolve teor/canais/is_tts/mídia; `Trigger.active=False` → no-op |
 | `GET /v1/notifications[/{external_id}]` | status por canal + histórico com filtros |
 | `POST /v1/phone/check` | resolve 9º dígito + existe-no-zap (substitui o uso direto no register) |
+| `POST /v1/phone/avatar` | `{number}` → `{number, photo}` (URL da foto de perfil, ou null). Rota SEPARADA do check de propósito: o check roda dentro do request do `auth.check` (latência conta); a foto é buscada em task async do backend (`lead.tasks.fetch_whatsapp_avatar`) só quando a conta nasce — alimenta o pergaminho do funil v2 (tela 3-4). Foto é ILUSTRAÇÃO (pública, definida pelo usuário, URL do CDN expira), nunca prova de identidade |
 | Staff: CRUD `/v1/templates[/{event}]` + trigger, `POST /v1/adhoc`, preview, stats, seed | porte do `api/staff_notify.py` — o painel do staff passa a comandar AQUI (decisão 2) |
 | `GET /v1/health` | saúde (padrão da casa) |
 | Webhook Evolution (por instância) | persiste `InboundEvent`; 200 na hora |

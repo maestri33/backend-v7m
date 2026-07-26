@@ -261,6 +261,24 @@ def pricing(request):
     return lead_iface.pricing()
 
 
+class ReferralOut(Schema):
+    name: str | None = Field(
+        None,
+        description="PRIMEIRO nome do promotor ativo, ou null se o ref não vale (front esconde o selo)",
+    )
+
+
+@api.get("/referral/{ref}", response=ReferralOut, auth=None, tags=["pricing"])
+def referral(request, ref: str):
+    """`?ref=` da landing → nome pro selo "Indicado por …" (funil v2, tela 1). Público e magro.
+
+    Só o PRIMEIRO nome: o `ref` (external_id do promotor) circula em link compartilhável, então
+    esta rota não pode virar consulta de cadastro. Sempre **200** — ref malformado/inexistente/
+    suspenso devolve `name:null` e o front simplesmente não desenha o selo (não é erro: link velho
+    de promotor desligado continua abrindo o funil normal, atribuído ao promotor padrão)."""
+    return {"name": lead_iface.referral_name(ref)}
+
+
 # ── clients/auth — entrada do cliente (pública): cadastro + login por OTP ─────
 # Victor 2026-06-07: captação/login são ENTRADA → vivem em /auth. TODO cliente entra como `lead`.
 auth_router = Router(tags=["auth"])
@@ -364,7 +382,11 @@ class IdentityOut(Schema):
     )
     photo: str | None = Field(
         None,
-        description="Sempre null por ora (CPFHub não entrega foto; front usa placeholder)",
+        description=(
+            "Foto de perfil do WhatsApp (capturada em task async quando a conta nasce no "
+            "passo 1). Sem foto no zap → null e o front desenha o monograma; nunca é erro. "
+            "NÃO é prova de identidade — o CPFHub, que é a autoridade, não entrega foto."
+        ),
     )
 
 
@@ -374,6 +396,14 @@ class EmailIn(Schema):
 
 class EmailOut(Schema):
     email: str
+    already_yours: bool = Field(
+        False,
+        description=(
+            "True quando este e-mail JÁ era o desta conta (chamada idempotente). O front "
+            "diferencia a celebração: novo → “Excelente!”; o próprio → “Perfeito, já é o "
+            "seu e-mail”."
+        ),
+    )
 
 
 class CheckoutSetIn(Schema):
@@ -395,7 +425,7 @@ def lead_identity(request, payload: IdentityIn):
 @lead_router.post("/email", response=EmailOut)
 def lead_email(request, payload: EmailIn):
     """Passo 5 — grava o e-mail. De outra conta → 409 `EMAIL_CONFLICT`; o próprio → segue
-    (idempotente); formato inválido → 422 `EMAIL_INVALID`."""
+    (idempotente, `already_yours=true`); formato inválido → 422 `EMAIL_INVALID`."""
     require_roles(request.auth, "lead")
     return auth_iface.set_email(
         user_external_id=request.auth.external_id, email=payload.email

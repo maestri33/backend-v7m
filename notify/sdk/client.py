@@ -144,6 +144,18 @@ def phone_check(numbers: list[str]) -> list[dict]:
     return _ok(resp, "POST", "/v1/phone/check")
 
 
+def phone_avatar(number: str) -> str | None:
+    """POST /v1/phone/avatar → {number, photo} — URL da foto de perfil, ou null.
+
+    Rota SEPARADA do phone/check de propósito: o check roda DENTRO do request do
+    auth.check (latência conta); a foto é buscada em task async (lead.tasks) só
+    quando a conta acabou de nascer. Sem foto/privada → photo:null → None."""
+    resp = _request("POST", "/v1/phone/avatar", json={"number": number})
+    data = _ok(resp, "POST", "/v1/phone/avatar")
+    photo = (data or {}).get("photo")
+    return photo if isinstance(photo, str) and photo else None
+
+
 async def phone_check_async(numbers: list[str]) -> list[dict]:
     """Versão async do `phone_check` — o `_wa_check` do auth roda dentro do event loop."""
     resp = await _request_async("POST", "/v1/phone/check", json={"numbers": numbers})

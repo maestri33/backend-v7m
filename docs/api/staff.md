@@ -26,7 +26,7 @@ Login passwordless por OTP, espelhando o fluxo do cliente mas só enxergando sta
 | Método/Path | O que faz |
 |---|---|
 | `POST /api/v1/staff/auth/check` | Acha o staff por `cpf`/`phone`/`external_id` e dispara OTP. **Não vaza** quem é staff: usuário comum (ou inexistente) sai `found:false` igual, mesmo comportamento. |
-| `POST /api/v1/staff/auth/login` | Login com `external_id`+`otp` → emite JWT. Usuário existe mas não é superuser → 403 `NOT_STAFF`. OTP errado/expirado → 401 `OTP_INVALID`. |
+| `POST /api/v1/staff/auth/login` | Login com `external_id`+`otp` → emite JWT. Usuário existe mas não é superuser → 403 `NOT_STAFF`. OTP errado (mas ainda válido) → 401 `OTP_INVALID`; sem código utilizável (venceu, esgotou tentativas ou já usado) → 401 `OTP_EXPIRED`. |
 | `POST /api/v1/staff/auth/refresh` | Refresh do JWT (via `add_auth_refresh`, padrão dos outros grupos). |
 
 Diferença chave do login do cliente: lá o gate é por **role de funil** (um superuser puro cairia em
@@ -221,7 +221,8 @@ valor do secret) + fluxo declarado + último resultado do ledger `ValidationChec
 |---|---|---|
 | `STAFF_ONLY` | 403 | qualquer rota, se `is_superuser` falhar |
 | `NOT_STAFF` | 403 | login staff, usuário existe mas não é superuser |
-| `OTP_INVALID` | 401 | login staff, OTP errado/expirado |
+| `OTP_INVALID` | 401 | login staff, OTP errado — o código ainda vale, dá pra digitar de novo |
+| `OTP_EXPIRED` | 401 | login staff, sem código utilizável (venceu, esgotou tentativas ou já usado) — pedir outro |
 | `HUB_NOT_FOUND` | 404 | hub |
 | `COORDINATOR_NOT_FOUND` / `COORDINATOR_NOT_PROMOTER` | 422 | hub |
 | `INVALID_BRAND` | 422 | criar hub |
