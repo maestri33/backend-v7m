@@ -1,8 +1,11 @@
-"""Task Django-Q do lead: cria a cobrança no GATEWAY fora do request do register.
+"""Tasks Django-Q do lead: rede pesada FORA do request.
 
-Auditoria front 2026-06-11 (item 6): o register responde <2s com o link curto próprio; o provider
-(Asaas/InfinitePay) é resolvido aqui, com retry espaçado. Gateway fora do ar → o register continua
-201 e o clique no link curto também tenta na hora (lazy — `checkout_links.checkout_redirect`).
+- `build_checkout`: cria a cobrança no GATEWAY fora do request do register. Auditoria front
+  2026-06-11 (item 6): o register responde <2s com o link curto próprio; o provider
+  (Asaas/InfinitePay) é resolvido aqui, com retry espaçado. Gateway fora do ar → o register
+  continua 201 e o clique no link curto também tenta na hora (lazy — `checkout_links`).
+- `fetch_whatsapp_avatar`: foto de perfil do WhatsApp pro pergaminho (funil v2, tela 3-4).
+  Disparada quando a conta NASCE no check — a foto fica pronta minutos antes de ser precisa.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import structlog
+from django.conf import settings
 from django.utils import timezone
 
 logger = structlog.get_logger()
@@ -60,4 +64,50 @@ def build_checkout(checkout_pk: int, attempt: int = 1) -> str:
             error=str(exc),
         )
         return f"retry_scheduled_{attempt}"
+    return "ok"
+
+
+def fetch_whatsapp_avatar(profile_pk: int) -> str:
+    """Busca a URL da foto de perfil do WhatsApp e grava no Profile (funil v2).
+
+    Best-effort SEM retry: foto é enfeite do pergaminho — sem foto o front usa o
+    monograma e nada quebra. Roteia igual ao `_wa_check` do auth: TEST_MODE pula,
+    NOTIFY_MODE=remote vai pelo notify-server, local fala com a Evolution direto.
+    Idempotente: já tem foto → no-op (não sobrescreve com um possível null)."""
+    from asgiref.sync import async_to_sync
+
+    from users.profiles.models import Profile
+
+    profile = Profile.objects.filter(pk=profile_pk).first()
+    if profile is None:
+        return "gone"
+    if profile.whatsapp_photo_url:
+        return "already_set"
+    if getattr(settings, "TEST_MODE", False):
+        return "test_mode"
+
+    try:
+        if getattr(settings, "NOTIFY_MODE", "local") == "remote":
+            from notify.sdk import client as notify_client
+
+            photo = notify_client.phone_avatar(profile.phone)
+        else:
+            from integrations.communication.whatsapp.client import get_client
+
+            async def _fetch() -> str | None:
+                async with get_client() as wa:
+                    return await wa.fetch_profile_picture(profile.phone)
+
+            photo = async_to_sync(_fetch)()
+    except Exception as exc:  # noqa: BLE001 — enfeite: falhou, ficou sem foto
+        logger.warning(
+            "lead.avatar_fetch_failed", profile=profile_pk, error=type(exc).__name__
+        )
+        return "failed"
+
+    if not photo:
+        return "no_photo"
+    profile.whatsapp_photo_url = photo
+    profile.save(update_fields=["whatsapp_photo_url", "updated_at"])
+    logger.info("lead.avatar_saved", profile=profile_pk)
     return "ok"

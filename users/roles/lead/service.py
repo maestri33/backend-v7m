@@ -183,7 +183,9 @@ def _resolve_promoter(ref) -> User:
         u = promoter_iface.validate_ref(ref)
         if u is not None:
             return u
-        logger.info("lead.ref_fallback_default", ref=str(ref))
+        # WARNING de propósito (auditoria 2026-07-25, "buraco 3"): indicação DESVIADA pro padrão
+        # não pode se esconder em log info — é comissão trocando de dono sem ninguém ver.
+        logger.warning("lead.ref_fallback_default", ref=str(ref))
     ext = hub_iface.default_coordinator_external_id()
     u = User.objects.filter(external_id=ext).first() if ext else None
     if u is None:
@@ -432,6 +434,9 @@ def check_or_capture(
     )
     _notify_captured(lead)
     _notify_promoter_new_lead(lead)
+    _enqueue_avatar_fetch(
+        user
+    )  # foto do zap pro pergaminho (tela 3-4) — async, enfeite
     return {
         "found": False,
         "created": True,
@@ -442,6 +447,22 @@ def check_or_capture(
         "roles": ["lead"],
         "token": None,
     }
+
+
+def _enqueue_avatar_fetch(user: User) -> None:
+    """Agenda a captura da foto de perfil do WhatsApp (tasks.fetch_whatsapp_avatar).
+
+    Mesmo padrão do `_enqueue_provider_build`: best-effort — broker fora não pode
+    derrubar a captura; sem foto o pergaminho usa o monograma e a vida segue."""
+    profile = profiles.get(user)
+    if profile is None:
+        return
+    try:
+        from django_q.tasks import async_task
+
+        async_task("users.roles.lead.tasks.fetch_whatsapp_avatar", profile.pk)
+    except Exception as exc:  # noqa: BLE001 — enfeite: sem task, fica sem foto
+        logger.warning("lead.avatar_enqueue_failed", profile=profile.pk, error=str(exc))
 
 
 def set_checkout(*, user_external_id: str, payment_method: str | None) -> dict:

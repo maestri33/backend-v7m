@@ -192,6 +192,91 @@ def test_referral_de_promotor_sem_nome_devolve_null(client, default_hub):
     assert client.get(f"{BASE}/referral/{user.external_id}").json() == {"name": None}
 
 
+# ── [1] telefone: foto do WhatsApp (pergaminho da tela 3-4) ──────────────────
+
+
+def test_captura_agenda_busca_da_foto_do_whatsapp(client, default_hub, monkeypatch):
+    """Conta nascendo no check → agenda `fetch_whatsapp_avatar` (Django-Q, best-effort).
+    A foto NÃO é buscada dentro do request — o check não pode pagar essa latência."""
+    import django_q.tasks
+
+    from users.profiles.models import Profile
+
+    enqueued: list[tuple] = []
+    monkeypatch.setattr(
+        django_q.tasks, "async_task", lambda *a, **kw: enqueued.append(a)
+    )
+
+    r = _json(client, "post", "/auth/check", {"phone": "11987650020"})
+    assert r.json()["created"] is True
+    profile = Profile.objects.get(phone="5511987650020")
+    assert ("users.roles.lead.tasks.fetch_whatsapp_avatar", profile.pk) in [
+        (a[0], a[1]) for a in enqueued
+    ]
+
+
+def test_task_da_foto_grava_no_profile(client, default_hub, monkeypatch, settings):
+    """Task busca a URL (modo remote → notify-server) e grava; 2ª rodada é no-op
+    (não sobrescreve — a foto que o lead viu no pergaminho não muda embaixo dele)."""
+    from users.profiles.models import Profile
+    from users.roles.lead import tasks
+
+    _json(client, "post", "/auth/check", {"phone": "11987650021"})
+    profile = Profile.objects.get(phone="5511987650021")
+
+    settings.TEST_MODE = False
+    settings.NOTIFY_MODE = "remote"
+    url = "https://pps.whatsapp.net/v/t61/abc123.jpg"
+    monkeypatch.setattr("notify.sdk.client.phone_avatar", lambda number: url)
+
+    assert tasks.fetch_whatsapp_avatar(profile.pk) == "ok"
+    profile.refresh_from_db()
+    assert profile.whatsapp_photo_url == url
+
+    monkeypatch.setattr("notify.sdk.client.phone_avatar", lambda number: "OUTRA")
+    assert tasks.fetch_whatsapp_avatar(profile.pk) == "already_set"
+    profile.refresh_from_db()
+    assert profile.whatsapp_photo_url == url
+
+
+def test_task_sem_foto_ou_com_erro_nao_quebra(
+    client, default_hub, monkeypatch, settings
+):
+    """Sem foto no zap → `no_photo` e o profile fica nulo (front usa monograma).
+    Serviço fora → `failed`, best-effort SEM retry: foto é enfeite, não dado."""
+    from users.profiles.models import Profile
+    from users.roles.lead import tasks
+
+    _json(client, "post", "/auth/check", {"phone": "11987650022"})
+    profile = Profile.objects.get(phone="5511987650022")
+
+    settings.TEST_MODE = False
+    settings.NOTIFY_MODE = "remote"
+    monkeypatch.setattr("notify.sdk.client.phone_avatar", lambda number: None)
+    assert tasks.fetch_whatsapp_avatar(profile.pk) == "no_photo"
+    profile.refresh_from_db()
+    assert profile.whatsapp_photo_url is None
+
+    def _boom(number):
+        raise RuntimeError("evolution fora")
+
+    monkeypatch.setattr("notify.sdk.client.phone_avatar", _boom)
+    assert tasks.fetch_whatsapp_avatar(profile.pk) == "failed"
+
+
+def test_identity_devolve_a_foto_capturada(client, default_hub):
+    """Pergaminho com retrato: a foto capturada na criação da conta sai no /lead/identity."""
+    from users.profiles.models import Profile
+
+    token = _enter(client, "11987650023")
+    url = "https://pps.whatsapp.net/v/t61/retrato.jpg"
+    Profile.objects.filter(phone="5511987650023").update(whatsapp_photo_url=url)
+
+    r = _json(client, "post", "/lead/identity", {"cpf": _valid_cpf("398765432")}, token)
+    assert r.status_code == 200, r.content
+    assert r.json()["photo"] == url
+
+
 # ── [3] CPF: identidade (pergaminho) + contrato de segurança ─────────────────
 
 
