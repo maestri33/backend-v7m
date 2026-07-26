@@ -96,7 +96,10 @@ def test_join_replay_does_not_duplicate_candidate(client, default_hub):
     replay = _post(client, "/join", body)
 
     assert replay.status_code == 401
-    assert replay.json()["code"] == "OTP_INVALID"
+    # OTP_EXPIRED, não OTP_INVALID: o código foi CONSUMIDO no primeiro join. Desde o funil v2
+    # (tela 2) o 401 separa "errou o código, tenta de novo" de "não há código utilizável, peça
+    # outro" — replay é o segundo caso.
+    assert replay.json()["code"] == "OTP_EXPIRED"
     assert Candidate.objects.filter(user=user).count() == 1
     assert roles.active_roles(user).count("candidate") == 1
 

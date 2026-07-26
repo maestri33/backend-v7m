@@ -277,6 +277,102 @@ def test_identity_devolve_a_foto_capturada(client, default_hub):
     assert r.json()["photo"] == url
 
 
+# ── [2] OTP: incorreto × expirado são desfechos DIFERENTES ───────────────────
+# O front escolhe telas diferentes por eles (👀 "digita de novo" × ⏳ "já mandei outro"), então
+# o 401 precisa dizer QUAL dos dois foi. Antes os dois vinham como OTP_INVALID e a pessoa que
+# queimou as tentativas ficava vendo "código incorreto" pra sempre — inclusive com o código certo.
+
+
+def _nascer(client, phone: str) -> str:
+    """Passo 1 só: cria a conta e devolve o external_id (sem consumir o OTP)."""
+    r = _json(client, "post", "/auth/check", {"phone": phone})
+    assert r.status_code == 200, r.content
+    return r.json()["external_id"]
+
+
+def test_otp_errado_e_invalid_e_o_codigo_continua_valendo(client, default_hub):
+    """Errou o código: 401 OTP_INVALID — e o código certo AINDA entra logo depois."""
+    external_id = _nascer(client, "11987650030")
+
+    r = _json(
+        client, "post", "/auth/login", {"external_id": external_id, "otp": "999999"}
+    )
+    assert r.status_code == 401, r.content
+    assert r.json()["code"] == "OTP_INVALID"
+
+    r = _json(client, "post", "/auth/login", {"external_id": external_id, "otp": OTP})
+    assert r.status_code == 200, r.content
+    assert r.json()["access_token"]
+
+
+def test_otp_vencido_e_expired(client, default_hub, settings):
+    """Passou do TTL: 401 OTP_EXPIRED — o front abre o ⏳ e dispara um código novo."""
+    external_id = _nascer(client, "11987650031")
+    settings.OTP_TTL_S = 0  # tudo que já existe nasceu "velho demais"
+
+    r = _json(client, "post", "/auth/login", {"external_id": external_id, "otp": OTP})
+    assert r.status_code == 401, r.content
+    assert r.json()["code"] == "OTP_EXPIRED"
+
+
+def test_otp_com_tentativas_esgotadas_vira_expired(client, default_hub, settings):
+    """Queimou as tentativas: o código MORREU → OTP_EXPIRED, mesmo digitando o certo.
+
+    É o beco sem saída que motivou a mudança: sem esta distinção o app repetia "código
+    incorreto" indefinidamente e ninguém descobria que o caminho era pedir outro.
+    """
+    settings.OTP_MAX_ATTEMPTS = 2
+    external_id = _nascer(client, "11987650032")
+
+    for _ in range(2):
+        r = _json(
+            client, "post", "/auth/login", {"external_id": external_id, "otp": "999999"}
+        )
+        assert r.status_code == 401, r.content
+
+    r = _json(client, "post", "/auth/login", {"external_id": external_id, "otp": OTP})
+    assert r.status_code == 401, r.content
+    assert r.json()["code"] == "OTP_EXPIRED"
+
+
+def test_otp_ja_usado_nao_entra_de_novo(client, default_hub):
+    """OTP é de uso único: repetir o mesmo código não vira uma segunda sessão."""
+    external_id = _nascer(client, "11987650033")
+
+    r = _json(client, "post", "/auth/login", {"external_id": external_id, "otp": OTP})
+    assert r.status_code == 200, r.content
+
+    r = _json(client, "post", "/auth/login", {"external_id": external_id, "otp": OTP})
+    assert r.status_code == 401, r.content
+    assert r.json()["code"] == "OTP_EXPIRED"
+
+
+def test_login_de_external_id_desconhecido_e_404(client, default_hub):
+    """Sessão velha apontando pra um usuário que não existe: 404 → o front recomeça o funil."""
+    r = _json(
+        client, "post", "/auth/login", {"external_id": str(uuid.uuid4()), "otp": OTP}
+    )
+    assert r.status_code == 404, r.content
+    assert r.json()["code"] == "USER_NOT_FOUND"
+
+
+def test_reenvio_pelo_check_respeita_o_rate_limit(client, default_hub):
+    """Reenvio é `POST /auth/check` de novo: rate-limitado devolve `otp_wait` (não é erro).
+
+    `otp_sent:false` + `otp_wait` = um código recente JÁ saiu — a tela do OTP segue sendo o
+    lugar certo, só com o cooldown restante no botão.
+    """
+    phone = "11987650034"
+    _nascer(client, phone)
+
+    r = _json(client, "post", "/auth/check", {"phone": phone})
+    assert r.status_code == 200, r.content
+    data = r.json()
+    assert data["found"] is True
+    assert data["otp_sent"] is False
+    assert data["otp_wait"] and data["otp_wait"] > 0
+
+
 # ── [3] CPF: identidade (pergaminho) + contrato de segurança ─────────────────
 
 
