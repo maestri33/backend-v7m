@@ -382,7 +382,11 @@ class IdentityOut(Schema):
     )
     photo: str | None = Field(
         None,
-        description="Sempre null por ora (CPFHub não entrega foto; front usa placeholder)",
+        description=(
+            "Foto de perfil do WhatsApp (capturada em task async quando a conta nasce no "
+            "passo 1). Sem foto no zap → null e o front desenha o monograma; nunca é erro. "
+            "NÃO é prova de identidade — o CPFHub, que é a autoridade, não entrega foto."
+        ),
     )
 
 
