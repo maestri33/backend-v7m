@@ -42,6 +42,14 @@ class Profile(models.Model):
     # profiles completo (ciclo 3b): name/birth_date vêm do CPFHub; pix_key só o campo (validação
     # Asaas adiada); address = FK pra entidade própria (Profile→Address, §4), 1 endereço por profile.
     name = models.CharField("nome", max_length=200, null=True, blank=True)
+    # Foto de perfil do WhatsApp (funil v2, tela 3-4): capturada em task async logo após a conta
+    # nascer no check (users/roles/lead/tasks.fetch_whatsapp_avatar) — alimenta o pergaminho da
+    # identidade. É ILUSTRAÇÃO, nunca prova de identidade: foto pública, definida pelo usuário no
+    # zap, e a URL do CDN do WhatsApp EXPIRA — quem consome trata ausência/link morto como "sem
+    # foto" (placeholder), não como erro. TextField: as URLs do pps.whatsapp.net são compridas.
+    whatsapp_photo_url = models.TextField(
+        "foto do WhatsApp (URL)", null=True, blank=True
+    )
     birth_date = models.DateField("data de nascimento", null=True, blank=True)
     pix_key = models.CharField("chave Pix", max_length=140, null=True, blank=True)
     pix_key_type = models.CharField(

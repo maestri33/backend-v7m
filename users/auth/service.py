@@ -545,7 +545,9 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
     - CPFHub fora → 502 `CPF_SERVICE_DOWN`; CPF não encontrado → 422 `CPF_NOT_FOUND`.
     - Idempotente: mesmo CPF já confirmado nesta conta → devolve a identidade gravada.
 
-    `photo` é sempre None por enquanto (o CPFHub não entrega foto; o front usa placeholder)."""
+    `photo` = foto de perfil do WhatsApp (Profile.whatsapp_photo_url, capturada em task async
+    quando a conta nasce no check). O CPFHub não entrega foto; sem foto no zap → None e o
+    front desenha o monograma. É ilustração — NUNCA prova de identidade."""
     user = User.objects.filter(external_id=user_external_id).first()
     if user is None:
         raise NotFound("Usuário não encontrado.", code="USER_NOT_FOUND")
@@ -565,7 +567,7 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
             "name": own.name,
             "birth_date": own.birth_date.isoformat() if own.birth_date else None,
             "sex": own.gender,
-            "photo": None,
+            "photo": own.whatsapp_photo_url or None,
         }
     if own is not None and own.cpf:
         # conta JÁ tem identidade confirmada — não deixa trocar por aqui (suporte resolve).
@@ -609,7 +611,9 @@ def confirm_identity(*, user_external_id: str, cpf: str) -> dict:
         "name": profile.name,
         "birth_date": profile.birth_date.isoformat() if profile.birth_date else None,
         "sex": profile.gender,
-        "photo": None,
+        # Foto do WhatsApp capturada em task async na criação da conta (lead.tasks).
+        # Ausente/expirada → o front usa o monograma; nunca é erro.
+        "photo": profile.whatsapp_photo_url or None,
     }
 
 

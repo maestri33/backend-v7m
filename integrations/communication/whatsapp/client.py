@@ -138,6 +138,19 @@ class WhatsAppClient:
         logger.info("whatsapp.check", count=len(numbers))
         return result
 
+    async def fetch_profile_picture(self, number: str) -> str | None:
+        """URL da foto de perfil do número. POST /chat/fetchProfilePictureUrl/{instance}.
+
+        Foto pública do WhatsApp (funil v2: pergaminho da tela 3-4). Sem foto/privada →
+        a Evolution devolve profilePictureUrl nulo → None. A URL do CDN expira — quem
+        guarda trata como enfeite perecível, nunca como dado durável."""
+        result = await self._post(
+            self._chat_path("fetchProfilePictureUrl"), {"number": number}
+        )
+        url = (result or {}).get("profilePictureUrl")
+        logger.info("whatsapp.avatar_fetched", number=number, found=bool(url))
+        return url if isinstance(url, str) and url else None
+
     async def resolve_br_number(self, phone: str) -> str:
         """Resolve qual variante BR (com/sem 9º dígito) está no WhatsApp.
 
