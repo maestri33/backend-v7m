@@ -1,0 +1,30 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Confirmação de identidade{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop" id="cpf-card">
+    <div class="card-chip">Confirmação de identidade</div>
+    <h1 class="h1">Qual é o seu CPF?</h1>
+    <p class="sub">Vamos localizar a sua identidade pra montar o seu cadastro. Seus dados ficam protegidos.</p>
+    <form id="cpf-form" hx-post="{% url 'web:cpf_submit' %}" hx-target="#cpf-zone" hx-swap="innerHTML" hx-disabled-elt="#cpf">
+      <div class="scan">
+        <div class="line"></div>
+        <div style="text-align:center;font-size:11px;letter-spacing:.2em;color:var(--gold-ink);font-weight:700;margin-bottom:10px">CADASTRO DE PESSOA FÍSICA</div>
+        <input id="cpf" name="cpf" class="field field-big" style="background:rgba(11,11,12,0.5)" type="text" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" required autofocus>
+        <div id="cpf-hint" class="small mut" style="text-align:center;margin-top:8px">Digite aqui seu CPF.</div>
+      </div>
+    </form>
+    <div id="cpf-zone"></div>
+  </section>
+</main>
+{% endblock %}
+{% block js %}<script>
+const c=document.getElementById('cpf'),hint=document.getElementById('cpf-hint');
+c.addEventListener('input',()=>{c.value=maskCpf(c.value);const d=digits(c.value);
+ if(d.length===11){
+   if(cpfOk(d)){hint.innerHTML='<span class="gold">Procurando sua identidade…</span>';
+     document.getElementById('cpf-zone').innerHTML='<div class="center" style="padding:10px 0"><span class="spin vspin"></span><span class="small mut">Validando CPF ✓ · Consultando registros… · Verificando identidade…</span></div>';
+     htmx.trigger('#cpf-form','submit')}
+   else{hint.innerHTML='<span style="color:var(--danger-soft)">Esse CPF não fechou a conta — confere os dígitos?</span>';document.getElementById('cpf-card').classList.remove('vshake');void document.getElementById('cpf-card').offsetWidth;document.getElementById('cpf-card').classList.add('vshake')}
+ } else {hint.textContent='Digite aqui seu CPF.'}});
+</script>{% endblock %}

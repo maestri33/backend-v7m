@@ -1,0 +1,17 @@
+{% if selfie.analysis_status == 'rejected' or selfie.status == 'rejected' %}
+  <div class="alert alert-danger"><span>📸</span><div><b>Vamos tirar outra?</b>{{ selfie.description|default:"A selfie não bateu com o documento enviado. Tire outra em um lugar iluminado." }}</div></div>
+  <a class="btn btn-ghost" style="text-decoration:none" href="/app/cadastro/selfie">Tirar outra selfie</a>
+{% elif selfie.analysis_status == 'review' or selfie.status == 'review' %}
+  <div class="center" style="padding:14px 0">
+    <span style="font-size:30px">🧑‍💼</span>
+    <b>Selfie em análise pelo polo</b>
+    <span class="small mut" style="max-width:300px">Um coordenador vai conferir manualmente. Você não precisa fazer nada — te avisamos no WhatsApp.</span>
+    <a class="pill pill-green" style="margin-top:8px" href="/app/analise">Acompanhar cadastro →</a>
+  </div>
+{% else %}
+  <div class="center" style="padding:14px 0" hx-get="/app/cadastro/selfie/status" hx-trigger="every 3s" hx-swap="outerHTML" hx-target="this">
+    <span class="spin vspin"></span>
+    <b>Analisando sua selfie…</b>
+    <span class="small mut">Leva de 10 a 60 segundos. Comparamos com a foto do seu documento.</span>
+  </div>
+{% endif %}

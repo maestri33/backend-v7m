@@ -1,0 +1,14 @@
+<div class="vpop">
+  <div class="small gold" style="text-align:center;letter-spacing:.2em;font-weight:800;margin:10px 0 24px">✦ IDENTIDADE ENCONTRADA ✦</div>
+  <div class="perg">
+    <div class="roll"></div>
+    {% if identity.photo %}<img class="foto" src="{{ identity.photo }}" alt="">{% else %}<div class="foto">{{ identity.name|slice:":1" }}</div>{% endif %}
+    <h3>{{ identity.name }}</h3>
+    {% if age %}<div style="font-size:13px">Depois de {{ age }} anos, chegou a sua hora.</div>{% endif %}
+    <div class="selo">✓ IDENTIDADE VERIFICADA</div>
+    <div class="roll bot"></div>
+  </div>
+  <p class="sub" style="margin-top:26px">Prazer em encontrar você{% if identity.name %}, <b style="color:var(--paper)">{{ identity.name|title }}</b>{% endif %}.<br>Agora vamos confirmar seu e-mail.</p>
+  <div class="center"><span class="spin vspin"></span></div>
+</div>
+<script>setTimeout(function(){window.location.href='{{ next_url }}'},3200)</script>

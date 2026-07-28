@@ -96,6 +96,8 @@ INSTALLED_APPS = [
     "django_q",
     # JWT da API pública (django-ninja-jwt) — RS256 reusa as chaves em keys/ (CONVENTION §10).
     "ninja_jwt",
+    # Funil web do candidato (HTMX server-rendered, sessão Django) — servido em /app/.
+    "web",
     # app base do projeto (models base comuns — ex.: fallback logger de eventos sem destino)
     "core.apps.CoreConfig",
     # integrações externas

@@ -1,0 +1,48 @@
+"""Rotas do funil web — UMA rota por passo (regra permanente do protótipo, DOCUMENTACAO A2)."""
+
+from django.urls import path
+
+from web import views
+
+app_name = "web"
+
+urlpatterns = [
+    path("", views.entry, name="entry"),
+    path("sair", views.logout, name="logout"),
+    # funil de entrada (conta)
+    path("verificar", views.check_page, name="check"),
+    path("verificar/enviar", views.check_submit, name="check_submit"),
+    path("login", views.otp_page, name="otp"),
+    path("login/enviar", views.otp_submit, name="otp_submit"),
+    path("login/reenviar", views.otp_resend, name="otp_resend"),
+    path("cpf", views.cpf_page, name="cpf"),
+    path("cpf/enviar", views.cpf_submit, name="cpf_submit"),
+    path("email", views.email_page, name="email"),
+    path("email/enviar", views.email_submit, name="email_submit"),
+    # wizard do candidato
+    path("cadastro/endereco", views.address_page, name="address"),
+    path("cadastro/endereco/cep", views.address_cep, name="address_cep"),
+    path("cadastro/endereco/dados", views.address_data, name="address_data"),
+    path("cadastro/endereco/comprovante", views.address_proof, name="address_proof"),
+    path("cadastro/documento", views.document_page, name="document"),
+    path("cadastro/documento/foto/<slot>", views.document_photo, name="document_photo"),
+    path("cadastro/documento/status", views.document_status, name="document_status"),
+    path("cadastro/documento/campos", views.document_fields, name="document_fields"),
+    path("cadastro/pix", views.pix_page, name="pix"),
+    path("cadastro/pix/enviar", views.pix_submit, name="pix_submit"),
+    path("cadastro/escolaridade", views.education_page, name="education"),
+    path(
+        "cadastro/escolaridade/enviar", views.education_submit, name="education_submit"
+    ),
+    path("cadastro/selfie", views.selfie_page, name="selfie"),
+    path("cadastro/selfie/enviar", views.selfie_submit, name="selfie_submit"),
+    path("cadastro/selfie/status", views.selfie_status, name="selfie_status"),
+    # pós-funil
+    path("analise", views.analysis_page, name="analysis"),
+    path("analise/status", views.analysis_status, name="analysis_status"),
+    path("treino", views.training_page, name="training"),
+    path("treino/resposta", views.training_submit, name="training_submit"),
+    path("treino/status", views.training_status, name="training_status"),
+    path("painel", views.panel_page, name="panel"),
+    path("painel/convidar", views.panel_invite, name="panel_invite"),
+]

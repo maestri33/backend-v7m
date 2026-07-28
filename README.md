@@ -38,6 +38,11 @@ providers é recusado em `prod`.
 
 ## Estado
 
+- **web (funil HTMX):** funil do candidato server-rendered servido pelo próprio backend em `/app/`
+  (telefone → OTP → CPF → e-mail → endereço → documento → Pix → escolaridade → selfie → painel do
+  promotor). Sessão Django (posse por OTP), casca fina sobre os MESMOS services da API. Valida o
+  fluxo em produção enquanto o app.v7m.org (Next) fica inutilizado. → `web/`
+
 - **Bootstrap (step 0):** Django sobe, migra, `/admin/` no ar. → [[wiki/core/bootstrap]]
 - **integrations/asaas (§4 item 1-a):** gateway de pagamento — fundação + status/onboarding +
   webhook receiver + validação de saque. Faltam charge e payout. → [[wiki/integrations/finance/asaas]]
