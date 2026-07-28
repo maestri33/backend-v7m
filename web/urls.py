@@ -3,11 +3,13 @@
 from django.urls import path
 
 from web import views
+from web.assets import asset
 
 app_name = "web"
 
 urlpatterns = [
     path("", views.entry, name="entry"),
+    path("asset/<name>", asset, name="asset"),
     path("sair", views.logout, name="logout"),
     # funil de entrada (conta)
     path("verificar", views.check_page, name="check"),
