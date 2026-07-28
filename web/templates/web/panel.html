@@ -28,7 +28,7 @@
       <div style="flex:1;min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
           <h2 class="sc-title" style="margin:0">Próximo depósito</h2>
-          <span class="badge b-warn">ciclo aberto</span>
+          <span class="badge {{ cycle_state.badge }}">{{ cycle_state.label }}</span>
         </div>
         {% if summary.week_paid_leads > 0 %}
           <div class="tnum" style="font-size:29px;font-weight:600;margin:6px 0 2px">{{ week_total }}</div>
@@ -47,7 +47,7 @@
     <div class="prog"><i style="width:{% widthratio summary.week_paid_leads summary.week_goal 100 %}%"></i></div>
     <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px" class="sc-mut">
       <span>Ciclo {{ cycle_range }}</span>
-      <span style="color:var(--sc-pri)">Pix automático no fechamento</span>
+      <span style="color:var(--sc-pri)">{% if cycle_state.state == 'paid' %}Pix enviado ✓{% elif cycle_state.state == 'processing' %}Pix já solicitado ao banco{% else %}Pix automático no fechamento{% endif %}</span>
     </div>
   </div>
 
@@ -80,11 +80,10 @@
 
   <div class="sc-card">
     <h2 class="sc-title">Iniciar matrícula</h2>
-    <p class="sc-mut" style="font-size:13px;margin:0 0 10px">Só o telefone e o CPF do aluno. Ele recebe o link da matrícula já vinculado a você.</p>
+    <p class="sc-mut" style="font-size:13px;margin:0 0 10px">Só o telefone do aluno. Ele recebe o link da matrícula já vinculado a você.</p>
     <div id="invite-zone">
       <form hx-post="{% url 'web:panel_invite' %}" hx-target="#invite-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-inv">
         <input class="sc-input tnum" name="phone" type="tel" inputmode="numeric" placeholder="WhatsApp do aluno — (11) 91234-5678" required style="margin-bottom:8px">
-        <input class="sc-input tnum" name="cpf" type="text" inputmode="numeric" placeholder="CPF do aluno" required style="margin-bottom:8px">
         <div id="fb-zone"></div>
         <button id="btn-inv" class="sc-btn" type="submit">Enviar link da matrícula</button>
       </form>

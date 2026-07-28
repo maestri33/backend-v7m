@@ -7,6 +7,8 @@ servidor e corrige a URL. Fonte da verdade = sessão (posse provada) + Profile +
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from django.urls import reverse
 
 from users.auth import service as auth_iface
@@ -109,8 +111,13 @@ def current_step(request) -> str:
     return "address"
 
 
-def step_url(step: str) -> str:
-    return reverse(f"web:{step if step != 'otp' else 'otp'}")
+def step_url(step: str, request=None) -> str:
+    """URL do passo, PRESERVANDO `?hub=`/`?ref=` (contrato do protótipo: o parâmetro sobrevive
+    a toda navegação). Sem isso, o primeiro redirect do gate já apagava o vínculo com o polo
+    da barra de endereço — e um reload em outra aba entrava sem polo."""
+    url = reverse(f"web:{step}")
+    hub = request.session.get(SESSION_HUB) if request is not None else None
+    return f"{url}?hub={quote(hub)}" if hub else url
 
 
 def resend_otp(request) -> dict:

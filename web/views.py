@@ -35,7 +35,7 @@ def _hx_redirect(url: str) -> HttpResponse:
 
 def _go_current(request) -> HttpResponse:
     """Manda o cliente pra rota do passo REAL (gate A3)."""
-    url = flow.step_url(flow.current_step(request))
+    url = flow.step_url(flow.current_step(request), request)
     if request.headers.get("HX-Request"):
         return _hx_redirect(url)
     return redirect(url)
@@ -121,7 +121,7 @@ def step_page(step: str):
             flow.capture_hub(request)
             current = flow.current_step(request)
             if current != step:
-                return redirect(flow.step_url(current))
+                return redirect(flow.step_url(current, request))
             return fn(request, *a, **kw)
 
         return wrapper
@@ -247,7 +247,7 @@ def _phone_problem(digits: str) -> str | None:
 
 def entry(request):
     flow.capture_hub(request)
-    return redirect(flow.step_url(flow.current_step(request)))
+    return redirect(flow.step_url(flow.current_step(request), request))
 
 
 def csrf_failure(request, reason=""):
@@ -498,7 +498,7 @@ def email_submit(request):
         "web/partials/email_ok.html",
         {
             "already_yours": result.get("already_yours"),
-            "next_url": flow.step_url(flow.current_step(request)),
+            "next_url": flow.step_url(flow.current_step(request), request),
         },
     )
 
@@ -676,7 +676,7 @@ def document_photo(request, slot: str):
 def document_status(request):
     ctx = _doc_ctx(request)
     if ctx["me"]["status"] not in ("address", "documents"):
-        return _hx_redirect(flow.step_url(flow.current_step(request)))
+        return _hx_redirect(flow.step_url(flow.current_step(request), request))
     return render(request, "web/partials/document_panel.html", ctx)
 
 
@@ -859,7 +859,7 @@ def analysis_status(request):
         return _go_current(request)
     active = roles.active_roles(user)
     if "promoter" in active or "coordinator" in active:
-        return _hx_redirect(flow.step_url(flow.current_step(request)))
+        return _hx_redirect(flow.step_url(flow.current_step(request), request))
     return render(request, "web/partials/analysis_grid.html", _analysis_ctx(request))
 
 
@@ -924,7 +924,7 @@ def panel_page(request):
     uid = _uid(request)
     promoter = promoter_iface.get_by_user_external_id(uid)
     if promoter is None:
-        return redirect(flow.step_url(flow.current_step(request)))
+        return redirect(flow.step_url(flow.current_step(request), request))
     info = promoter_iface.to_dict(promoter)
     summary = promoter_iface.summary(promoter.user)
     leads = promoter_iface.list_leads(promoter.user)
@@ -963,6 +963,8 @@ def panel_page(request):
             "closing_dt": _closing_parts(summary["next_closing_at"]),
             "hub_label": _hub_label(promoter),
             "cycle_range": f"{_short_date(summary['week_start'])} – {_short_date(summary['week_end'])}",
+            "cycle_state": _cycle_state(promoter.user, summary),
+            "panel": True,
         },
     )
 
@@ -974,10 +976,23 @@ def panel_invite(request):
     promoter = promoter_iface.get_by_user_external_id(uid)
     if promoter is None:
         return _go_current(request)
+    phone = _digits(request.POST.get("phone"))
+    problem = _phone_problem(phone)
+    if problem:
+        return _feedback(
+            request,
+            tone="danger",
+            title="Confere o número do aluno?",
+            text=problem,
+            shake=True,
+        )
+    # Contrato A5.4/A7: iniciar matrícula pede SÓ o telefone. O CPF continua aceito (opcional)
+    # pra quem já tiver em mãos — o promotor raramente tem, e exigir travava a única ação de
+    # conversão do painel.
     result = promoter_iface.invite_lead(
         promoter=promoter,
-        phone=_digits(request.POST.get("phone")),
-        cpf=_digits(request.POST.get("cpf")),
+        phone=phone,
+        cpf=_digits(request.POST.get("cpf")) or None,
     )
     return render(request, "web/partials/invite_ok.html", {"result": result})
 
@@ -1075,3 +1090,38 @@ def _short_date(iso: str) -> str:
     except (TypeError, ValueError):
         return str(iso)
     return f"{dt.day} {_M[dt.month - 1]}"
+
+
+# estado REAL do ciclo pro chip do hero (protótipo A5.1: aberto · processando · pago). Antes o
+# chip era o literal "ciclo aberto" no template — mentia depois do fechamento de sexta, e mentir
+# sobre pagamento é o pior bug possível num painel de comissão.
+_CYCLE_LABEL = {
+    "open": ("ciclo aberto", "b-warn"),
+    "processing": ("enviando o Pix", "b-info"),
+    "paid": ("pago", "b-ok"),
+    "failed": ("falhou — o polo já foi avisado", "b-danger"),
+}
+
+
+def _cycle_state(user, summary: dict) -> dict:
+    """Lê a `PaymentRequest` da semana do promotor; sem ela, o ciclo está aberto."""
+    from finance.models import PaymentRequest
+
+    state = "open"
+    try:
+        pr = (
+            PaymentRequest.objects.filter(payee=user)
+            .order_by("-created_at")
+            .values_list("status", flat=True)
+            .first()
+        )
+        if pr == PaymentRequest.Status.PAID:
+            state = "paid"
+        elif pr == PaymentRequest.Status.FAILED:
+            state = "failed"
+        elif pr:
+            state = "processing"
+    except Exception:  # noqa: BLE001 — painel nunca cai por causa do chip
+        state = "open"
+    label, badge = _CYCLE_LABEL[state]
+    return {"state": state, "label": label, "badge": badge}
