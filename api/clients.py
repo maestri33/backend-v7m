@@ -180,9 +180,23 @@ class AddressProofSectionOut(Schema):
     exists: bool = False
     photo: str | None = None
     status: str | None = None  # pending|approved|rejected|review|needs_kinship
-    reason: str | None = None
+    reason: str | None = Field(
+        None,
+        description="Orientação PÚBLICA (o que fazer). O critério — titular X, endereço "
+        "divergente, justificativa rejeitada — fica interno (hub/staff).",
+    )
     needs_kinship: bool = False
+    kinship_kind: str | None = Field(
+        None,
+        description="Com needs_kinship: 'confirm' = sobrenome em comum, só confirmar o grau "
+        "de parentesco · 'justify' = titular sem relação aparente, justificar o vínculo.",
+    )
     kinship_relation: str | None = None
+    needs_new_proof: bool = Field(
+        False,
+        description="Coordenador rejeitou a justificativa: a tela trava no comprovante "
+        "pedindo outro documento (de preferência no nome do aluno) até novo upload.",
+    )
 
 
 class StudentPlatformOut(Schema):

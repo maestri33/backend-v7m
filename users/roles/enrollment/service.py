@@ -413,7 +413,10 @@ def upload_address_proof(*, user_external_id: str, upload) -> dict:
     ap = documents_iface.get_address_proof(user_external_id)
     if ap is not None:
         ap.validation_status = "pending"
-        ap.save(update_fields=["validation_status"])
+        # Novo upload = veredito e flags do ANTERIOR não valem mais (inclusive
+        # `needs_new_proof`, que destrava a tela — Victor 2026-07-28).
+        ap.validation_result = {}
+        ap.save(update_fields=["validation_status", "validation_result"])
     from django_q.tasks import async_task
 
     async_task("users.roles.enrollment.tasks.validate_address_proof", enr.id)
@@ -429,6 +432,27 @@ def submit_address_proof_kinship(*, user_external_id: str, relation: str) -> dic
     _address_proof.submit_kinship(user_external_id, relation)
     _advance_address(enr, user_external_id)
     return me_dict(enr)
+
+
+def decide_address_proof_kinship(
+    *, enrollment_external_id: str, coordinator, approve: bool, reason: str | None
+) -> dict:
+    """Coordenador decide a JUSTIFICATIVA de titularidade do comprovante (Victor 2026-07-28).
+
+    Rejeitou → `needs_new_proof`: a tela do aluno trava no comprovante pedindo outro documento
+    (de preferência no nome dele) até um novo upload. O motivo fica interno."""
+    from users.roles import _address_proof
+
+    enr = _enrollment_for_coordinator(enrollment_external_id, coordinator)
+    status = _address_proof.decide_kinship(
+        str(enr.user.external_id), approve=approve, reason=reason
+    )
+    if approve:
+        _advance_address(enr, str(enr.user.external_id))
+        _notify_resolution(enr, "enrollment.address_proof.approved")
+    else:
+        _notify_resolution(enr, "enrollment.address_proof.new_proof_needed")
+    return {"external_id": enrollment_external_id, "status": status}
 
 
 def run_address_proof_validation(enrollment_id: int) -> None:
@@ -570,7 +594,7 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         # next_slot: qual foto o front deve pedir AGORA (sequencial: frente→verso)
         "next_slot": _next_slot_rg(rg),
         # photos por slot individual (front precisa saber o status de cada foto)
-        # Por slot, o cliente recebe SÓ o status ��� o reason de cada foto é o critério cru da
+        # Por slot, o cliente recebe SÓ o status — o `reason` de cada foto é o critério cru da
         # visão ("mostra os dois lados", "lado trocado") e vaza a régua do mesmo jeito que o
         # motivo da seção (achado do E2E real 2026-07-28: a UI não mostrava, mas a API entregava).
         "photos": {
