@@ -17,6 +17,7 @@ Including another URLconf
 
 from django.http import JsonResponse
 from django.urls import include, path, re_path
+from django.views.generic.base import RedirectView
 from django.contrib import admin
 
 from core.media_views import media_serve
@@ -35,6 +36,10 @@ from users.roles.lead.views import checkout_redirect
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Funil WEB do candidato/promotor (HTMX, server-rendered, sessão Django) — o app "no link do
+    # backend" enquanto o app.v7m.org (Next) fica inutilizado (Victor 2026-07-28). Raiz redireciona.
+    path("app/", include("web.urls")),
+    path("", RedirectView.as_view(url="/app/", query_string=True)),
     # link curto do checkout: /lead/checkout/<token> → 302 pro checkout do gateway (manda por WhatsApp).
     path("lead/checkout/<str:token>", checkout_redirect),
     # Webhooks PÚBLICOS dos gateways (chamados de fora por asaas.prod/infinitepay.prod). É a ÚNICA

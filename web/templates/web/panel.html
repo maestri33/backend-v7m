@@ -1,0 +1,88 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Painel do promotor{% endblock %}
+{% block body %}
+<main class="panel-wrap" style="flex:1">
+  <div style="display:flex;align-items:center;gap:12px;margin:6px 0 16px;color:var(--sc-fg)">
+    <div style="width:42px;height:42px;border-radius:50%;background:var(--sc-acc);display:flex;align-items:center;justify-content:center;font-weight:600;border:1px solid var(--sc-border)">{{ first_name|slice:":1" }}</div>
+    <div style="flex:1">
+      <div class="sc-mut" style="font-size:12px">Bem-vindo,</div>
+      <div style="font-weight:600;font-size:16px">{{ first_name }}</div>
+    </div>
+    {% if info.pre_matriculado %}<span class="badge b-info">Pré-matriculado</span>{% endif %}
+    <a class="pill pill-red" href="{% url 'web:logout' %}">Sair</a>
+  </div>
+
+  <div class="sc-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h2 class="sc-title" style="margin:0">Próximo depósito</h2>
+      <span class="badge b-warn">ciclo aberto</span>
+    </div>
+    {% if summary.week_paid_leads > 0 %}
+      <div class="tnum" style="font-size:30px;font-weight:600;margin:10px 0 2px">{{ week_total }}</div>
+      <div class="sc-mut" style="font-size:13px">{{ summary.week_paid_leads }} matrícula{{ summary.week_paid_leads|pluralize }} paga{{ summary.week_paid_leads|pluralize }} nesta semana · R$ 100 cada</div>
+    {% else %}
+      <div style="font-size:15px;font-weight:500;margin:12px 0 2px">🎯 Semana começando</div>
+      <div class="sc-mut" style="font-size:13px">A primeira matrícula desta semana já garante <b class="tnum" style="color:var(--sc-fg)">R$ 100,00</b> no fechamento.</div>
+      {% if lifetime_total != "R$ 0,00" %}<div class="sc-item"><span class="sc-mut">Já recebido no total</span><b class="tnum">{{ lifetime_total }}</b></div>{% endif %}
+    {% endif %}
+    <div class="prog"><i style="width:{{ summary.week_paid_leads|default:0 }}0%"></i></div>
+    <div class="sc-mut" style="font-size:12px">Fecha {{ closing_label }} · Pix automático na sua chave</div>
+  </div>
+
+  <div class="sc-card">
+    <h2 class="sc-title" style="text-align:center">Meta da semana</h2>
+    <div class="stars">{% for on in goal_stars %}<span class="star {% if on %}on{% endif %}">{% if on %}⭐{% else %}☆{% endif %}</span>{% endfor %}</div>
+    {% if summary.goal_reached %}
+      <div style="text-align:center;font-size:13px;color:#86efac">Meta batida! + {{ bonus }} de bônus no fechamento 🎉</div>
+    {% else %}
+      <div class="sc-mut" style="text-align:center;font-size:13px">Faltam <b style="color:var(--sc-fg)">{{ missing_for_goal }}</b> pro bônus de {{ bonus }}</div>
+    {% endif %}
+  </div>
+
+  <div class="sc-card">
+    <h2 class="sc-title">Convide pelo seu link</h2>
+    <p class="sc-mut" style="font-size:13px;margin:0 0 10px">Quem entrar por este link já fica vinculado a você — comissão de R$ 100 por matrícula paga.</p>
+    <div class="sc-item" style="overflow:hidden"><span class="tnum" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">{{ info.ref_url }}</span></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="sc-btn" onclick="copyText('{{ info.ref_url }}',this)">Copiar o link</button>
+      <a class="sc-btn" style="text-decoration:none;background:#25d366;color:#08260f" href="https://wa.me/?text={{ share_text }}" target="_blank" rel="noopener">WhatsApp</a>
+    </div>
+  </div>
+
+  <div class="sc-card">
+    <h2 class="sc-title">Iniciar matrícula</h2>
+    <p class="sc-mut" style="font-size:13px;margin:0 0 10px">Só o telefone e o CPF do aluno. Ele recebe o link da matrícula já vinculado a você.</p>
+    <div id="invite-zone">
+      <form hx-post="{% url 'web:panel_invite' %}" hx-target="#invite-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-inv">
+        <input class="sc-input tnum" name="phone" type="tel" inputmode="numeric" placeholder="WhatsApp do aluno — (11) 91234-5678" required style="margin-bottom:8px">
+        <input class="sc-input tnum" name="cpf" type="text" inputmode="numeric" placeholder="CPF do aluno" required style="margin-bottom:8px">
+        <div id="fb-zone"></div>
+        <button id="btn-inv" class="sc-btn" type="submit">Enviar link da matrícula</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="sc-card">
+    <h2 class="sc-title">Seus alunos indicados</h2>
+    {% for l in leads %}
+      <div class="sc-item">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--sc-acc);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0">{% if l.name %}{{ l.name|slice:":1" }}{% else %}?{% endif %}</div>
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{% if l.name %}{{ l.name }}{% else %}{{ l.phone|default:"Sem identificação" }}{% endif %}</div>
+            {% if l.name and l.phone %}<div class="sc-mut tnum" style="font-size:11.5px">{{ l.phone }}</div>{% endif %}
+          </div>
+        </div>
+        {% if l.status == 'paid' or l.status == 'done' %}<span class="badge b-ok">Pago · +R$ 100</span>
+        {% elif l.status == 'enrolled' or l.status == 'enrollment' %}<span class="badge b-info">Matriculado</span>
+        {% else %}<span class="badge b-dim">Indicado</span>{% endif %}
+      </div>
+    {% empty %}
+      <div class="sc-item" style="justify-content:center;flex-direction:column;gap:4px;padding:18px">
+        <span style="font-size:22px">🌱</span>
+        <span class="sc-mut" style="font-size:13px;text-align:center">Seus primeiros indicados aparecem aqui.<br>Compartilhe seu link pra começar!</span>
+      </div>
+    {% endfor %}
+  </div>
+</main>
+{% endblock %}

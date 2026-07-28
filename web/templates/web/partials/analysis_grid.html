@@ -1,0 +1,20 @@
+{% with d=doc_status p=proof.status s=selfie.analysis_status|default:selfie.status %}
+<div class="frame" style="margin-top:4px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="small">📄 Documento</span>
+      {% if d == 'approved' %}<span class="badge b-ok">Aprovado ✓</span>{% elif d == 'rejected' %}<span class="badge b-danger">Reenviar</span>{% elif d == 'review' %}<span class="badge b-info">Análise do polo</span>{% else %}<span class="badge b-warn">Analisando…</span>{% endif %}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="small">🏠 Comprovante de endereço</span>
+      {% if p == 'approved' %}<span class="badge b-ok">Aprovado ✓</span>{% elif p == 'rejected' %}<span class="badge b-danger">Reenviar</span>{% elif p == 'needs_kinship' %}<span class="badge b-info">Falta o parentesco</span>{% elif p == 'review' %}<span class="badge b-info">Análise do polo</span>{% elif proof.exists %}<span class="badge b-warn">Analisando…</span>{% else %}<span class="badge b-danger">Faltou enviar</span>{% endif %}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="small">🤳 Selfie (assinatura)</span>
+      {% if s == 'approved' %}<span class="badge b-ok">Aprovada ✓</span>{% elif s == 'rejected' %}<span class="badge b-danger">Tirar outra</span>{% elif s == 'review' %}<span class="badge b-info">Análise do polo</span>{% else %}<span class="badge b-warn">Analisando…</span>{% endif %}</div>
+  </div>
+</div>
+{% if s == 'rejected' %}<a class="btn btn-ghost" style="text-decoration:none;margin-top:8px" href="/app/cadastro/selfie">Tirar outra selfie</a>{% endif %}
+{% if p == 'rejected' or not proof.exists %}
+<form hx-post="/app/cadastro/endereco/comprovante" hx-encoding="multipart/form-data" hx-target="#an-zone" hx-swap="innerHTML" style="margin-top:8px">
+  <label class="up"><span style="font-size:24px">🧾</span><b>{% if p == 'rejected' %}Reenviar comprovante{% else %}Enviar comprovante de endereço{% endif %}</b><small>Conta de luz, água ou internet dos últimos 3 meses</small>
+    <input type="file" name="file" accept="image/*,application/pdf" class="js-upfile" onchange="htmx.trigger(this.closest('form'),'submit')"></label>
+</form>
+{% endif %}
+{% for b in blocks %}<div class="alert alert-warn" style="margin-top:8px"><span>📌</span><div><b>{{ b.title }}</b>{{ b.description }}</div></div>{% endfor %}
+{% endwith %}

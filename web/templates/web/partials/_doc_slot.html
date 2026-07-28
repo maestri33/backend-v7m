@@ -1,0 +1,9 @@
+<form hx-post="/app/cadastro/documento/foto/{{ s.slot }}" hx-encoding="multipart/form-data" hx-target="#doc-zone" hx-swap="innerHTML" style="margin-bottom:10px">
+  <label class="up {% if s.status == 'approved' %}has{% endif %}" {% if s.is_next %}style="border-color:var(--gold)"{% endif %}>
+    <span style="font-size:24px">📷</span>
+    <b>{{ s.label }}{% if s.status == 'approved' %} ✓{% endif %}</b>
+    <small>{% if s.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ s.reason|default:"Ficou ilegível — tira outra?" }}</span>{% else %}{{ s.hint }} · tire a foto ou envie o arquivo{% endif %}</small>
+    <span class="js-upstate small mut"></span>
+    <input type="file" name="file" accept="image/*,application/pdf" capture="environment" class="js-upfile">
+  </label>
+</form>

@@ -1,0 +1,52 @@
+{% if not section.doc_type %}
+<div class="chips" style="margin-bottom:14px">
+  <button type="button" class="chip js-docpick" data-doc="rg">🪪 RG</button>
+  <button type="button" class="chip js-docpick" data-doc="cnh">🚗 CNH</button>
+</div>
+<div id="slots-rg" class="js-docslots" style="display:none">
+  {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+</div>
+<div id="slots-cnh" class="js-docslots" style="display:none">
+  {% for s in cnh_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+</div>
+{% else %}
+  {% if analyzing %}
+  <div hx-get="/app/cadastro/documento/status" hx-trigger="every 2.5s" hx-target="#doc-zone" hx-swap="innerHTML">
+    <div class="scan"><div class="line"></div>
+      <div class="center" style="padding:8px 0">
+        <span class="spin vspin"></span>
+        <b>Lendo seu documento…</b>
+        <span class="small mut">A IA confere a foto e extrai os dados sozinha. Leva menos de um minuto.</span>
+      </div>
+    </div>
+    {% if section.doc_type == 'rg' %}{% for s in rg_slots %}{% if s.status %}<div class="small mut" style="text-align:center">{{ s.label }}: {% if s.status == 'approved' %}<span class="gold">lida ✓</span>{% elif s.status == 'rejected' %}<span style="color:var(--danger-soft)">refazer</span>{% else %}analisando…{% endif %}</div>{% endif %}{% endfor %}{% endif %}
+  </div>
+  {% else %}
+    {% if section.analysis_status == 'rejected' or section.validation_status == 'rejected' %}
+      <div class="alert alert-danger"><span>📄</span><div><b>A foto não passou</b>{{ section.analysis_reason|default:section.validation_reason|default:"A foto do documento ficou ilegível. Evite reflexos e enquadre o documento inteiro." }}</div></div>
+    {% endif %}
+    {% if section.doc_type == 'rg' %}
+      {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+    {% else %}
+      {% for s in cnh_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+    {% endif %}
+    {% if has_photo and missing %}
+      <div class="frame" style="border-color:rgba(217,177,90,0.4)">
+        <b class="gold" style="font-size:13.5px">Só confirma esses dados</b>
+        <p class="small mut" style="margin:4px 0 0">A leitura automática não pegou tudo — completa pra gente?</p>
+        <form hx-post="/app/cadastro/documento/campos" hx-target="#doc-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-doc">
+          {% for f in missing %}
+            <label class="lb" for="f-{{ f.name }}">{{ f.label }}</label>
+            <input id="f-{{ f.name }}" class="field" name="{{ f.name }}" type="{{ f.type }}" {% if f.name == 'number' %}required{% endif %}>
+          {% endfor %}
+          <div id="fb-zone"></div>
+          <button id="btn-doc" class="btn btn-gold" style="margin-top:12px" type="submit"><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Confirmar dados →</button>
+        </form>
+      </div>
+    {% elif has_photo and not missing %}
+      <div class="center" style="padding:8px 0" hx-get="/app/cadastro/documento/status" hx-trigger="every 3s" hx-target="#doc-zone" hx-swap="innerHTML">
+        <span class="spin vspin"></span><span class="small mut">Finalizando a leitura…</span>
+      </div>
+    {% endif %}
+  {% endif %}
+{% endif %}

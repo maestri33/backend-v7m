@@ -1,0 +1,30 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Código de acesso{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop">
+    <div class="card-chip">Confirma que é você?</div>
+    <h1 class="h1">Enviamos um código<br>no WhatsApp</h1>
+    <p class="sub">Mandei um código pro WhatsApp <b style="color:var(--paper)">{{ phone_masked }}</b>.<br>É só digitar ele aqui embaixo.</p>
+    <p class="small gold" style="text-align:center;margin:0 0 6px">🤫 Psiu… o código secreto já tá voando pro seu WhatsApp!</p>
+    <form id="otp-form" hx-post="{% url 'web:otp_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#otp">
+      <div class="frame">
+        <label class="lb" for="otp">Seu código</label>
+        <input id="otp" name="otp" class="field field-big" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required autofocus>
+      </div>
+      <div id="fb-zone"></div>
+    </form>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <a class="pill pill-red" href="{% url 'web:logout' %}">← Trocar número</a>
+      <button id="resend" class="pill pill-red" hx-post="{% url 'web:otp_resend' %}" hx-target="#fb-zone" hx-swap="innerHTML" disabled>Reenviar em {{ cooldown }}s</button>
+    </div>
+  </section>
+</main>
+{% endblock %}
+{% block js %}<script>
+const o=document.getElementById('otp');
+o.addEventListener('input',()=>{o.value=digits(o.value).slice(0,6);
+ if(o.value.length===6){document.getElementById('fb-zone').innerHTML='<div class="center" style="padding:8px 0"><span class="spin vspin"></span><span class="small mut">Conferindo seu código…</span></div>';htmx.trigger('#otp-form','submit')}});
+cooldown(document.getElementById('resend'),{{ cooldown }});
+document.addEventListener('htmx:afterSwap',e=>{if(e.target.id==='fb-zone'&&e.target.querySelector('.js-restart-cd')){cooldown(document.getElementById('resend'),30)}});
+</script>{% endblock %}

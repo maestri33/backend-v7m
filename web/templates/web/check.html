@@ -1,0 +1,29 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Seu WhatsApp{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop">
+    <div class="card-chip">Bem-vindo, Promotor!</div>
+    {% if hub %}<div style="text-align:center;margin-bottom:8px"><span class="badge b-gold">✦ Indicação de polo ativa</span></div>{% endif %}
+    <h1 class="h1">Qual é o seu WhatsApp?</h1>
+    <p class="sub">A gente confirma seu número por lá — o código de acesso chega direto no seu WhatsApp.</p>
+    <form hx-post="{% url 'web:check_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-check">
+      <div class="frame">
+        <label class="lb" for="phone">Seu WhatsApp</label>
+        <div class="phone-wrap">
+          <span class="flag">🇧🇷</span><span class="ddi">+55</span>
+          <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="(11) 91234-5678" required autofocus>
+        </div>
+      </div>
+      <div id="fb-zone"></div>
+      <button id="btn-check" class="btn btn-gold" type="submit" disabled>
+        <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Continuar →
+      </button>
+    </form>
+  </section>
+</main>
+{% endblock %}
+{% block js %}<script>
+const p=document.getElementById('phone'),b=document.getElementById('btn-check');
+p.addEventListener('input',()=>{p.value=maskPhone(p.value);b.disabled=digits(p.value).length<10});
+</script>{% endblock %}

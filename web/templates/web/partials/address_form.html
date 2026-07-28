@@ -1,0 +1,34 @@
+{% with a=me.address ap=me.address_proof %}
+<div class="vfade">
+  <div class="frame">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <b class="gold" style="font-size:13px">CEP {{ a.zipcode|default:a.cep }}</b>
+      {% if saved %}<span class="badge b-ok">Salvo ✓</span>{% endif %}
+    </div>
+    {% if a.street %}<div class="small" style="color:var(--silver);line-height:1.6">{{ a.street }}{% if a.neighborhood %} · {{ a.neighborhood }}{% endif %}<br>{{ a.city }}/{{ a.state }}</div>{% endif %}
+  </div>
+  <form hx-post="/app/cadastro/endereco/dados" hx-target="#addr-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-addr">
+    {% if 'street' in a.missing_fields %}<label class="lb">Rua</label><input class="field" name="street" value="{{ a.street|default:'' }}" required>{% endif %}
+    {% if 'neighborhood' in a.missing_fields %}<label class="lb">Bairro</label><input class="field" name="neighborhood" value="{{ a.neighborhood|default:'' }}" required>{% endif %}
+    {% if 'city' in a.missing_fields %}<label class="lb">Cidade</label><input class="field" name="city" value="{{ a.city|default:'' }}" required>{% endif %}
+    {% if 'state' in a.missing_fields %}<label class="lb">UF</label><input class="field" name="state" maxlength="2" value="{{ a.state|default:'' }}" required>{% endif %}
+    <div style="display:flex;gap:10px">
+      <div style="flex:1"><label class="lb" for="number">Número</label><input id="number" class="field" name="number" inputmode="numeric" value="{{ a.number|default:'' }}" placeholder="123" {% if 'number' in a.missing_fields %}autofocus{% endif %} required></div>
+      <div style="flex:1.4"><label class="lb" for="complement">Complemento <span class="mut">(opcional)</span></label><input id="complement" class="field" name="complement" value="{{ a.complement|default:'' }}" placeholder="Apto, bloco…"></div>
+    </div>
+    <div id="fb-zone"></div>
+    <button id="btn-addr" class="btn btn-ghost" style="margin-top:12px" type="submit">Salvar endereço</button>
+  </form>
+  <form hx-post="/app/cadastro/endereco/comprovante" hx-encoding="multipart/form-data" hx-target="#addr-zone" hx-swap="innerHTML" style="margin-top:12px">
+    <label class="up {% if ap.exists %}has{% endif %}">
+      <span style="font-size:24px">🧾</span>
+      <b>{% if ap.exists %}Comprovante enviado ✓{% else %}Comprovante de residência{% endif %}</b>
+      <small>{% if ap.exists %}{% if ap.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ ap.reason|default:"Reprovado — envie outro mais recente." }}</span>{% else %}Toque pra trocar o arquivo{% endif %}{% else %}Conta de luz, água ou internet dos últimos 3 meses — foto ou PDF{% endif %}</small>
+      <input type="file" name="file" accept="image/*,application/pdf" class="js-upfile" onchange="htmx.trigger(this.closest('form'),'submit')">
+    </label>
+  </form>
+  {% if not a.missing_fields and ap.exists %}
+    <a class="btn btn-gold" style="text-decoration:none;margin-top:14px" href="/app/cadastro/documento">Continuar →</a>
+  {% endif %}
+</div>
+{% endwith %}

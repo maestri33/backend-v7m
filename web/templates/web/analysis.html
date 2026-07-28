@@ -1,0 +1,15 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Cadastro em análise{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop">
+    <div class="card-chip">Cadastro enviado 🎉</div>
+    <h1 class="h1">Finalizando seu cadastro…</h1>
+    <p class="sub">Nossas verificações rodam sozinhas — normalmente leva poucos minutos. Pode deixar essa tela aberta ou voltar depois: <b style="color:var(--gold-soft)">te avisamos no WhatsApp</b>.</p>
+    <div id="an-zone" hx-get="{% url 'web:analysis_status' %}" hx-trigger="every 4s" hx-swap="innerHTML">
+      {% include "web/partials/analysis_grid.html" %}
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:14px"><a class="pill pill-red" href="{% url 'web:logout' %}">Sair</a></div>
+  </section>
+</main>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Seu e-mail{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop">
+    <div class="card-chip">Quase lá</div>
+    <h1 class="h1">📧 Qual é seu melhor e-mail?</h1>
+    <p class="sub">É por ele que chegam as confirmações importantes do seu cadastro.</p>
+    <form hx-post="{% url 'web:email_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-email">
+      <div class="frame">
+        <label class="lb" for="email">Seu e-mail</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <input id="email" name="email" class="field" type="email" autocomplete="email" placeholder="voce@exemplo.com" required autofocus>
+          <span id="email-dot" style="width:12px;height:12px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .2s"></span>
+        </div>
+        <div id="email-sug" class="small" style="margin-top:8px"></div>
+      </div>
+      <div id="fb-zone"></div>
+      <button id="btn-email" class="btn btn-gold" type="submit" disabled>
+        <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Confirmar e-mail →
+      </button>
+    </form>
+  </section>
+</main>
+{% endblock %}
+{% block js %}<script>
+const em=document.getElementById('email'),dot=document.getElementById('email-dot'),sug=document.getElementById('email-sug'),be=document.getElementById('btn-email');
+const TYPOS={'gmial.com':'gmail.com','gamil.com':'gmail.com','gmali.com':'gmail.com','hotmial.com':'hotmail.com','outlok.com':'outlook.com','yaho.com':'yahoo.com'};
+em.addEventListener('input',()=>{const v=em.value.trim();const ok=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+ dot.style.background=v?(ok?'var(--ok-soft)':'var(--warn-soft)'):'var(--muted)';be.disabled=!ok;sug.innerHTML='';
+ const dom=(v.split('@')[1]||'').toLowerCase();
+ if(TYPOS[dom]){const fix=v.split('@')[0]+'@'+TYPOS[dom];sug.innerHTML='Você quis dizer <a href="#" class="gold" onclick="document.getElementById(\'email\').value=\''+fix+'\';document.getElementById(\'email\').dispatchEvent(new Event(\'input\'));return false"><b>'+fix+'</b></a>?'}
+ else if(/mailinator|10minutemail|yopmail|tempmail/.test(dom)){sug.innerHTML='<span class="mut">E-mail temporário? Melhor um que você realmente usa 😉</span>'}});
+</script>{% endblock %}

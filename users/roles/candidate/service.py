@@ -83,12 +83,59 @@ def create_candidate(*, cpf: str, phone: str, email: str, hub=None) -> dict:
     }
 
 
+def _ensure_candidate_inner(user, hub) -> None:
+    """Regra compartilhada (join/web): garante role `candidate` + linha `Candidate` pro user.
+
+    O CHAMADOR já provou posse (OTP no `join_candidate`; sessão web autenticada no
+    `ensure_candidate`) e já segura a transação/lock. Preserva roles existentes."""
+    active = roles.active_roles(user)
+
+    if not any(role in active for role in _COLLABORATOR_ROLES):
+        profile = profiles.get(user)
+        required = {
+            "cpf": getattr(profile, "cpf", None),
+            "email": getattr(profile, "email", None),
+            "name": getattr(profile, "name", None),
+            "birth_date": getattr(profile, "birth_date", None),
+        }
+        missing_fields = [name for name, value in required.items() if not value]
+        if missing_fields:
+            raise CandidateError(
+                "Seu cadastro anterior precisa ser completado antes de entrar no programa de promotores.",
+                code="JOIN_PROFILE_INCOMPLETE",
+                extra={"missing_fields": missing_fields},
+            )
+
+        hub_obj, ref_reason = _resolve_capture_hub(hub)
+        candidate = Candidate.objects.filter(user=user).first()
+        if candidate is None:
+            candidate = Candidate.objects.create(
+                user=user, hub=hub_obj, status=_S.STARTED
+            )
+        roles.assign(user, "candidate")
+        logger.info(
+            "candidate.joined_existing_user",
+            external_id=str(candidate.external_id),
+            hub=str(hub_obj.external_id),
+            ref_reason=ref_reason,
+            previous_roles=active,
+        )
+    elif "candidate" in active and not Candidate.objects.filter(user=user).exists():
+        hub_obj, ref_reason = _resolve_capture_hub(hub)
+        candidate = Candidate.objects.create(user=user, hub=hub_obj, status=_S.STARTED)
+        logger.warning(
+            "candidate.repaired_missing_row",
+            external_id=str(candidate.external_id),
+            hub=str(hub_obj.external_id),
+            ref_reason=ref_reason,
+        )
+
+
 def join_candidate(*, user_external_id: str, otp: str, hub=None) -> dict:
     """Adere uma identidade existente ao funil do colaborador após provar posse via OTP.
 
-    Preserva as roles atuais (por exemplo, `lead`/`enrollment`) e cria `candidate` + `Candidate`
-    atomicamente. Clientes desatualizados que chamarem esta rota já dentro do funil recebem uma
-    sessão normal. O OTP só é consumido se toda a transação puder ser concluída.
+    Preserva os papéis já usados no Supletivo e só cria `candidate` depois da prova de posse do
+    WhatsApp.
     """
     user = User.objects.filter(external_id=user_external_id).first()
     if user is None:
@@ -97,51 +144,20 @@ def join_candidate(*, user_external_id: str, otp: str, hub=None) -> dict:
     with transaction.atomic():
         user = User.objects.select_for_update().get(pk=user.pk)
         auth_iface.verify_otp_for_user(user=user, otp=otp)
-        active = roles.active_roles(user)
-
-        if not any(role in active for role in _COLLABORATOR_ROLES):
-            profile = profiles.get(user)
-            required = {
-                "cpf": getattr(profile, "cpf", None),
-                "email": getattr(profile, "email", None),
-                "name": getattr(profile, "name", None),
-                "birth_date": getattr(profile, "birth_date", None),
-            }
-            missing_fields = [name for name, value in required.items() if not value]
-            if missing_fields:
-                raise CandidateError(
-                    "Seu cadastro anterior precisa ser completado antes de entrar no programa de promotores.",
-                    code="JOIN_PROFILE_INCOMPLETE",
-                    extra={"missing_fields": missing_fields},
-                )
-
-            hub_obj, ref_reason = _resolve_capture_hub(hub)
-            candidate = Candidate.objects.filter(user=user).first()
-            if candidate is None:
-                candidate = Candidate.objects.create(
-                    user=user, hub=hub_obj, status=_S.STARTED
-                )
-            roles.assign(user, "candidate")
-            logger.info(
-                "candidate.joined_existing_user",
-                external_id=str(candidate.external_id),
-                hub=str(hub_obj.external_id),
-                ref_reason=ref_reason,
-                previous_roles=active,
-            )
-        elif "candidate" in active and not Candidate.objects.filter(user=user).exists():
-            hub_obj, ref_reason = _resolve_capture_hub(hub)
-            candidate = Candidate.objects.create(
-                user=user, hub=hub_obj, status=_S.STARTED
-            )
-            logger.warning(
-                "candidate.repaired_missing_row",
-                external_id=str(candidate.external_id),
-                hub=str(hub_obj.external_id),
-                ref_reason=ref_reason,
-            )
-
+        _ensure_candidate_inner(user, hub)
         return auth_iface.issue_tokens_for_user(user)
+
+
+def ensure_candidate(*, user_external_id: str, hub=None) -> None:
+    """Funil WEB (sessão Django server-side, posse já provada no login por OTP): garante a role
+    `candidate` + a linha `Candidate` sem consumir OTP — mesma regra do `join_candidate`.
+    Idempotente; `JOIN_PROFILE_INCOMPLETE` se o perfil de outro funil ainda não tem identidade."""
+    user = User.objects.filter(external_id=user_external_id).first()
+    if user is None:
+        raise NotFound("Usuário não encontrado.", code="USER_NOT_FOUND")
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(pk=user.pk)
+        _ensure_candidate_inner(user, hub)
 
 
 def get_for_user_external_id(user_external_id: str) -> Candidate | None:
