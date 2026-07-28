@@ -543,7 +543,17 @@ class RgSectionOut(Schema):
         description="pending (analisando) | approved | rejected (refazer — motivo em "
         "analysis_reason) | review (coordenador vai decidir)",
     )
-    analysis_reason: str | None = None  # o PORQUÊ (a IA sempre justifica)
+    analysis_reason: str | None = Field(
+        None,
+        description="Orientação PÚBLICA (o que fazer agora). O motivo técnico da IA — lado "
+        "trocado, nome divergente, suspeita de adulteração — NÃO sai daqui: fica no "
+        "validation_result e só o hub/staff lê.",
+    )
+    blocked: bool = Field(
+        False,
+        description="Reprovado: o aluno é levado direto pro RG ao entrar e só sai quando "
+        "reenviar. Cai no reenvio e volta a subir se a IA reprovar de novo.",
+    )
     validation_status: AnalysisStatus | None = Field(
         None, description="[DEPRECATED — use analysis_status] alias de compat"
     )

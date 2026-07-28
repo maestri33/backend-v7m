@@ -501,6 +501,25 @@ def _next_slot_rg(rg) -> str | None:
     return "rg_front"
 
 
+def _public_rg_reason(status: str | None) -> str | None:
+    """O que o ALUNO lê. O motivo real (lado trocado, nome divergente, rasura suspeita) fica no
+    `validation_result` e só o hub/staff enxerga — regra do Victor (2026-07-28).
+
+    Dois motivos: expor o critério ensina a burlar, e "o nome não confere com o cadastro" na tela
+    de quem está tentando se matricular é acusação sem contraditório. O aluno recebe o que
+    consegue AGIR: mandar de novo, direito. O porquê fica com quem decide."""
+    from users.roles import _document_ai as doc_ai
+
+    if status == doc_ai.REJECTED:
+        return (
+            "Não deu pra validar esse documento. Manda de novo: foto nítida, sem reflexo, "
+            "com as quatro bordas aparecendo e o documento preenchendo a tela."
+        )
+    if status == doc_ai.REVIEW:
+        return "Seu documento foi pra conferência da coordenação — a gente te avisa assim que sair."
+    return None
+
+
 def _rg_section_dict(enr: Enrollment) -> dict:
     user_ext = str(enr.user.external_id)
     rg = documents_iface.get_rg(user_ext)
@@ -531,9 +550,20 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         "full_photo": rg.full_photo if rg else None,
         # canônico unificado (proposta #4) + alias `validation_*` (compat) até o front migrar.
         "analysis_status": rg.validation_status if has_photo else None,
-        "analysis_reason": result.get("reason"),
+        # PÚBLICO: orientação, nunca o critério (ver `_public_rg_reason`). O motivo real segue
+        # em `validation_result["reason"]`, que só o hub/staff lê (api/leadership.py monta o RG
+        # do coordenador por outro caminho — `documents_iface.get_by_external_id`).
+        "analysis_reason": _public_rg_reason(
+            rg.validation_status if has_photo else None
+        ),
         "validation_status": rg.validation_status if has_photo else None,
-        "validation_reason": result.get("reason"),
+        "validation_reason": _public_rg_reason(
+            rg.validation_status if has_photo else None
+        ),
+        # Flag da regra do Victor: reprovado = o aluno volta pro RG assim que entrar, e só sai
+        # de lá quando mandar de novo (o upload re-arma `pending` e derruba a flag; se a IA
+        # reprovar outra vez, ela sobe de novo).
+        "blocked": (rg.validation_status if has_photo else None) == "rejected",
         "missing_fields": [
             k for k in (*_RG_DOC_FIELDS, *_RG_PROFILE_FIELDS) if not fields[k]
         ],
