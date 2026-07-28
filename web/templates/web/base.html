@@ -1,14 +1,14 @@
-{% load static %}<!doctype html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}V7M · Promotor{% endblock %}</title>
-<link rel="icon" href="{% static 'web/logo.svg' %}" type="image/svg+xml">
+<link rel="icon" href="{% url 'web:asset' 'logo.svg' %}" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="{% static 'web/htmx.min.js' %}" defer></script>
+<script src="{% url 'web:asset' 'htmx.min.js' %}" defer></script>
 <style>
 :root{
   --black:#0b0b0c;--char:#141416;--char2:#1d1d20;--paper:#ffffff;--paper-soft:#f5f4f1;
@@ -161,7 +161,7 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 <header class="hd">
   <div class="hd-in">
     <div class="hd-brand">
-      <img src="{% static 'web/logo.svg' %}" alt="V7M">
+      <img src="{% url 'web:asset' 'logo.svg' %}" alt="V7M">
       <span class="hd-dot">·</span><span class="hd-role">Promotor</span>
     </div>
     {% if first_name %}<span class="hd-role">Olá, <b style="color:var(--paper)">{{ first_name }}</b></span>{% endif %}
