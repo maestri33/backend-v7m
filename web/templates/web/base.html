@@ -182,7 +182,7 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 {% block head %}{% endblock %}
 </head>
 <body {% if panel %}class="panel-body"{% endif %} hx-headers='{"X-CSRFToken":"{{ csrf_token }}"}'>
-<header class="hd">
+{% if not panel %}<header class="hd">
   <div class="hd-in">
     <div class="hd-brand">
       <img src="{% url 'web:asset' 'logo.svg' %}" alt="V7M">
@@ -190,9 +190,9 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
     </div>
     {% if first_name %}<span class="hd-role">Olá, <b style="color:var(--paper)">{{ first_name }}</b></span>{% endif %}
   </div>
-</header>
+</header>{% endif %}
 {% block body %}{% endblock %}
-<footer class="ft">
+{% if not panel %}<footer class="ft">
   <small>
     <b style="color:var(--silver)">V7M</b> · CNPJ 48.811.016/0001-00 ·
     <a href="https://wa.me/5511920062177" target="_blank" rel="noopener" style="text-decoration:underline">WhatsApp (11) 92006-2177</a><br>
@@ -200,7 +200,7 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
     <a href="https://v7m.org/privacidade" target="_blank" rel="noopener">Privacidade</a>
     · Dados tratados conforme a LGPD · © 2026
   </small>
-</footer>
+</footer>{% endif %}
 <script>
 function digits(v){return (v||'').replace(/\D+/g,'')}
 function maskPhone(v){const d=digits(v).slice(0,11);if(d.length<=2)return d;const r=d.slice(2);const cut=r.length>8?5:4;return '('+d.slice(0,2)+') '+(r.length>4?r.slice(0,cut)+'-'+r.slice(cut):r)}

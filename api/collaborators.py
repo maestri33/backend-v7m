@@ -379,7 +379,8 @@ class PromoterLeadOut(Schema):
 
 class PromoterLeadInviteIn(Schema):
     phone: str
-    cpf: str
+    # opcional (Victor 2026-07-28): o painel envia só o telefone; CPF quando o promotor tiver.
+    cpf: str | None = None
 
 
 class PromoterLeadInviteOut(Schema):

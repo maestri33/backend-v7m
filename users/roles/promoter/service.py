@@ -184,8 +184,12 @@ def list_leads(user) -> list[dict]:
     return out
 
 
-def invite_lead(*, promoter: Promoter, phone: str, cpf: str) -> dict:
-    """Valida o destino e envia o link de indicação sem criar conta, Lead, cobrança ou OTP."""
+def invite_lead(*, promoter: Promoter, phone: str, cpf: str | None = None) -> dict:
+    """Valida o destino e envia o link de indicação sem criar conta, Lead, cobrança ou OTP.
+
+    `cpf` OPCIONAL (Victor 2026-07-28): o contrato do painel (A5.4/A7) é "iniciar matrícula
+    com SÓ o telefone do aluno" — o promotor quase nunca tem o CPF na mão. Quando vier, segue
+    validado e barrando duplicado; a barreira que importa (telefone já cadastrado) não muda."""
     from users.auth import service as auth_iface
     from users.auth import validation
     from users.profiles import interface as profiles
@@ -201,14 +205,15 @@ def invite_lead(*, promoter: Promoter, phone: str, cpf: str) -> dict:
             code="PROMOTER_TRAINING_LOCKED",
         )
 
-    try:
-        normalized_cpf = validation.validate_cpf(cpf)
-    except ValueError as exc:
-        raise ValidationError(str(exc), code="CPF_INVALID") from exc
-    if not validation.cpf_check_digits_ok(normalized_cpf):
-        raise ValidationError("CPF inválido.", code="CPF_INVALID")
-    if profiles.exists_cpf(normalized_cpf):
-        raise Conflict("CPF já cadastrado.", code="CPF_EXISTS")
+    if cpf:
+        try:
+            normalized_cpf = validation.validate_cpf(cpf)
+        except ValueError as exc:
+            raise ValidationError(str(exc), code="CPF_INVALID") from exc
+        if not validation.cpf_check_digits_ok(normalized_cpf):
+            raise ValidationError("CPF inválido.", code="CPF_INVALID")
+        if profiles.exists_cpf(normalized_cpf):
+            raise Conflict("CPF já cadastrado.", code="CPF_EXISTS")
 
     exists, normalized_phone = auth_iface.check_phone_whatsapp(phone)
     if profiles.exists_phone(normalized_phone):
