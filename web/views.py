@@ -152,12 +152,123 @@ def _digits(v: str) -> str:
     return "".join(c for c in (v or "") if c.isdigit())
 
 
+# DDDs que existem no Brasil (Anatel). O `validate_phone` do backend só confere o TAMANHO
+# (10/11 dígitos), então "00000000000" e "4200000000" passavam e viravam conta de verdade —
+# bug achado no E2E de produção 2026-07-28. A borda do funil valida de fato antes de criar.
+_DDDS = {
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    21,
+    22,
+    24,
+    27,
+    28,
+    31,
+    32,
+    33,
+    34,
+    35,
+    37,
+    38,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    51,
+    53,
+    54,
+    55,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    71,
+    73,
+    74,
+    75,
+    77,
+    79,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+}
+
+
+def _phone_problem(digits: str) -> str | None:
+    """Motivo pelo qual o número NÃO serve, ou None se está ok.
+
+    WhatsApp no Brasil é celular: 11 dígitos, DDD válido, nono dígito 9. Fixo (10 dígitos)
+    é recusado aqui de propósito — o funil inteiro depende de receber OTP no WhatsApp."""
+    if len(digits) < 10:
+        return "Faltam números. Digite o DDD + o número do seu WhatsApp."
+    if len(digits) > 11:
+        return "Esse número tem dígitos demais. Confira o DDD + o número."
+    if int(digits[:2]) not in _DDDS:
+        return f"O DDD {digits[:2]} não existe. Confira os dois primeiros números."
+    if len(digits) == 10 or digits[2] != "9":
+        return "Precisa ser um celular com WhatsApp (11 dígitos, começando com 9 depois do DDD)."
+    return None
+
+
 # ── entrada / sessão ─────────────────────────────────────────────────────────
 
 
 def entry(request):
     flow.capture_hub(request)
     return redirect(flow.step_url(flow.current_step(request)))
+
+
+def csrf_failure(request, reason=""):
+    """CSRF inválido/ausente numa rota do funil → parcial amigável no lugar da página 403 crua.
+
+    Acontece de verdade quando a aba fica aberta tempo demais e o cookie de sessão expira: o
+    HTMX injetava a página 403 INTEIRA do Django dentro do card (achado no E2E de produção
+    2026-07-28). Fora de /app/ o Django segue com a página padrão."""
+    if not request.path.startswith("/app/"):
+        from django.views.csrf import csrf_failure as django_csrf_failure
+
+        return django_csrf_failure(request, reason=reason)
+    resp = _feedback(
+        request,
+        tone="warn",
+        shake=True,
+        title="Sua sessão expirou",
+        text="Recarregue a página e tente de novo — leva um segundo.",
+    )
+    resp["HX-Trigger"] = "csrf-expired"
+    return resp
 
 
 def logout(request):
@@ -179,12 +290,13 @@ def check_page(request):
 @htmx_action
 def check_submit(request):
     phone = _digits(request.POST.get("phone"))
-    if len(phone) < 10:
+    problem = _phone_problem(phone)
+    if problem:
         return _feedback(
             request,
             tone="danger",
             title="Confere esse número?",
-            text="Digite o DDD + número do seu WhatsApp.",
+            text=problem,
             shake=True,
         )
 
@@ -193,6 +305,19 @@ def check_submit(request):
         request.session[flow.SESSION_PENDING] = result["external_id"]
         request.session[flow.SESSION_PHONE] = phone
         return _hx_redirect(reverse("web:otp"))
+
+    if result.get("whatsapp") is None:
+        # WhatsApp indeterminado (Evolution fora do ar / erro): NÃO cria conta. Antes o funil
+        # seguia pro register, que também trata a falha como "existe" — resultado: conta real
+        # criada a partir de um número que ninguém confirmou. Protótipo prevê este estado
+        # ("Não conseguimos confirmar"). Bug achado no E2E de produção 2026-07-28.
+        return _feedback(
+            request,
+            tone="warn",
+            shake=True,
+            title="Não conseguimos confirmar agora",
+            text="A checagem do WhatsApp falhou do nosso lado — não é você. Tente de novo em instantes.",
+        )
 
     if result.get("whatsapp") is False:
         return _feedback(
