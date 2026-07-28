@@ -372,6 +372,11 @@ class EnrollmentRgDecideOut(Schema):
     rg_validation_status: str
 
 
+class AddressProofDecideOut(Schema):
+    external_id: str
+    status: str  # veredito do COMPROVANTE (approved | rejected)
+
+
 class EnrollmentSelfieDecideOut(Schema):
     external_id: str
     status: str
@@ -872,6 +877,27 @@ def decide_enrollment_rg(request, external_id: str, payload: SelfieDecideIn):
     reprovou → o aluno é avisado pra reenviar a foto (com o motivo)."""
     coordinator = _coordinator(request)
     return enrollment_iface.decide_rg(
+        enrollment_external_id=external_id,
+        coordinator=coordinator,
+        approve=payload.approve,
+        reason=payload.reason,
+    )
+
+
+# ── titularidade do comprovante de endereço (Victor 2026-07-28) ──────────────
+@api.post(
+    "/enrollments/{external_id}/address-proof/decide",
+    response=AddressProofDecideOut,
+    tags=["enrollment"],
+)
+def decide_enrollment_address_proof(request, external_id: str, payload: SelfieDecideIn):
+    """Coordenador decide a JUSTIFICATIVA de titularidade do comprovante de residência.
+
+    Aprovou → o comprovante vale e a matrícula segue. Rejeitou → a tela do aluno trava no
+    comprovante pedindo OUTRO documento (de preferência no nome dele) até um novo upload.
+    O motivo fica interno (o aluno recebe só a orientação)."""
+    coordinator = _coordinator(request)
+    return enrollment_iface.decide_address_proof_kinship(
         enrollment_external_id=external_id,
         coordinator=coordinator,
         approve=payload.approve,

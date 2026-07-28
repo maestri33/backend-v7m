@@ -509,16 +509,17 @@ def describe_image(
 _CLASSIFY_PROMPT = (
     "Você é um classificador de documentos brasileiros. Olhe a imagem e responda SOMENTE um JSON "
     "(sem texto antes/depois) com as chaves: "
-    "`is_document` (bool: é foto de um documento de identidade?), "
-    '`doc_type` ("rg" | "cnh" | null se não for identidade), '
+    "`is_document` (bool: é foto de um documento — identidade OU comprovante de residência?), "
+    '`doc_type` ("rg" | "cnh" | "address_proof" | null se não reconhecer — "address_proof" = '
+    "conta de luz/água/internet/gás/telefone, fatura ou boleto com endereço do consumidor), "
     '`completeness` ("front" | "back" | "full" — front=só a frente, back=só o verso, full=frente e '
-    "verso na mesma imagem/documento inteiro; null se não aplicável), "
+    "verso na mesma imagem/documento inteiro; null se não aplicável, ex.: comprovante), "
     "`is_legible` (bool: dá para reconhecer o documento e ler os elementos principais sem corte, "
     "desfoque ou reflexo impeditivo?), `reason` (motivo curto em português ou null), "
     "`confidence` (0 a 1). NÃO valide autenticidade — faça apenas a pré-checagem visual rápida."
 )
 
-_CLASSIFY_ALLOWED_TYPE = {"rg", "cnh"}
+_CLASSIFY_ALLOWED_TYPE = {"rg", "cnh", "address_proof"}
 _CLASSIFY_ALLOWED_COMPLETE = {"front", "back", "full"}
 
 

@@ -126,6 +126,16 @@ _MESSAGES: dict[str, str] = {
         "Tudo certo, {name}! ✅ Seu RG foi aprovado e sua matrícula segue em frente. "
         "Continue o preenchimento, {name}."
     ),
+    # Decisão do coordenador sobre a TITULARIDADE do comprovante (Victor 2026-07-28).
+    "enrollment.address_proof.approved": (
+        "Boa, {name}! ✅ Seu comprovante de residência foi aprovado e sua matrícula "
+        "segue em frente. Continue o preenchimento, {name}."
+    ),
+    "enrollment.address_proof.new_proof_needed": (
+        "{name}, precisamos de outro comprovante de residência — de preferência no SEU "
+        "nome (conta de luz, água, internet ou telefone dos últimos 90 dias). "
+        "Envie pelo aplicativo, {name}. 🏠"
+    ),
     # Ciclo da TAXA da matrícula (plan/14, Victor 2026-06-12) — TODOS pro COORDENADOR, nunca pro
     # aluno (política interna do polo). Sem TTS (não é momento especial). {student_name} = o aluno.
     "enrollment.fee_paid": (
