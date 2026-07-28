@@ -611,6 +611,11 @@ class SelfieOut(Schema):
     )
     verified: bool = False
     description: str | None = None  # [DEPRECATED — use analysis_reason]
+    attempts: int = Field(
+        0,
+        description="Selfies recusadas até aqui. Cada nova foto ENTRA na biometria e a nota do "
+        "passo passa a ser a melhor já obtida — não se recomeça do zero a cada tentativa.",
+    )
 
 
 class EnrollmentProfileOut(Schema):

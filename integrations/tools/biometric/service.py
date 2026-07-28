@@ -201,14 +201,15 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
         metadata={**meta, "caller": caller},
     )
 
-    # 2. template do documento (mais recente). Sem ele → review.
-    reference = (
+    # 2. TODOS os templates do documento (não só o mais recente). RG frente e RG inteiro dão
+    # recortes diferentes do mesmo rosto, e um pode estar bem melhor que o outro — comparar só
+    # com o último jogava fora a chance boa (Victor 2026-07-28).
+    references = list(
         FaceBiometric.objects.filter(user=user, source=Source.DOCUMENT)
         .exclude(embedding=[])
         .order_by("-created_at")
-        .first()
     )
-    if reference is None:
+    if not references:
         return _record(
             user=user,
             caller=caller,
@@ -222,12 +223,23 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
             meta={**meta, "stage": "reference"},
         )
 
-    # 3. compara → banda config.
-    score = face_match.cosine(probe.embedding, reference.embedding)
+    # 3. melhor par (probe × cada referência) → banda config. A galeria de selfies acumulada
+    # (`selfie_gallery`) entra como probes ADICIONAIS: cada tentativa anterior continua valendo,
+    # então a nota do passo é a MELHOR já obtida — é assim que "ir juntando foto" melhora o
+    # resultado em vez de recomeçar do zero a cada tentativa.
+    probes = [probe, *_selfie_gallery(user, exclude_id=probe.id)]
+    best_score, best_ref, best_probe = None, None, None
+    for p in probes:
+        for ref in references:
+            s = face_match.cosine(p.embedding, ref.embedding)
+            if best_score is None or s > best_score:
+                best_score, best_ref, best_probe = s, ref, p
+    score = best_score
     status, approved = classify(score)
     reason = (
         f"cosseno {score:.4f} (match≥{settings.BIOMETRIC_MATCH_THRESHOLD} / "
-        f"review≥{settings.BIOMETRIC_REVIEW_THRESHOLD})"
+        f"review≥{settings.BIOMETRIC_REVIEW_THRESHOLD}) — melhor de "
+        f"{len(probes)}×{len(references)} pares"
     )
     logger.info(
         "biometric.verified",
@@ -235,6 +247,8 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
         caller=caller,
         score=round(score, 4),
         status=status,
+        probes=len(probes),
+        references=len(references),
     )
     return _record(
         user=user,
@@ -242,12 +256,29 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
         status=status,
         approved=approved,
         score=score,
-        reference=reference,
-        probe=probe,
+        reference=best_ref,
+        probe=best_probe,
         liveness=liveness,
+        meta={**meta, "probes": len(probes), "references": len(references)},
         reason=reason,
-        meta=meta,
     )
+
+
+# Quantas selfies anteriores entram na comparação. Teto porque cada par é um cosseno e a
+# galeria cresce a cada tentativa; 5 cobre o caso real (algumas tentativas) sem virar O(n²) solto.
+_GALLERY_LIMIT = 5
+
+
+def _selfie_gallery(user, *, exclude_id: int | None = None) -> list:
+    """Selfies JÁ enroladas deste usuário — as tentativas anteriores viram probes extras."""
+    qs = (
+        FaceBiometric.objects.filter(user=user, source=Source.SELFIE)
+        .exclude(embedding=[])
+        .order_by("-created_at")
+    )
+    if exclude_id is not None:
+        qs = qs.exclude(id=exclude_id)
+    return list(qs[:_GALLERY_LIMIT])
 
 
 def compare_images(document_image_path: str, selfie_image_path: str) -> dict:
