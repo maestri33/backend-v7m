@@ -1372,6 +1372,10 @@ def _selfie_dict(enr: Enrollment) -> dict:
         ),
         "verified": enr.selfie_verified,
         "description": _SELFIE_PUBLIC_REASON.get(status),
+        # Quantas foram recusadas (Victor 2026-07-28): cada nova selfie ENTRA na biometria e a
+        # nota do passo passa a ser a melhor já obtida — o front usa isto pra mudar o tom
+        # ("vamos de novo, cada foto ajuda") em vez de repetir o mesmo aviso seco.
+        "attempts": enr.selfie_reject_count,
     }
 
 
