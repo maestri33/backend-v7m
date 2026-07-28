@@ -570,7 +570,12 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         # next_slot: qual foto o front deve pedir AGORA (sequencial: frente→verso)
         "next_slot": _next_slot_rg(rg),
         # photos por slot individual (front precisa saber o status de cada foto)
-        "photos": photos,
+        # Por slot, o cliente recebe SÓ o status ��� o reason de cada foto é o critério cru da
+        # visão ("mostra os dois lados", "lado trocado") e vaza a régua do mesmo jeito que o
+        # motivo da seção (achado do E2E real 2026-07-28: a UI não mostrava, mas a API entregava).
+        "photos": {
+            slot: {"status": (p or {}).get("status")} for slot, p in photos.items()
+        },
     }
 
 
