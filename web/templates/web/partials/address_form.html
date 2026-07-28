@@ -21,7 +21,7 @@
   </form>
   <form hx-post="/app/cadastro/endereco/comprovante" hx-encoding="multipart/form-data" hx-target="#addr-zone" hx-swap="innerHTML" style="margin-top:12px">
     <label class="up {% if ap.exists %}has{% endif %}">
-      <span style="font-size:24px">🧾</span>
+      <svg class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>
       <b>{% if ap.exists %}Comprovante enviado ✓{% else %}Comprovante de residência{% endif %}</b>
       <small>{% if ap.exists %}{% if ap.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ ap.reason|default:"Reprovado — envie outro mais recente." }}</span>{% else %}Toque pra trocar o arquivo{% endif %}{% else %}Conta de luz, água ou internet dos últimos 3 meses — foto ou PDF{% endif %}</small>
       <input type="file" name="file" accept="image/*,application/pdf" class="js-upfile" onchange="htmx.trigger(this.closest('form'),'submit')">

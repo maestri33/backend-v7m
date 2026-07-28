@@ -53,7 +53,7 @@ a{color:inherit}a:hover{color:var(--gold-soft)}
 .ft{margin-top:auto;background:rgba(11,11,12,0.82);border-top:1px solid rgba(231,228,221,0.08);padding:12px 20px;text-align:center}
 .ft small{color:var(--muted-dark);font-size:11px;line-height:1.6}
 /* layout do funil */
-.stage{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:56px 16px 40px}
+.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:44px 16px 32px}
 .card{position:relative;width:100%;max-width:440px;background:rgba(20,20,22,0.66);
   border:1px solid rgba(231,228,221,0.14);border-radius:20px;padding:44px 26px 28px;
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -153,6 +153,30 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .star.on{opacity:1;filter:drop-shadow(0 0 8px rgba(217,177,90,0.8))}
 .prog{height:6px;border-radius:99px;background:var(--sc-acc);overflow:hidden;margin:10px 0 6px}
 .prog i{display:block;height:100%;background:var(--sc-pri);border-radius:99px}
+.hero{display:flex;justify-content:center;margin:0 0 4px}
+.hero svg{width:96px;height:96px}
+.valueprops{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:20px}
+.vp{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;text-align:center}
+.vp svg{width:26px;height:26px;stroke:var(--gold);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.vp span{font-size:11px;color:var(--muted-dark);line-height:1.3}
+.vp-arrow{color:var(--gold-ink);font-size:14px;flex-shrink:0;margin-bottom:14px}
+.ico{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.ico-lg{width:30px;height:30px}
+.doc-picks{display:flex;gap:10px;margin-bottom:16px}
+.doc-pick{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px 12px;border-radius:14px;
+  border:1.5px solid rgba(231,228,221,0.2);background:rgba(29,29,32,0.4);color:var(--silver);font-family:inherit;cursor:pointer;transition:all .15s}
+.doc-pick svg{width:72px;height:46px;stroke:var(--muted-dark);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.doc-pick b{font-size:14px;font-weight:700;color:var(--paper)}
+.doc-pick small{font-size:11px;color:var(--muted-dark);line-height:1.35;text-align:center}
+.doc-pick:hover,.doc-pick.on{border-color:var(--gold);background:rgba(240,212,147,0.12);box-shadow:0 0 20px rgba(217,177,90,0.3)}
+.doc-pick:hover svg,.doc-pick.on svg{stroke:var(--gold)}
+.caltile{flex-shrink:0;width:56px;border:1px solid var(--sc-border);border-radius:10px;overflow:hidden;text-align:center;background:var(--sc-bg)}
+.calm{display:block;background:var(--sc-pri);color:var(--sc-pri-fg);font-size:10.5px;font-weight:600;letter-spacing:.1em;padding:3px 0}
+.cald{display:block;font-size:24px;font-weight:600;line-height:1.25;color:var(--sc-fg)}
+.calh{display:block;font-size:10.5px;color:var(--sc-mut);padding-bottom:5px}
+.goalgrid{display:flex;gap:8px;justify-content:center;margin:10px 0 8px}
+.goalbox{flex:1;max-width:56px;aspect-ratio:1;border:1px solid var(--sc-border);border-radius:8px;background:var(--sc-bg);display:flex;align-items:center;justify-content:center}
+.goalbox.on{border-color:var(--sc-pri);background:rgba(217,177,90,0.13);box-shadow:0 0 16px rgba(217,177,90,.28)}
 @media (max-width:480px){.stage{padding:48px 12px 32px}.card{padding:40px 18px 24px}}
 </style>
 {% block head %}{% endblock %}
@@ -169,7 +193,13 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 </header>
 {% block body %}{% endblock %}
 <footer class="ft">
-  <small><b style="color:var(--silver)">V7M</b> · Programa de promotores · Dados tratados conforme a LGPD.<br>© 2026</small>
+  <small>
+    <b style="color:var(--silver)">V7M</b> · CNPJ 48.811.016/0001-00 ·
+    <a href="https://wa.me/5511920062177" target="_blank" rel="noopener" style="text-decoration:underline">WhatsApp (11) 92006-2177</a><br>
+    <a href="https://v7m.org/termos" target="_blank" rel="noopener">Termos</a> ·
+    <a href="https://v7m.org/privacidade" target="_blank" rel="noopener">Privacidade</a>
+    · Dados tratados conforme a LGPD · © 2026
+  </small>
 </footer>
 <script>
 function digits(v){return (v||'').replace(/\D+/g,'')}
