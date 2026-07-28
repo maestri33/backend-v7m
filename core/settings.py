@@ -169,6 +169,10 @@ TEMPLATES = [
     },
 ]
 
+# CSRF falho numa rota do funil web (/app/) responde o parcial amigável do HTMX; fora dela,
+# o Django segue com a página padrão. Ver `web.views.csrf_failure`.
+CSRF_FAILURE_VIEW = "web.views.csrf_failure"
+
 WSGI_APPLICATION = "core.wsgi.application"
 
 
