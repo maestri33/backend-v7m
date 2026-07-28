@@ -1,7 +1,22 @@
 {% if not section.doc_type %}
-<div class="chips" style="margin-bottom:14px">
-  <button type="button" class="chip js-docpick" data-doc="rg">🪪 RG</button>
-  <button type="button" class="chip js-docpick" data-doc="cnh">🚗 CNH</button>
+<div class="doc-picks">
+  <button type="button" class="doc-pick js-docpick" data-doc="rg">
+    <svg viewBox="0 0 72 46" aria-hidden="true">
+      <rect x="1" y="1" width="70" height="44" rx="5"/>
+      <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
+      <path d="M33 13h30M33 21h30M33 29h20"/>
+    </svg>
+    <b>RG</b><small>Registro Geral<br>(frente e verso)</small>
+  </button>
+  <button type="button" class="doc-pick js-docpick" data-doc="cnh">
+    <svg viewBox="0 0 72 46" aria-hidden="true">
+      <rect x="1" y="1" width="70" height="44" rx="5"/>
+      <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
+      <path d="M33 13h30M33 20h22"/>
+      <circle cx="56" cy="31" r="8"/><circle cx="56" cy="31" r="2.4"/><path d="M56 23v5M56 34v5M48 31h5M59 31h5"/>
+    </svg>
+    <b>CNH</b><small>Carteira de<br>Habilitação</small>
+  </button>
 </div>
 <div id="slots-rg" class="js-docslots" style="display:none">
   {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}

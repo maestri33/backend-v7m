@@ -386,6 +386,16 @@ def _me(request) -> dict:
     return candidate_iface.me_dict(cand)
 
 
+# eyebrow de cada etapa (protótipo: rótulo próprio por etapa, não "cadastro" genérico)
+_STEP_EYEBROW = {
+    "address": "Comprovante",
+    "document": "Identificação",
+    "pix": "Recebimento",
+    "education": "Formação",
+    "selfie": "Confirmação",
+}
+
+
 def _wizard_ctx(request, step: str, **extra) -> dict:
     me = _me(request)
     first_name = ((me.get("profile") or {}).get("name") or "").split(" ")[0].title()
@@ -393,6 +403,7 @@ def _wizard_ctx(request, step: str, **extra) -> dict:
         "me": me,
         "first_name": first_name,
         "steps": flow.wizard_progress(step),
+        "eyebrow": _STEP_EYEBROW.get(step, "Cadastro do promotor"),
         **extra,
     }
 
@@ -794,6 +805,8 @@ def panel_page(request):
     leads = promoter_iface.list_leads(promoter.user)
     profile = profiles.get(promoter.user)
     first_name = ((profile.name if profile else "") or "Promotor").split(" ")[0].title()
+    from finance import config as money_config
+
     import urllib.parse
 
     share_text = urllib.parse.quote(
@@ -819,6 +832,12 @@ def panel_page(request):
             "bonus": _money(summary["bonus_amount"]),
             "lifetime_total": _money(summary["lifetime"]["total_received"]),
             "closing_label": _closing_label(summary["next_closing_at"]),
+            # R$ por matrícula vem do backend (finance/config) — NUNCA fixo no template: o valor
+            # muda por ambiente (.env) e o painel não pode mentir pro promotor.
+            "commission": _money(money_config.direct_amount()),
+            "closing_dt": _closing_parts(summary["next_closing_at"]),
+            "hub_label": _hub_label(promoter),
+            "cycle_range": f"{_short_date(summary['week_start'])} – {_short_date(summary['week_end'])}",
         },
     )
 
@@ -874,3 +893,60 @@ def _closing_label(iso: str) -> str:
     except (TypeError, ValueError):
         return ""
     return f"{_DIAS[dt.weekday()]}, {dt.day} de {_MESES[dt.month - 1]} · {dt.hour}h"
+
+
+def _closing_parts(iso: str) -> dict:
+    """ISO → {mes:'JUL', dia:'31', hora:'18h'} pro tile-calendário do hero (protótipo A5.1)."""
+    from datetime import datetime
+
+    _M = (
+        "JAN",
+        "FEV",
+        "MAR",
+        "ABR",
+        "MAI",
+        "JUN",
+        "JUL",
+        "AGO",
+        "SET",
+        "OUT",
+        "NOV",
+        "DEZ",
+    )
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return {}
+    return {"mes": _M[dt.month - 1], "dia": dt.day, "hora": f"{dt.hour}h"}
+
+
+def _hub_label(promoter) -> str:
+    """Nome do polo pro badge do header do painel (protótipo: 'Promotor <marca>')."""
+    hub = getattr(promoter, "hub", None)
+    brand = (getattr(hub, "brand", "") or "").replace("_", " ").strip()
+    return f"Promotor {brand.title()}" if brand else "Promotor"
+
+
+def _short_date(iso: str) -> str:
+    """ISO (data ou datetime) → '25 jul' — o intervalo do ciclo no hero (protótipo A5.1)."""
+    from datetime import datetime
+
+    _M = (
+        "jan",
+        "fev",
+        "mar",
+        "abr",
+        "mai",
+        "jun",
+        "jul",
+        "ago",
+        "set",
+        "out",
+        "nov",
+        "dez",
+    )
+    try:
+        dt = datetime.fromisoformat(str(iso))
+    except (TypeError, ValueError):
+        return str(iso)
+    return f"{dt.day} {_M[dt.month - 1]}"
