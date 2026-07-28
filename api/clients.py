@@ -488,8 +488,12 @@ class KinshipIn(Schema):
 class EducationIn(Schema):
     level: str  # 'fundamental' | 'medio'
     grade: int  # 1–9 (fundamental) / 1–3 (médio) — validado no service por nível
-    completed: bool  # concluiu o nível?
-    last_school: str
+    completed: (
+        bool  # terminou o ÚLTIMO ANO cursado? (passou/foi até o fim × parou/repetiu)
+    )
+    # O funil por eliminação (Victor 2026-07-28) não pergunta a escola — só UF/cidade.
+    # Opcional preserva quem ainda manda (candidato/versões antigas do front).
+    last_school: str = ""
     city: str  # cidade da escola
     state: str  # UF da escola
     last_year_when: str | None = None

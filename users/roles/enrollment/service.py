@@ -1306,9 +1306,9 @@ def set_education(
     level: str,
     grade: int,
     completed: bool,
-    last_school: str,
     city: str,
     state: str,
+    last_school: str = "",
     last_year_when=None,
 ) -> Enrollment:
     enr = _require(user_external_id, _S.EDUCATION)
