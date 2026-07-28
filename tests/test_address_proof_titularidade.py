@@ -93,7 +93,9 @@ def test_reason_publico_e_orientacao_nunca_criterio():
         ap.NEEDS_KINSHIP,
         {"kinship_kind": "justify", "extracted": {"holder_name": "João"}},
     )
-    assert "João" in aluno_le  # quem é o titular a pessoa PODE saber (o comprovante é dela)
+    assert (
+        "João" in aluno_le
+    )  # quem é o titular a pessoa PODE saber (o comprovante é dela)
     novo_doc = ap._public_reason(ap.REJECTED, {"needs_new_proof": True})
     assert "SEU nome" in novo_doc
     generico = ap._public_reason(ap.REJECTED, {})

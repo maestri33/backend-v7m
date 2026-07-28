@@ -13,10 +13,16 @@ from users.roles import _address_proof as ap
 
 
 class _Addr:
+    """Endereço COMPLETO (is_complete=True): o gate de divergência só roda com endereço
+    completo desde o comprovante-primeiro (2026-07-28) — incompleto/vazio é populado, não
+    comparado."""
+
     def __init__(self, zipcode="01310100", street="Avenida Paulista", city="São Paulo"):
         self.zipcode = zipcode
         self.street = street
         self.city = city
+        self.number = "1000"
+        self.state = "SP"
 
 
 def _run(extracted, *, vision=("approved", "ok"), addr=None):
