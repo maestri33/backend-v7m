@@ -13,8 +13,29 @@ def exists_cpf(cpf: str) -> bool:
     return Profile.objects.filter(cpf=cpf).exists()
 
 
+def phone_variants(phone: str) -> list[str]:
+    """Canônico + a outra forma do 9º dígito (BR), na ordem: o que veio primeiro.
+
+    O número é GRAVADO como o WhatsApp o resolve (`resolve_br_number`), e para boa parte
+    dos DDDs isso é a forma CURTA (`554299384069`); mas o usuário digita a forma que ele
+    conhece, com o 9 (`5542999384069`). Comparar cru trancava o dono da conta do lado de
+    fora: o `check` não achava, o `register` achava e estourava `PHONE_EXISTS`, e o app só
+    sabia dizer "problema no nosso servidor" (E2E 2026-07-28 — aconteceu com uma matrícula
+    JÁ PAGA). Só celular: fixo (8 dígitos que não começam com 9) não tem essa dualidade.
+    """
+    digits = "".join(c for c in phone if c.isdigit())
+    if not digits.startswith("55") or len(digits) not in (12, 13):
+        return [digits]
+    ddd, local = digits[2:4], digits[4:]
+    if len(local) == 9 and local.startswith("9"):
+        return [digits, f"55{ddd}{local[1:]}"]
+    if len(local) == 8 and local[0] in "6789":
+        return [digits, f"55{ddd}9{local}"]
+    return [digits]
+
+
 def exists_phone(phone: str) -> bool:
-    return Profile.objects.filter(phone=phone).exists()
+    return Profile.objects.filter(phone__in=phone_variants(phone)).exists()
 
 
 def exists_email(email: str) -> bool:
@@ -26,7 +47,17 @@ def find_by_cpf(cpf: str) -> Profile | None:
 
 
 def find_by_phone(phone: str) -> Profile | None:
-    return Profile.objects.filter(phone=phone).select_related("user").first()
+    """Acha pelo número em QUALQUER das duas formas do 9º dígito (ver `phone_variants`)."""
+    variants = phone_variants(phone)
+    found = {
+        p.phone: p
+        for p in Profile.objects.filter(phone__in=variants).select_related("user")
+    }
+    # A forma exata ganha; a variante é o resgate de quem digitou a outra.
+    for v in variants:
+        if v in found:
+            return found[v]
+    return None
 
 
 def find_by_external_id(external_id: str) -> Profile | None:
