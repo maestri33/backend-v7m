@@ -26,6 +26,15 @@ _S = Candidate.Status
 
 # passo → nome de rota (web/urls.py). Ordem de exibição do stepper do wizard.
 WIZARD_STEPS = ("address", "document", "pix", "education", "selfie")
+# rotas do painel — todas passam pelo mesmo gate e compartilham a navbar
+PANEL_STEPS = (
+    "panel",
+    "panel_finance",
+    "panel_referrals",
+    "panel_enroll",
+    "panel_chat",
+    "panel_data",
+)
 STEP_LABELS = {
     "address": "Endereço",
     "document": "Documento",

@@ -1,0 +1,56 @@
+{% extends "web/panel/base.html" %}
+{% block title %}V7M · Matricular{% endblock %}
+{% block panel %}
+<div class="sc-card" x-data="{ tab: 'convidar' }">
+  <div class="segs">
+    <button type="button" class="seg" :class="{ on: tab === 'convidar' }" @click="tab = 'convidar'">
+      <svg viewBox="0 0 24 24"><path d="M10 13a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 11a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></svg> Convidar
+    </button>
+    <button type="button" class="seg" :class="{ on: tab === 'iniciar' }" @click="tab = 'iniciar'">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Iniciar matrícula
+    </button>
+  </div>
+
+  <div x-show="tab === 'convidar'">
+    <h2 class="sc-title">Convide pelo seu link</h2>
+    <p class="sc-mut" style="font-size:13px;margin:0 0 12px">Quem entrar por este link já fica vinculado a você — <b style="color:var(--sc-fg)">{{ commission }}</b> por matrícula paga.</p>
+    <div class="sc-item" style="gap:8px">
+      <svg class="ico" style="width:15px;height:15px;color:var(--sc-mut);flex-shrink:0" viewBox="0 0 24 24"><path d="M10 13a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1"/><path d="M14 11a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></svg>
+      <span class="tnum" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;flex:1">{{ ref_display }}</span>
+      <button class="sc-btn sc-btn-o" style="width:auto;padding:0 10px;height:32px;flex-shrink:0" onclick="copyText('{{ ref_url }}',this)" aria-label="Copiar link">Copiar</button>
+    </div>
+    <div class="chan">
+      <a style="background:#25d366;color:#08260f" href="https://wa.me/?text={{ share_text }}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-8.6 15l-1.3 4.7 4.9-1.3A10 10 0 1012 2zm5.6 14.2c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-3.2-.8-2.7-1.1-4.4-3.9-4.5-4-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.5-.3.3c-.1.1-.2.3 0 .5.1.2.6 1.1 1.4 1.8 1 .9 1.8 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.5-.1l2 .9c.2.1.4.2.4.3.1.1.1.6-.1 1.2z"/></svg> WhatsApp
+      </a>
+      <a style="background:#29a9eb" href="https://t.me/share/url?url={{ share_url }}&text={{ share_text }}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M21.9 4.3l-3.1 14.6c-.2 1-.9 1.3-1.7.8l-4.7-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2L6 11.2 1.4 9.8c-1-.3-1-1 .2-1.5L20.6 2.8c.8-.3 1.5.2 1.3 1.5z"/></svg> Telegram
+      </a>
+      <a style="background:#1877f2" href="https://www.facebook.com/sharer/sharer.php?u={{ share_url }}" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M22 12a10 10 0 10-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0022 12z"/></svg> Facebook
+      </a>
+      <a style="background:linear-gradient(45deg,#f09433,#dc2743,#bc1888)" href="#"
+         onclick="copyText('{{ ref_url }}',this);alert('Link copiado! Cole no seu Direct, story ou na bio.');return false">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="17.5" cy="6.5" r="1.3"/></svg> Instagram
+      </a>
+    </div>
+    <p class="sc-mut" style="font-size:11.5px;margin:10px 0 0;text-align:center">No Instagram o link é copiado — cole no Direct, story ou bio.</p>
+  </div>
+
+  <div x-show="tab === 'iniciar'" x-cloak>
+    <h2 class="sc-title">Iniciar matrícula</h2>
+    <p class="sc-mut" style="font-size:13px;margin:0 0 12px">Só o telefone do aluno. Ele recebe o link da matrícula já vinculado a você.</p>
+    <div id="invite-zone">
+      <form hx-post="{% url 'web:panel_invite' %}" hx-target="#invite-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-inv"
+            x-data="{ phone: '' }">
+        <label class="lb" for="inv-phone" style="color:var(--sc-mut)">WhatsApp do aluno</label>
+        <input id="inv-phone" class="sc-input tnum" name="phone" type="tel" inputmode="numeric"
+               x-model="phone" x-mask="(99) 99999-9999" placeholder="(11) 91234-5678" required>
+        <div id="fb-zone"></div>
+        <button id="btn-inv" class="sc-btn" style="margin-top:12px" type="submit"
+                :disabled="phone.replace(/\D/g,'').length < 11">Enviar link da matrícula</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

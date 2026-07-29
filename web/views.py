@@ -13,6 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from finance import config as money_config
 from users.auth import service as auth_iface
 from users.auth.models import User
 from users.consent import PROMOTER_CONTRACT
@@ -22,7 +23,8 @@ from users.roles import interface as roles
 from users.roles.candidate import service as candidate_iface
 from users.roles.promoter import service as promoter_iface
 from users.roles.training import service as training_iface
-from web import flow
+from web import assistant, flow
+from web import panel_data
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -199,6 +201,24 @@ def step_page(step: str):
         return wrapper
 
     return deco
+
+
+def panel_route(fn):
+    """Guard das telas do painel: o gate é o mesmo (`current_step` tem de ser `panel`),
+    mas a sub-rota escolhida não é forçada — o promotor navega livre pela navbar."""
+
+    @functools.wraps(fn)
+    def wrapper(request, *a, **kw):
+        flow.capture_hub(request)
+        current = flow.current_step(request)
+        if current != "panel":
+            return redirect(flow.step_url(current, request))
+        promoter = promoter_iface.get_by_user_external_id(_uid(request))
+        if promoter is None:
+            return redirect(flow.step_url(current, request))
+        return fn(request, promoter, *a, **kw)
+
+    return wrapper
 
 
 def htmx_action(fn):
@@ -1003,54 +1023,188 @@ def training_status(request):
 # ── painel do promotor (v1) ──────────────────────────────────────────────────
 
 
-@step_page("panel")
-def panel_page(request):
-    uid = _uid(request)
-    promoter = promoter_iface.get_by_user_external_id(uid)
-    if promoter is None:
-        return redirect(flow.step_url(flow.current_step(request), request))
-    info = promoter_iface.to_dict(promoter)
-    summary = promoter_iface.summary(promoter.user)
-    leads = promoter_iface.list_leads(promoter.user)
+def _panel_ctx(request, promoter, active: str, **extra) -> dict:
+    """Contexto que TODA tela do painel compartilha: header + navbar."""
     profile = profiles.get(promoter.user)
-    first_name = ((profile.name if profile else "") or "Promotor").split(" ")[0].title()
-    from finance import config as money_config
+    name = (profile.name if profile else "") or "Promotor"
+    return {
+        "panel": True,
+        "nav": active,
+        "full_name": name,
+        "first_name": name.split(" ")[0].title(),
+        "initials": panel_data.initials(name),
+        "hub_label": _hub_label(promoter),
+        "info": promoter_iface.to_dict(promoter),
+        **extra,
+    }
 
+
+@panel_route
+def panel_page(request, promoter):
+    """Início: hero do próximo depósito, meta da semana e kanban de leads."""
+    summary = promoter_iface.summary(promoter.user)
+    leads = panel_data.leads(promoter.user)
+    hist = panel_data.cycles(promoter.user)
+    return render(
+        request,
+        "web/panel/home.html",
+        _panel_ctx(
+            request,
+            promoter,
+            "home",
+            summary=summary,
+            leads=leads,
+            week_total=_money(summary["week_commission_total"]),
+            bonus=_money(summary["bonus_amount"]),
+            lifetime_total=hist["total"],
+            commission=_money(money_config.direct_amount()),
+            closing_label=_closing_label(summary["next_closing_at"]),
+            closing_dt=_closing_parts(summary["next_closing_at"]),
+            cycle_range=f"{_short_date(summary['week_start'])} – {_short_date(summary['week_end'])}",
+            cycle_state=panel_data.cycle_state(promoter.user),
+            goal_stars=[
+                i < summary["week_paid_leads"] for i in range(summary["week_goal"])
+            ],
+            missing_for_goal=max(0, summary["week_goal"] - summary["week_paid_leads"]),
+        ),
+    )
+
+
+@panel_route
+def panel_finance(request, promoter):
+    """Finanças: chave Pix verificada + histórico de ciclos."""
+    hist = panel_data.cycles(promoter.user)
+    return render(
+        request,
+        "web/panel/finance.html",
+        _panel_ctx(
+            request,
+            promoter,
+            "finance",
+            pix=panel_data.pix_account(promoter.user),
+            cycles=hist["cycles"],
+            total=hist["total"],
+            record_id=hist["record_id"],
+        ),
+    )
+
+
+@panel_route
+def panel_cycle(request, promoter, cycle_id: str):
+    """Modal de detalhe do ciclo (zerado · processando · pago)."""
+    hist = panel_data.cycles(promoter.user)
+    cycle = next((c for c in hist["cycles"] if c["id"] == cycle_id), None)
+    if cycle is None:
+        return HttpResponse(status=204)
+    return render(
+        request,
+        "web/panel/_cycle_modal.html",
+        {"cycle": cycle, "is_record": cycle_id == hist["record_id"]},
+    )
+
+
+@panel_route
+def panel_referrals(request, promoter):
+    """Indicações: todos os leads com status e valor."""
+    return render(
+        request,
+        "web/panel/referrals.html",
+        _panel_ctx(
+            request,
+            promoter,
+            "referrals",
+            leads=panel_data.leads(promoter.user),
+            commission=_money(money_config.direct_amount()),
+        ),
+    )
+
+
+@panel_route
+def panel_enroll(request, promoter):
+    """Matricular: abas Convidar (link + canais) e Iniciar matrícula (só telefone)."""
     import urllib.parse
 
-    share_text = urllib.parse.quote(
-        "Terminar os estudos mudou tudo pra mim. Faz sua matrícula aqui: "
-        + info["ref_url"]
+    info = promoter_iface.to_dict(promoter)
+    ref = info["ref_url"]
+    text = urllib.parse.quote(
+        f"Terminar os estudos mudou tudo pra mim. Faz sua matrícula aqui: {ref}"
     )
     return render(
         request,
-        "web/panel.html",
-        {
-            "info": info,
-            "summary": summary,
-            "leads": leads,
-            "first_name": first_name,
-            "share_text": share_text,
-            "goal_stars": [
-                i < summary["week_paid_leads"] for i in range(summary["week_goal"])
-            ],
-            "missing_for_goal": max(
-                0, summary["week_goal"] - summary["week_paid_leads"]
-            ),
-            "week_total": _money(summary["week_commission_total"]),
-            "bonus": _money(summary["bonus_amount"]),
-            "lifetime_total": _money(summary["lifetime"]["total_received"]),
-            "closing_label": _closing_label(summary["next_closing_at"]),
-            # R$ por matrícula vem do backend (finance/config) — NUNCA fixo no template: o valor
-            # muda por ambiente (.env) e o painel não pode mentir pro promotor.
-            "commission": _money(money_config.direct_amount()),
-            "closing_dt": _closing_parts(summary["next_closing_at"]),
-            "hub_label": _hub_label(promoter),
-            "cycle_range": f"{_short_date(summary['week_start'])} – {_short_date(summary['week_end'])}",
-            "cycle_state": _cycle_state(promoter.user, summary),
-            "panel": True,
-        },
+        "web/panel/enroll.html",
+        _panel_ctx(
+            request,
+            promoter,
+            "enroll",
+            ref_url=ref,
+            ref_display=ref.replace("https://", "").replace("http://", ""),
+            share_text=text,
+            share_url=urllib.parse.quote(ref, safe=""),
+            commission=_money(money_config.direct_amount()),
+        ),
     )
+
+
+@panel_route
+def panel_chat(request, promoter):
+    """Bate-papo: assistente que responde com os dados reais do promotor."""
+    return render(
+        request,
+        "web/panel/chat.html",
+        _panel_ctx(request, promoter, "chat", chips=assistant.SUGGESTIONS),
+    )
+
+
+@require_POST
+@panel_route
+def panel_chat_send(request, promoter):
+    question = (request.POST.get("q") or "").strip()
+    answer = assistant.answer(promoter, question)
+    return render(
+        request,
+        "web/panel/_chat_turn.html",
+        {"question": question, "answer": answer},
+    )
+
+
+@panel_route
+def panel_personal_data(request, promoter):
+    """Dados pessoais: bento + um card por arquivo (somente leitura)."""
+    profile = profiles.get(promoter.user)
+    from users.address import interface as address_iface
+
+    addr = address_iface.as_public_dict(
+        address_iface.get_by_external_id(str(promoter.user.external_id))
+    )
+    return render(
+        request,
+        "web/panel/data.html",
+        _panel_ctx(
+            request,
+            promoter,
+            "data",
+            profile=profile,
+            address=addr,
+            phone_fmt=panel_data._fmt_phone(getattr(profile, "phone", None)),
+            cpf_fmt=_fmt_cpf(getattr(profile, "cpf", None)),
+            pix=panel_data.pix_account(promoter.user),
+            files=panel_data.files(promoter.user),
+        ),
+    )
+
+
+@panel_route
+def panel_file(request, promoter, key: str):
+    """Visualizador do arquivo: página grande + o que a leitura automática extraiu."""
+    item = next((f for f in panel_data.files(promoter.user) if f["key"] == key), None)
+    if item is None:
+        return HttpResponse(status=204)
+    return render(request, "web/panel/_file_modal.html", {"file": item})
+
+
+def _fmt_cpf(cpf: str | None) -> str:
+    d = "".join(c for c in (cpf or "") if c.isdigit())
+    return f"{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}" if len(d) == 11 else (cpf or "—")
 
 
 @require_POST
@@ -1070,15 +1224,10 @@ def panel_invite(request):
             text=problem,
             shake=True,
         )
-    # Contrato A5.4/A7: iniciar matrícula pede SÓ o telefone. O CPF continua aceito (opcional)
-    # pra quem já tiver em mãos — o promotor raramente tem, e exigir travava a única ação de
-    # conversão do painel.
     result = promoter_iface.invite_lead(
-        promoter=promoter,
-        phone=phone,
-        cpf=_digits(request.POST.get("cpf")) or None,
+        promoter=promoter, phone=phone, cpf=_digits(request.POST.get("cpf")) or None
     )
-    return render(request, "web/partials/invite_ok.html", {"result": result})
+    return render(request, "web/panel/_invite_ok.html", {"result": result})
 
 
 _MESES = (

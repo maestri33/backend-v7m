@@ -224,6 +224,71 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 /* telas do wizard alinham à esquerda (as de conta seguem centralizadas) */
 .card.wiz .h1,.card.wiz .sub,.card.wiz .step-label{text-align:left}
 .card.wiz .stepper{justify-content:flex-start}
+.pnl-head{position:sticky;top:0;z-index:30;background:var(--sc-bg);border-bottom:1px solid var(--sc-border)}
+.pnl-head-in{display:flex;align-items:center;gap:12px;max-width:640px;margin:0 auto;padding:12px 16px;color:var(--sc-fg)}
+.pnl-avatar{width:40px;height:40px;border-radius:50%;background:var(--sc-acc);border:1px solid var(--sc-border);
+  display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+.pnl-online{position:absolute;right:0;bottom:1px;width:11px;height:11px;border-radius:50%;background:#4ade80;border:2px solid var(--sc-bg)}
+.pnl-nav{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;align-items:flex-end;justify-content:space-around;
+  background:var(--sc-bg);border-top:1px solid var(--sc-border);padding:9px 6px calc(9px + env(safe-area-inset-bottom,0px))}
+.pnl-nav-i{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;text-decoration:none;
+  color:var(--sc-mut);font-size:11px;font-weight:400;padding:4px 0;border-radius:8px}
+.pnl-nav-i svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.pnl-nav-i.on{color:var(--sc-fg);font-weight:600}
+.pnl-nav-i:focus-visible,.pnl-nav-c:focus-visible{outline:2px solid var(--sc-pri);outline-offset:2px}
+.pnl-nav-c{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;color:var(--sc-mut);font-size:11px}
+.pnl-nav-plus{width:56px;height:56px;border-radius:50%;background:var(--sc-pri);color:var(--sc-pri-fg);
+  display:flex;align-items:center;justify-content:center;margin-top:-26px;box-shadow:0 8px 22px -6px rgba(217,177,90,.6)}
+.pnl-nav-plus svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round}
+.pnl-nav-clabel{font-size:11px}
+.panel-wrap{max-width:640px;margin:0 auto;padding:16px 16px 104px;width:100%;flex:1}
+/* kanban de leads (4 colunas com scroll-snap) */
+.kanban{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:6px;margin:0 -4px}
+.kanban::-webkit-scrollbar{height:5px}.kanban::-webkit-scrollbar-thumb{background:var(--sc-acc);border-radius:9px}
+.kcol{flex:0 0 84%;max-width:290px;scroll-snap-align:start;background:var(--sc-bg);border:1px solid var(--sc-border);border-radius:10px;padding:11px}
+.kcol-h{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--sc-fg);margin-bottom:9px}
+.kcol-h svg{width:15px;height:15px;stroke:var(--sc-mut);fill:none;stroke-width:1.8}
+.kcol-n{margin-left:auto;background:var(--sc-acc);border-radius:5px;padding:1px 7px;font-size:11px;color:var(--sc-mut)}
+.klead{display:flex;align-items:center;gap:9px;background:var(--sc-card);border:1px solid var(--sc-border);border-radius:9px;padding:9px;margin-bottom:7px}
+.klead .av{width:31px;height:31px;border-radius:50%;background:var(--sc-acc);display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:600;flex-shrink:0;color:var(--sc-mut)}
+.kwa{width:34px;height:34px;border-radius:8px;background:#25d366;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:auto}
+.kwa svg{width:18px;height:18px;fill:#08260f}
+.kempty{text-align:center;padding:16px 6px;color:var(--sc-mut2)}
+.kempty svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.5;margin-bottom:5px}
+.kempty span{display:block;font-size:11.5px;line-height:1.45}
+/* abas do Matricular */
+.segs{display:flex;gap:6px;background:var(--sc-bg);border:1px solid var(--sc-border);border-radius:10px;padding:4px;margin-bottom:16px}
+.seg{flex:1;border:none;background:transparent;color:var(--sc-mut);font-family:inherit;font-size:13.5px;font-weight:500;
+  padding:9px;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.seg.on{background:var(--sc-card);color:var(--sc-fg);box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.seg svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8}
+.chan{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.chan a{display:flex;align-items:center;justify-content:center;gap:7px;height:42px;border-radius:9px;text-decoration:none;
+  font-size:13.5px;font-weight:600;color:#fff}
+.chan svg{width:17px;height:17px;fill:currentColor}
+/* chat */
+.chatbox{display:flex;flex-direction:column;gap:10px;min-height:280px;max-height:52vh;overflow-y:auto;padding:4px 2px}
+.bub{max-width:84%;padding:11px 13px;border-radius:13px;font-size:13.5px;line-height:1.55}
+.bub-ia{align-self:flex-start;background:var(--sc-bg);border:1px solid var(--sc-border);color:var(--sc-fg);border-bottom-left-radius:4px}
+.bub-me{align-self:flex-end;background:var(--sc-pri);color:var(--sc-pri-fg);border-bottom-right-radius:4px;font-weight:500}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.chip-s{border:1px solid var(--sc-border);background:var(--sc-bg);color:var(--sc-mut);border-radius:99px;
+  padding:7px 12px;font-size:12.5px;font-family:inherit;cursor:pointer}
+.chip-s:hover{color:var(--sc-fg);border-color:var(--sc-mut2)}
+/* bento de dados + arquivos */
+.bento{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;max-width:680px;margin:0 auto}
+.bento .sc-card{margin:0}
+.fcard{cursor:pointer;text-align:left;width:100%;font-family:inherit;border:1px solid var(--sc-border);background:var(--sc-card);
+  border-radius:12px;padding:14px;color:var(--sc-fg)}
+.fthumb{height:88px;border-radius:8px;background:var(--sc-bg);border:1px solid var(--sc-border);display:flex;
+  align-items:center;justify-content:center;margin-bottom:10px}
+.fthumb svg{width:34px;height:34px;stroke:var(--sc-mut2);fill:none;stroke-width:1.5}
+.docpage{background:#1e1e22;border:1px solid var(--sc-border);border-radius:10px;padding:16px;margin-bottom:14px}
+.docpage .bar{height:12px;border-radius:4px;background:#5b7fb0;margin-bottom:14px}
+.docpage .ph{width:78px;height:92px;border-radius:6px;background:var(--sc-acc);display:flex;align-items:center;justify-content:center}
+.docpage .ph svg{width:40px;height:40px;stroke:var(--sc-mut2);fill:none;stroke-width:1.4}
+.docpage .ln{height:9px;border-radius:4px;background:var(--sc-acc);margin-bottom:8px}
 @media (max-width:480px){.stage{padding:48px 12px 32px}.card{padding:40px 18px 24px}}
 </style>
 {% block head %}{% endblock %}
