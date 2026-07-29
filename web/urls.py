@@ -46,6 +46,13 @@ urlpatterns = [
     # pós-funil
     path("analise", views.analysis_page, name="analysis"),
     path("analise/status", views.analysis_status, name="analysis_status"),
+    # comprovante no nome de outra pessoa: trava aqui até a pessoa dizer quem é
+    path("cadastro/endereco/parentesco", views.kinship_page, name="kinship"),
+    path(
+        "cadastro/endereco/parentesco/enviar",
+        views.kinship_submit,
+        name="kinship_submit",
+    ),
     path("treino", views.training_page, name="training"),
     path("treino/resposta", views.training_submit, name="training_submit"),
     path("treino/audio", views.training_audio, name="training_audio"),

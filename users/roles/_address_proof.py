@@ -461,6 +461,10 @@ def section_dict(user_external_id: str) -> dict:
         if ap.validation_status == NEEDS_KINSHIP
         else None,
         "kinship_relation": ap.kinship_relation,
+        # nome do titular lido do comprovante — a tela de parentesco diz DE QUEM é a conta
+        # em vez de "outra pessoa" genérico.
+        "holder_name": (result.get("extracted") or {}).get("holder_name")
+        or result.get("holder_name"),
         "needs_new_proof": bool(
             ap.validation_status == REJECTED and result.get("needs_new_proof")
         ),

@@ -1,6 +1,6 @@
 {% if not section.doc_type %}
 <div class="doc-picks">
-  <button type="button" class="doc-pick" :class="{ on: pick === 'rg' }" @click="pick = 'rg'">
+  <button type="button" class="doc-pick" :class="{ on: pick === 'rg' }" @click="pick = 'rg'; metodo = null">
     <svg viewBox="0 0 72 46" aria-hidden="true">
       <rect x="1" y="1" width="70" height="44" rx="5"/>
       <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
@@ -8,7 +8,7 @@
     </svg>
     <b>RG</b><small>Registro Geral<br>(frente e verso)</small>
   </button>
-  <button type="button" class="doc-pick" :class="{ on: pick === 'cnh' }" @click="pick = 'cnh'">
+  <button type="button" class="doc-pick" :class="{ on: pick === 'cnh' }" @click="pick = 'cnh'; metodo = null">
     <svg viewBox="0 0 72 46" aria-hidden="true">
       <rect x="1" y="1" width="70" height="44" rx="5"/>
       <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
@@ -18,12 +18,37 @@
     <b>CNH</b><small>Carteira de<br>Habilitação</small>
   </button>
 </div>
-<div x-show="pick === 'rg'" x-cloak>
-  {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+
+{% comment %}Escolhido o documento, escolhe COMO mandar. Os dois caminhos sempre existem —
+o `capture` do celular abre a câmera direto e escondia o arquivo de quem tem a CNH em PDF.{% endcomment %}
+<div x-show="pick && !metodo" x-cloak>
+  <div class="metodos">
+    <button type="button" class="metodo" @click="metodo = 'foto'">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2.2l1.3-2h6.9l1.3 2H20a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12.5" cy="12.5" r="3.6"/></svg>
+      <b>Tirar foto</b>
+      <small class="mut" style="font-size:11.5px">Frente e verso</small>
+    </button>
+    <button type="button" class="metodo" @click="metodo = 'arquivo'">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>
+      <b x-text="pick === 'cnh' ? 'PDF do gov.br' : 'Enviar arquivo'"></b>
+      <small class="mut" style="font-size:11.5px" x-text="pick === 'cnh' ? 'CNH Digital / CDT' : 'Imagem ou PDF'"></small>
+    </button>
+  </div>
 </div>
-<div x-show="pick === 'cnh'" x-cloak>
-  {% for s in cnh_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+
+<div x-show="pick && metodo" x-cloak>
+  <button type="button" class="pill" style="margin-bottom:12px" @click="metodo = null">← Trocar o jeito de enviar</button>
+  <template x-if="pick === 'rg' && metodo === 'foto'"><div>{% for s in rg_foto %}{% include "web/partials/_doc_slot.html" %}{% endfor %}</div></template>
+  <template x-if="pick === 'rg' && metodo === 'arquivo'"><div>{% for s in rg_arquivo %}{% include "web/partials/_doc_slot.html" %}{% endfor %}</div></template>
+  <template x-if="pick === 'cnh' && metodo === 'foto'"><div>{% for s in cnh_foto %}{% include "web/partials/_doc_slot.html" %}{% endfor %}</div></template>
+  <template x-if="pick === 'cnh' && metodo === 'arquivo'">
+    <div>
+      <p class="small mut" style="margin:0 0 10px">Vale o PDF original do <b style="color:var(--paper)">gov.br</b> (CNH Digital / CDT) — ele já traz frente e verso.</p>
+      {% for s in cnh_pdf %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
+    </div>
+  </template>
 </div>
+
 {% else %}
   {% if analyzing %}
   <div hx-get="/app/cadastro/documento/status" hx-trigger="every 2.5s" hx-target="#doc-zone" hx-swap="innerHTML">
