@@ -1,0 +1,7 @@
+{% comment %}Trilho de 3 passos das telas de conta (prints 01/03/04-funil): a barrinha
+dourada é o passo atual. As telas do wizard usam o stepper de 5 (_wizard_top).{% endcomment %}
+<div class="stepper" style="justify-content:center;margin-bottom:14px">
+  <i class="{% if acct_step >= 1 %}on{% endif %}{% if acct_step == 1 %} cur{% endif %}"></i>
+  <i class="{% if acct_step >= 2 %}on{% endif %}{% if acct_step == 2 %} cur{% endif %}"></i>
+  <i class="{% if acct_step >= 3 %}on{% endif %}{% if acct_step == 3 %} cur{% endif %}"></i>
+</div>

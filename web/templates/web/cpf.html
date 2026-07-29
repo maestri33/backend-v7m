@@ -4,6 +4,7 @@
 <main class="stage">
   <section class="card vpop" :class="{ vshake: shake }" x-data="cpfForm()" @modal-closed="$refs.cpf.focus()">
     <div class="step-label" style="text-align:center">Confirmação de identidade</div>
+    {% include "web/_account_top.html" with acct_step=3 %}
     <h1 class="h1">Qual é o seu CPF?</h1>
     <form id="cpf-form" hx-post="{% url 'web:cpf_submit' %}" hx-target="#cpf-zone" hx-swap="innerHTML">
       <input type="hidden" name="cpf" :value="cpf">
@@ -22,7 +23,7 @@
           </div>
         </div>
         <div class="big" x-text="masked"></div>
-        <div class="rest" x-text="cpf.length === 11 ? 'CPF COMPLETO' : (11 - cpf.length) + ' DÍGITOS RESTANTES'"></div>
+        <div class="rest" x-text="!cpf.length ? 'DIGITE NOS CAMPOS ABAIXO' : (cpf.length === 11 ? 'CPF COMPLETO' : (11 - cpf.length) + ' DÍGITOS RESTANTES')"></div>
         <div class="cpfbar"><i :style="`width:${cpf.length / 11 * 100}%`"></i></div>
       </div>
       <div class="codetap" style="margin-top:16px" @click="$refs.cpf.focus()">

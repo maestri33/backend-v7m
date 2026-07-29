@@ -22,6 +22,7 @@
       </svg>
     </div>
     <div class="step-label" style="text-align:center">Verificação</div>
+    {% include "web/_account_top.html" with acct_step=2 %}
     <h1 class="h1">Confirma que é você?</h1>
     <p class="sub">Enviamos um código no WhatsApp <b style="color:var(--paper)">{{ phone_masked }}</b>. É só digitar aqui embaixo.</p>
     <form id="otp-form" hx-post="{% url 'web:otp_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML">
