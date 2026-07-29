@@ -2,7 +2,7 @@
 {% block title %}V7M · Seu WhatsApp{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop" x-data="{ phone: '' }">
+  <section class="card vpop" x-data="phoneField()">
     <div class="card-chip">Bem-vindo, Promotor!</div>
     {% include "web/_account_top.html" with acct_step=1 %}
     {% if hub %}<div style="text-align:center;margin-bottom:6px"><span class="badge b-gold">✦ Indicação de polo ativa</span></div>{% endif %}
@@ -30,9 +30,15 @@
           <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national"
                  x-model="phone" x-mask="(99) 99999-9999" placeholder="(11) 91234-5678" required autofocus>
         </div>
+        {% comment %}a dica só aparece quando a pessoa já digitou o bastante pra saber que está
+        errado — sem ela o botão ficava desabilitado MUDO (E2E 2026-07-29){% endcomment %}
+        <p class="small" style="margin:8px 0 0;min-height:17px"
+           :class="problema ? '' : 'mut'"
+           :style="problema ? 'color:var(--danger-soft)' : ''"
+           x-text="problema || (digits.length === 11 ? 'Número completo ✓' : '')"></p>
       </div>
       <div id="fb-zone"></div>
-      <button id="btn-check" class="btn btn-gold" type="submit" :disabled="phone.replace(/\D/g,'').length < 11">
+      <button id="btn-check" class="btn btn-gold" type="submit" :disabled="!!problema || digits.length < 11">
         <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Continuar →
       </button>
     </form>
@@ -55,3 +61,21 @@
   </section>
 </main>
 {% endblock %}
+{% block js %}<script>
+// mesma regra do servidor (web/views.py _phone_problem): DDD da Anatel + celular com o 9.
+// Duplicada de propósito no cliente pra explicar NA HORA, sem esperar o submit.
+const DDDS=new Set([11,12,13,14,15,16,17,18,19,21,22,24,27,28,31,32,33,34,35,37,38,41,42,43,44,45,46,47,48,49,
+51,53,54,55,61,62,63,64,65,66,67,68,69,71,73,74,75,77,79,81,82,83,84,85,86,87,88,89,91,92,93,94,95,96,97,98,99]);
+function phoneField(){return{
+  phone:'',
+  get digits(){return (this.phone||'').replace(/\D/g,'')},
+  get problema(){
+    const d=this.digits;
+    if(d.length<3) return null;                       // ainda digitando, não atrapalha
+    if(!DDDS.has(+d.slice(0,2))) return `O DDD ${d.slice(0,2)} não existe. Confira os dois primeiros números.`;
+    if(d.length>=3 && d[2]!=='9') return 'Precisa ser um celular com WhatsApp (o número começa com 9 depois do DDD).';
+    if(d.length>11) return 'Esse número tem dígitos demais.';
+    return null;
+  },
+}}
+</script>{% endblock %}

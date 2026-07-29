@@ -655,13 +655,13 @@ def set_email(*, user_external_id: str, email: str) -> dict:
 # ── login ────────────────────────────────────────────────────────────────
 
 
-def verify_otp_for_user(*, user: User, otp: str) -> None:
+def verify_otp_for_user(*, user: User, otp: str, consume: bool = True) -> None:
     """Consome um OTP válido do usuário ou levanta o erro público canônico.
 
     Dois 401 distintos (funil v2, tela 2): `OTP_INVALID` = errou, o código ainda vale, digite de
     novo · `OTP_EXPIRED` = não há código utilizável, o único caminho é pedir outro. O front
     depende dessa diferença (👀 × ⏳ com reenvio automático) — mesma HTTP, `code` diferente."""
-    reason = otp_service.verify(user, otp)
+    reason = otp_service.verify(user, otp, consume=consume)
     if reason == otp_service.EXPIRED:
         raise Unauthorized("Código expirado. Peça um novo código.", code="OTP_EXPIRED")
     if reason != otp_service.OK:

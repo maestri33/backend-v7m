@@ -105,6 +105,81 @@ _ERROR_TEXT = {
         "Cadastro incompleto",
         "Complete sua identidade pra entrar no programa.",
     ),
+    # ── endereço ─────────────────────────────────────────────────────────────
+    "CEP_NOT_FOUND": (
+        "CEP não encontrado",
+        "Não achamos esse CEP. Confira os 8 números.",
+    ),
+    "CEP_INVALID": ("CEP inválido", "O CEP tem 8 números. Confira e digite de novo."),
+    "CEP_SERVICE_DOWN": (
+        "Busca de CEP fora do ar",
+        "A consulta de endereço está indisponível agora — não é você. Tente em instantes.",
+    ),
+    "ADDRESS_NOT_FOUND": (
+        "Endereço não encontrado",
+        "Comece pelo CEP para a gente montar seu endereço.",
+    ),
+    # ── documento ────────────────────────────────────────────────────────────
+    "DOCUMENT_SIDE_DUPLICATE": (
+        "Essa foto é igual à outra",
+        "A frente e o verso precisam ser fotos diferentes do documento.",
+    ),
+    "IMAGE_TYPE_INVALID": (
+        "Arquivo não aceito",
+        "Envie uma foto (JPG ou PNG) ou um PDF do documento.",
+    ),
+    "IMAGE_DECODE_FAILED": (
+        "Não conseguimos abrir o arquivo",
+        "A imagem parece corrompida. Tire outra foto e envie de novo.",
+    ),
+    "IMAGE_TOO_LARGE": (
+        "Arquivo muito grande",
+        "A foto passou do tamanho permitido. Tente uma imagem menor.",
+    ),
+    "DOC_TYPE_NOT_SET": (
+        "Escolha o documento",
+        "Selecione RG ou CNH antes de enviar a foto.",
+    ),
+    "SLOT_INVALID": (
+        "Envio inválido",
+        "Recarregue a página e tente enviar a foto de novo.",
+    ),
+    "INVALID_DOC_TYPE": ("Documento não aceito", "Use RG ou CNH."),
+    "DOCUMENT_NOT_FOUND": (
+        "Documento não encontrado",
+        "Envie a foto do documento para continuar.",
+    ),
+    # ── escolaridade ─────────────────────────────────────────────────────────
+    "EDUCATION_LEVEL_INVALID": (
+        "Nível inválido",
+        "Escolha entre Fundamental, Médio ou Superior.",
+    ),
+    "EDUCATION_GRADE_INVALID": (
+        "Série incompatível",
+        "A série não bate com o nível escolhido. Confira.",
+    ),
+    "EDUCATION_STATUS_INVALID": (
+        "Situação inválida",
+        "Diga se concluiu, está cursando ou parou no meio.",
+    ),
+    "EDUCATION_YEAR_INVALID": (
+        "Ano inválido",
+        "Confira o ano em que você estudou pela última vez.",
+    ),
+    "EDUCATION_LAST_COMPLETED_GRADE_INVALID": (
+        "Séries não batem",
+        "A última série concluída precisa ser anterior à que você cursava.",
+    ),
+    # ── pix / perfil ─────────────────────────────────────────────────────────
+    "PROFILE_CPF_MISSING": (
+        "Falta o seu CPF",
+        "Confirme sua identidade antes de cadastrar a chave Pix.",
+    ),
+    "DATE_INVALID": ("Data inválida", "Confira a data digitada (dia/mês/ano)."),
+    "STATE_INVALID": (
+        "UF inválida",
+        "Use a sigla do estado com 2 letras (ex.: PR, SP).",
+    ),
 }
 
 
