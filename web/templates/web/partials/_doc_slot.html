@@ -1,9 +1,13 @@
-<form hx-post="/app/cadastro/documento/foto/{{ s.slot }}" hx-encoding="multipart/form-data" hx-target="#doc-zone" hx-swap="innerHTML" style="margin-bottom:10px">
-  <label class="up {% if s.status == 'approved' %}has{% endif %}" {% if s.is_next %}style="border-color:var(--gold)"{% endif %}>
+{# `sending` é local do slot: o form some no swap logo em seguida, então não precisa sobreviver. #}
+<form hx-post="/app/cadastro/documento/foto/{{ s.slot }}" hx-encoding="multipart/form-data"
+      hx-target="#doc-zone" hx-swap="innerHTML" style="margin-bottom:10px"
+      x-data="{ sending: false }">
+  <label class="up {% if s.status == 'approved' %}has{% endif %}" :class="{ has: sending }" {% if s.is_next %}style="border-color:var(--gold)"{% endif %}>
     <svg class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2.2l1.3-2h6.9l1.3 2H20a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12.5" cy="12.5" r="3.6"/></svg>
     <b>{{ s.label }}{% if s.status == 'approved' %} ✓{% endif %}</b>
-    <small>{% if s.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ s.reason|default:"Ficou ilegível — tira outra?" }}</span>{% else %}{{ s.hint }} · tire a foto ou envie o arquivo{% endif %}</small>
-    <span class="js-upstate small mut"></span>
-    <input type="file" name="file" accept="image/*,application/pdf" capture="environment" class="js-upfile">
+    <small x-show="!sending">{% if s.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ s.reason|default:"Ficou ilegível — tira outra?" }}</span>{% else %}{{ s.hint }} · tire a foto ou envie o arquivo{% endif %}</small>
+    <small x-show="sending" x-cloak class="gold">Enviando…</small>
+    <input type="file" name="file" accept="image/*,application/pdf" capture="environment"
+           @change="if ($el.files.length) { sending = true; $el.closest('form').requestSubmit() }">
   </label>
 </form>

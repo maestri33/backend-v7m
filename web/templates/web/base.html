@@ -9,6 +9,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="{% url 'web:asset' 'htmx.min.js' %}" defer></script>
+{% comment %}Alpine: plugin ANTES do core (exigência do próprio Alpine), ambos com defer.
+Cuida só do estado de UI (máscara, gate de botão, chips); rede/navegação seguem 100% com o HTMX.{% endcomment %}
+<script src="{% url 'web:asset' 'alpine-mask.min.js' %}" defer></script>
+<script src="{% url 'web:asset' 'alpine.min.js' %}" defer></script>
 <style>
 :root{
   --black:#0b0b0c;--char:#141416;--char2:#1d1d20;--paper:#ffffff;--paper-soft:#f5f4f1;
@@ -22,6 +26,7 @@
   --dark-input-bg:rgba(29,29,32,0.6);--dark-input-border:rgba(231,228,221,0.18);
 }
 *{box-sizing:border-box}
+[x-cloak]{display:none!important}
 html,body{margin:0;padding:0;min-height:100%}
 body{background:#141416;color:var(--paper);font-family:Geist,system-ui,sans-serif;font-size:14px;
   display:flex;flex-direction:column;min-height:100dvh;position:relative;}
@@ -202,16 +207,13 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
   </small>
 </footer>{% endif %}
 <script>
-function digits(v){return (v||'').replace(/\D+/g,'')}
-function maskPhone(v){const d=digits(v).slice(0,11);if(d.length<=2)return d;const r=d.slice(2);const cut=r.length>8?5:4;return '('+d.slice(0,2)+') '+(r.length>4?r.slice(0,cut)+'-'+r.slice(cut):r)}
-function maskCpf(v){const d=digits(v).slice(0,11);let o='';for(let i=0;i<d.length;i++){if(i===3||i===6)o+='.';if(i===9)o+='-';o+=d[i]}return o}
+// Utilitários que sobraram depois da migração pro Alpine. As máscaras viraram `x-mask`,
+// os gates de botão viraram `:disabled`, e os cooldowns viraram estado de x-data.
+// `cpfOk` fica: é regra de negócio (dígito verificador) usada por cpf.html e pix.html.
 function cpfOk(d){if(d.length!==11||/^(\d)\1+$/.test(d))return false;let s=0;for(let i=0;i<9;i++)s+=+d[i]*(10-i);let r=(s*10)%11;if(r===10)r=0;if(r!==+d[9])return false;s=0;for(let i=0;i<10;i++)s+=+d[i]*(11-i);r=(s*10)%11;if(r===10)r=0;return r===+d[10]}
-function cooldown(el,secs,cls){let n=secs;el.classList.remove('pill-green');el.classList.add('pill-red');el.disabled=true;
- const t=setInterval(()=>{n--;el.textContent='Reenviar em '+n+'s';if(n<=0){clearInterval(t);el.disabled=false;el.textContent='Reenviar código';el.classList.remove('pill-red');el.classList.add('pill-green')}},1000);
- el.textContent='Reenviar em '+n+'s'}
 function copyText(t,btn){navigator.clipboard.writeText(t).then(()=>{const o=btn.textContent;btn.textContent='Copiado ✓';setTimeout(()=>btn.textContent=o,1600)})}
 document.addEventListener('htmx:responseError',e=>{
- const z=document.getElementById('fb-zone');if(z){z.innerHTML='<div class="alert alert-danger vshake"><span>🛸</span><div><b>Peraí um tiquinho…</b>Deu um soluço no servidor. Tenta de novo em instantes.</div></div>'}});
+ const z=document.getElementById('fb-zone');if(z){z.innerHTML='<div class="alert alert-danger vshake"><span>!</span><div><b>Peraí um tiquinho…</b>Deu um soluço no servidor. Tenta de novo em instantes.</div></div>'}});
 </script>
 {% block js %}{% endblock %}
 </body>

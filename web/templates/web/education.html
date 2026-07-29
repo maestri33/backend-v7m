@@ -2,48 +2,50 @@
 {% block title %}V7M · Escolaridade{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop">
+  <section class="card vpop" x-data="{ level: '', situ: '' }">
     <div class="card-chip">Última pergunta</div>
     {% include "web/_wizard_top.html" %}
     <h1 class="h1">Seus estudos</h1>
     <p class="sub">Até onde você estudou? Sem julgamento — é só pra montar seu perfil direitinho.</p>
     <form hx-post="{% url 'web:education_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-edu">
       <label class="lb">Qual foi o nível mais alto?</label>
-      <div class="chips" id="lv">
-        <button type="button" class="chip" data-v="fundamental">Fundamental</button>
-        <button type="button" class="chip" data-v="medio">Médio</button>
-        <button type="button" class="chip" data-v="superior">Superior</button>
+      <div class="chips">
+        <button type="button" class="chip" :class="{ on: level === 'fundamental' }" @click="level = 'fundamental'">Fundamental</button>
+        <button type="button" class="chip" :class="{ on: level === 'medio' }" @click="level = 'medio'">Médio</button>
+        <button type="button" class="chip" :class="{ on: level === 'superior' }" @click="level = 'superior'">Superior</button>
       </div>
-      <input type="hidden" name="level" id="level">
+      <input type="hidden" name="level" :value="level">
+
       <label class="lb">E você…</label>
-      <div class="chips" id="st">
-        <button type="button" class="chip" data-v="completed">Concluí ✓</button>
-        <button type="button" class="chip" data-v="attending">Tô cursando</button>
-        <button type="button" class="chip" data-v="stopped">Parei no meio</button>
+      <div class="chips">
+        <button type="button" class="chip" :class="{ on: situ === 'completed' }" @click="situ = 'completed'">Concluí ✓</button>
+        <button type="button" class="chip" :class="{ on: situ === 'attending' }" @click="situ = 'attending'">Tô cursando</button>
+        <button type="button" class="chip" :class="{ on: situ === 'stopped' }" @click="situ = 'stopped'">Parei no meio</button>
       </div>
-      <input type="hidden" name="situacao" id="situacao">
-      <div id="grade-wrap" style="display:none">
-        <label class="lb" for="grade">Em que série/ano você estava?</label>
-        <select id="grade" name="grade" class="field"></select>
-      </div>
+      <input type="hidden" name="situacao" :value="situ">
+
+      {% comment %}série só faz sentido em fundamental/médio não-concluído — o x-if troca a
+      pergunta sozinho, sem montar option na mão como antes.{% endcomment %}
+      <template x-if="level && level !== 'superior' && situ && situ !== 'completed'">
+        <div>
+          <label class="lb" for="grade">Em que série/ano você estava?</label>
+          <select id="grade" name="grade" class="field">
+            <template x-for="n in (level === 'fundamental' ? 9 : 3)" :key="n">
+              <option :value="n" x-text="n + 'ª série/ano'"></option>
+            </template>
+          </select>
+        </div>
+      </template>
+
       <label class="lb" for="school">Escola (se lembrar — opcional)</label>
       <input id="school" name="school" class="field" type="text" placeholder="Nome da escola">
       <label class="lb" for="city">Cidade da escola (opcional)</label>
       <input id="city" name="city" class="field" type="text" placeholder="Cidade">
       <div id="fb-zone"></div>
-      <button id="btn-edu" class="btn btn-gold" style="margin-top:16px" type="submit" disabled><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Salvar e ir pra selfie →</button>
+      <button id="btn-edu" class="btn btn-gold" style="margin-top:16px" type="submit" :disabled="!level || !situ">
+        <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Salvar e ir pra selfie →
+      </button>
     </form>
   </section>
 </main>
 {% endblock %}
-{% block js %}<script>
-const lvl=document.getElementById('level'),sit=document.getElementById('situacao'),gw=document.getElementById('grade-wrap'),gs=document.getElementById('grade'),bb=document.getElementById('btn-edu');
-function pick(box,hidden){box.addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b)return;
- box.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));b.classList.add('on');hidden.value=b.dataset.v;refresh()})}
-function refresh(){const l=lvl.value,s=sit.value;
- const showGrade=l&&l!=='superior'&&s&&s!=='completed';
- gw.style.display=showGrade?'block':'none';
- if(showGrade){const max=l==='fundamental'?9:3;gs.innerHTML='';for(let i=1;i<=max;i++){gs.innerHTML+='<option value="'+i+'">'+i+'ª série/ano</option>'}}
- bb.disabled=!(l&&s)}
-pick(document.getElementById('lv'),lvl);pick(document.getElementById('st'),sit);
-</script>{% endblock %}
