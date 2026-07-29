@@ -1,0 +1,12 @@
+{% comment %}Resposta da IA de leve, na hora (antes do upload de verdade){% endcomment %}
+{% if ok %}
+  <div class="checkline ok vfade">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.6 2.6 4.8-5"/></svg>
+    <span>{% if doc_type %}{{ doc_type }} reconhecido{% else %}Documento reconhecido{% endif %}{% if completeness %} · {{ completeness }}{% endif %} · está legível</span>
+  </div>
+{% else %}
+  <div class="checkline bad vshake">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.2"/><circle cx="12" cy="16.4" r=".9" fill="currentColor" stroke="none"/></svg>
+    <span>{{ reason|default:"A foto não ficou boa — tire outra com mais luz e sem cortar as bordas." }}</span>
+  </div>
+{% endif %}

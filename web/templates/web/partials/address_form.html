@@ -1,35 +1,62 @@
-{% with a=me.address ap=me.address_proof %}
-<div class="vfade">
-  <div class="frame">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <b class="gold" style="font-size:13px">CEP {{ a.zipcode|default:a.cep }}</b>
-      {% if saved %}<span class="badge b-ok">Salvo ✓</span>{% endif %}
-    </div>
-    {% if a.street %}<div class="small" style="color:var(--silver);line-height:1.6">{{ a.street }}{% if a.neighborhood %} · {{ a.neighborhood }}{% endif %}<br>{{ a.city }}/{{ a.state }}</div>{% endif %}
+{% comment %}Passo do endereço = SÓ o comprovante (protótipo). A IA lê o documento e preenche
+CEP, rua, número, bairro, cidade e UF sozinha — o backend já faz isso em
+`_address_proof.validate_and_store`. Campo só aparece se a leitura não trouxer algo essencial.{% endcomment %}
+{% with ap=me.address_proof a=me.address %}
+{% if ap.status == 'rejected' %}
+  {% include "web/partials/_rejected.html" with reason=ap.reason|default:"O comprovante não passou. Envie um dos últimos 3 meses, com o endereço legível." %}
+{% endif %}
+
+{% if not ap.exists %}
+  <div class="metodos">
+    <form hx-post="{% url 'web:address_proof' %}" hx-encoding="multipart/form-data" hx-target="#addr-zone" hx-swap="innerHTML">
+      <label class="metodo" @click="metodo = 'foto'">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2.2l1.3-2h6.9l1.3 2H20a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12.5" cy="12.5" r="3.6"/></svg>
+        <b>Tirar foto</b>
+        <input type="file" name="file" accept="image/*" capture="environment"
+               @change="if ($el.files.length) $el.closest('form').requestSubmit()">
+      </label>
+    </form>
+    <form hx-post="{% url 'web:address_proof' %}" hx-encoding="multipart/form-data" hx-target="#addr-zone" hx-swap="innerHTML">
+      <label class="metodo" @click="metodo = 'arquivo'">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>
+        <b>Enviar arquivo</b>
+        <input type="file" name="file" accept="image/*,application/pdf"
+               @change="if ($el.files.length) $el.closest('form').requestSubmit()">
+      </label>
+    </form>
   </div>
-  <form hx-post="/app/cadastro/endereco/dados" hx-target="#addr-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-addr">
-    {% if 'street' in a.missing_fields %}<label class="lb">Rua</label><input class="field" name="street" value="{{ a.street|default:'' }}" required>{% endif %}
-    {% if 'neighborhood' in a.missing_fields %}<label class="lb">Bairro</label><input class="field" name="neighborhood" value="{{ a.neighborhood|default:'' }}" required>{% endif %}
-    {% if 'city' in a.missing_fields %}<label class="lb">Cidade</label><input class="field" name="city" value="{{ a.city|default:'' }}" required>{% endif %}
-    {% if 'state' in a.missing_fields %}<label class="lb">UF</label><input class="field" name="state" maxlength="2" value="{{ a.state|default:'' }}" required>{% endif %}
-    <div style="display:flex;gap:10px">
-      <div style="flex:1"><label class="lb" for="number">Número</label><input id="number" class="field" name="number" inputmode="numeric" value="{{ a.number|default:'' }}" placeholder="123" {% if 'number' in a.missing_fields %}autofocus{% endif %} required></div>
-      <div style="flex:1.4"><label class="lb" for="complement">Complemento <span class="mut">(opcional)</span></label><input id="complement" class="field" name="complement" value="{{ a.complement|default:'' }}" placeholder="Apto, bloco…"></div>
+{% elif ap.status == 'pending' or not a.street %}
+  <div hx-get="{% url 'web:address_status' %}" hx-trigger="every 2.5s" hx-target="#addr-zone" hx-swap="innerHTML">
+    <div class="scan"><div class="line"></div>
+      <div class="center" style="padding:10px 0">
+        <span class="spin vspin"></span>
+        <b>Lendo seu comprovante…</b>
+        <span class="small mut">A gente tira o endereço do próprio documento. Leva alguns segundos.</span>
+      </div>
     </div>
-    <div id="fb-zone"></div>
-    <button id="btn-addr" class="btn btn-ghost" style="margin-top:12px" type="submit">Salvar endereço</button>
-  </form>
-  <form hx-post="/app/cadastro/endereco/comprovante" hx-encoding="multipart/form-data" hx-target="#addr-zone" hx-swap="innerHTML" style="margin-top:12px">
-    <label class="up {% if ap.exists %}has{% endif %}">
-      <svg class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>
-      <b>{% if ap.exists %}Comprovante enviado ✓{% else %}Comprovante de residência{% endif %}</b>
-      <small>{% if ap.exists %}{% if ap.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ ap.reason|default:"Reprovado — envie outro mais recente." }}</span>{% else %}Toque pra trocar o arquivo{% endif %}{% else %}Conta de luz, água ou internet dos últimos 3 meses — foto ou PDF{% endif %}</small>
-      <input type="file" name="file" accept="image/*,application/pdf"
-             @change="if ($el.files.length) $el.closest('form').requestSubmit()">
-    </label>
-  </form>
-  {% if not a.missing_fields and ap.exists %}
-    <a class="btn btn-gold" style="text-decoration:none;margin-top:14px" href="/app/cadastro/documento">Continuar →</a>
+  </div>
+{% else %}
+  <div class="frame vfade" style="border-color:rgba(121,211,155,0.45)">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <svg class="ico" style="width:17px;height:17px;color:var(--ok-soft)" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.6 2.6 4.8-5"/></svg>
+      <b style="font-size:13.5px;color:var(--ok-soft)">Endereço lido do comprovante</b>
+    </div>
+    <div class="small" style="color:var(--silver);line-height:1.6">
+      {{ a.street }}{% if a.number %}, {{ a.number }}{% endif %}{% if a.complement %} · {{ a.complement }}{% endif %}<br>
+      {% if a.neighborhood %}{{ a.neighborhood }} · {% endif %}{{ a.city }}/{{ a.state }}{% if a.zipcode %} · {{ a.zipcode }}{% endif %}
+    </div>
+  </div>
+  {% if a.missing_fields %}
+    {% comment %}só o que a leitura NÃO trouxe — nunca o formulário inteiro{% endcomment %}
+    <form hx-post="{% url 'web:address_data' %}" hx-target="#addr-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-addr">
+      <p class="small mut" style="margin:12px 0 0">Só isto não deu pra ler:</p>
+      {% for f in a.missing_fields %}
+        <label class="lb" for="a-{{ f }}">{{ f|title }}</label>
+        <input id="a-{{ f }}" class="field" name="{{ f }}" required>
+      {% endfor %}
+      <div id="fb-zone"></div>
+      <button id="btn-addr" class="btn btn-gold" style="margin-top:12px" type="submit">Confirmar →</button>
+    </form>
   {% endif %}
-</div>
+{% endif %}
 {% endwith %}

@@ -23,15 +23,19 @@ urlpatterns = [
     path("email/enviar", views.email_submit, name="email_submit"),
     # wizard do candidato
     path("cadastro/endereco", views.address_page, name="address"),
-    path("cadastro/endereco/cep", views.address_cep, name="address_cep"),
+    path("cadastro/endereco/status", views.address_status, name="address_status"),
     path("cadastro/endereco/dados", views.address_data, name="address_data"),
     path("cadastro/endereco/comprovante", views.address_proof, name="address_proof"),
     path("cadastro/documento", views.document_page, name="document"),
+    path(
+        "cadastro/documento/checar", views.document_classify, name="document_classify"
+    ),
     path("cadastro/documento/foto/<slot>", views.document_photo, name="document_photo"),
     path("cadastro/documento/status", views.document_status, name="document_status"),
     path("cadastro/documento/campos", views.document_fields, name="document_fields"),
     path("cadastro/pix", views.pix_page, name="pix"),
     path("cadastro/pix/enviar", views.pix_submit, name="pix_submit"),
+    path("cidades", views.cidades, name="cidades"),
     path("cadastro/escolaridade", views.education_page, name="education"),
     path(
         "cadastro/escolaridade/enviar", views.education_submit, name="education_submit"

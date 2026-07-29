@@ -3,10 +3,9 @@
 {% block body %}
 <main class="stage">
   <section class="card vpop wiz" x-data="pixField()">
-    <div class="card-chip">Onde cai o seu dinheiro</div>
-    {% include "web/_wizard_top.html" %}
+        {% include "web/_wizard_top.html" %}
     <h1 class="h1">Sua chave Pix</h1>
-    <p class="sub">É nessa chave que você recebe as comissões. Por isso ela precisa, <b style="color:var(--gold-soft)">obrigatoriamente, estar no seu nome</b> (no seu CPF).</p>
+    <p class="sub">É nela que caem as comissões — digite que a gente identifica o tipo.</p>
     <form hx-post="{% url 'web:pix_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-pix">
       <div class="frame">
         <label class="lb" for="key">Sua chave (CPF, celular, e-mail ou aleatória)</label>

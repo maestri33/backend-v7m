@@ -2,16 +2,16 @@
 {% block title %}V7M · Documento{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop wiz">
-    <div class="card-chip">Documento com foto</div>
-    {% include "web/_wizard_top.html" %}
-    <h1 class="h1">Seu documento</h1>
-    <p class="sub">{% if not section.doc_type %}Escolha qual documento você vai usar — RG ou CNH. A leitura é automática: você só tira a foto.{% else %}A leitura é automática — tire a foto e a gente extrai os dados.{% endif %}</p>
+  <section class="card vpop wiz" x-data="{ pick: '{{ section.doc_type|default:"" }}' }">
+        {% include "web/_wizard_top.html" %}
+    <h1 class="h1">Documento com foto</h1>
+    {% comment %}subtítulo muda conforme a escolha — os textos são os do protótipo (docSub){% endcomment %}
+    <p class="sub" x-text="!pick ? 'Escolha qual documento você vai usar.'
+        : (pick === 'rg' ? 'Frente e verso, bem iluminados e sem cortar as bordas.'
+                         : 'Foto da CNH aberta, com frente e verso visíveis.')">Escolha qual documento você vai usar.</p>
     {% comment %}`pick` vive AQUI (fora do #doc-zone) de propósito: o HTMX troca o conteúdo do
     doc-zone a cada foto/poll, e um x-data lá dentro seria resetado no swap.{% endcomment %}
-    <div x-data="{ pick: '{{ section.doc_type|default:'' }}' }">
       <div id="doc-zone">{% include "web/partials/document_panel.html" %}</div>
-    </div>
   </section>
 </main>
 {% endblock %}

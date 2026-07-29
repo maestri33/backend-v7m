@@ -2,10 +2,21 @@
 {% block title %}V7M · Seu e-mail{% endblock %}
 {% block body %}
 <main class="stage">
+  <div class="hero-out vfloat">
+    {% comment %}envelope — hero da tela de contato no protótipo{% endcomment %}
+    <svg viewBox="0 0 190 190" aria-hidden="true">
+      <rect x="24" y="54" width="142" height="96" rx="14" fill="rgba(29,29,32,.92)" stroke="var(--gold)" stroke-width="3.6"/>
+      <path d="M24 66l71 50 71-50" fill="none" stroke="var(--gold)" stroke-width="3.6" stroke-linejoin="round"/>
+      <path d="M24 150l52-42M166 150l-52-42" fill="none" stroke="rgba(217,177,90,.55)" stroke-width="3"/>
+      <circle cx="150" cy="128" r="21" fill="var(--char)" stroke="var(--gold-soft)" stroke-width="3"/>
+      <path d="M150 120v9l6 4" fill="none" stroke="var(--gold-soft)" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+  </div>
   <section class="card vpop" x-data="emailField()">
-    <div class="card-chip">Quase lá</div>
     {% include "web/_account_top.html" with acct_step=3 %}
+    <div class="step-label" style="text-align:center">Contato</div>
     <h1 class="h1">Qual é seu melhor e-mail?</h1>
+    <div class="hairline"></div>
     <p class="sub">É por ele que chegam as confirmações importantes do seu cadastro.</p>
     <form hx-post="{% url 'web:email_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-email">
       <div class="frame">
