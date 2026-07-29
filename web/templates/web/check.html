@@ -30,8 +30,8 @@
           <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel-national"
                  x-model="phone" x-mask="(99) 99999-9999" placeholder="(11) 91234-5678" required autofocus>
         </div>
-        {# a dica só aparece quando a pessoa já digitou o bastante pra saber que está errado —
-           sem isso o botão ficava desabilitado MUDO e ninguém entendia o porquê (E2E 2026-07-29) #}
+        {% comment %}a dica só aparece quando a pessoa já digitou o bastante pra saber que está
+        errado — sem ela o botão ficava desabilitado MUDO (E2E 2026-07-29){% endcomment %}
         <p class="small" style="margin:8px 0 0;min-height:17px"
            :class="problema ? '' : 'mut'"
            :style="problema ? 'color:var(--danger-soft)' : ''"
