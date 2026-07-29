@@ -137,6 +137,21 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .scan{position:relative;overflow:hidden;border-radius:14px;border:1px solid rgba(217,177,90,0.4);background:linear-gradient(160deg,rgba(217,177,90,0.10),rgba(29,29,32,0.6));padding:22px;margin:14px 0}
 .scan .line{position:absolute;left:6%;right:6%;height:2px;background:linear-gradient(90deg,transparent,var(--gold-soft),transparent);animation:scanline 2.6s ease-in-out infinite;box-shadow:0 0 14px rgba(240,212,147,0.8)}
 /* pergaminho */
+@keyframes pfadein{from{opacity:0}to{opacity:1}}
+.perg-wrap{text-align:center}
+.perg-eyebrow{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-soft);
+  margin:6px 0 18px;opacity:0;animation:pfadein .5s ease .05s both}
+.perg-d1{opacity:0;animation:pfadein .5s ease 1.3s both}
+.perg-d2{opacity:0;animation:pfadein .5s ease 2s both}
+.perg-d3{opacity:0;animation:pfadein .5s ease 2.3s both}
+.perg-d4{opacity:0;animation:pfadein .5s ease 2.6s both}
+.perg h3{min-height:24px;font-variant-numeric:tabular-nums}
+/* o pergaminho é um documento: o nome e a saudação são serifados, como no protótipo */
+.perg h3,.perg-d2{font-family:Georgia,"Times New Roman",serif}
+.perg h3{font-size:18px;font-weight:800;color:#3f2f12;line-height:1.25}
+.perg-d2{font-size:14px;line-height:1.6;color:#5b4a24}
+.perg-d2 div:last-child{color:#3f2f12}
+a.btn{text-decoration:none}
 .perg{background:linear-gradient(175deg,#f7ecd2 0%,#efdfb7 60%,#e8d5a4 100%);color:#4a3a17;border-radius:12px;padding:24px 20px;text-align:center;
   box-shadow:0 18px 40px -18px rgba(0,0,0,0.8), inset 0 0 40px rgba(168,123,46,0.25);border:1px solid rgba(168,123,46,0.5)}
 .perg .roll{height:12px;border-radius:99px;background:linear-gradient(180deg,#7a5a2b,#4d3a1a);margin:-30px -26px 18px;box-shadow:0 3px 8px rgba(0,0,0,0.5)}
@@ -236,6 +251,47 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .goalgrid{display:flex;gap:8px;justify-content:center;margin:10px 0 8px}
 .goalbox{flex:1;max-width:56px;aspect-ratio:1;border:1px solid var(--sc-border);border-radius:8px;background:var(--sc-bg);display:flex;align-items:center;justify-content:center}
 .goalbox.on{border-color:var(--sc-pri);background:rgba(217,177,90,0.13);box-shadow:0 0 16px rgba(217,177,90,.28)}
+/* ── pix: badges de tipo + campo centralizado (protótipo) ── */
+.pixtypes{display:flex;gap:7px;justify-content:center;flex-wrap:nowrap;margin:4px 0 14px}
+.pixtype{flex:1;max-width:128px;display:flex;flex-direction:column;align-items:center;gap:7px;
+  padding:14px 6px;border-radius:14px;border:1.5px solid var(--gold);background:rgba(240,212,147,0.12);
+  font-family:inherit;cursor:default;transition:opacity .25s,transform .25s,border-color .25s,background .25s}
+.pixtype svg{width:28px;height:28px;fill:none;stroke:var(--gold-soft);stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.pixtype span{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:var(--gold-soft);
+  text-transform:uppercase;white-space:nowrap}
+.pixtype.pick{cursor:pointer;border-color:rgba(240,195,97,0.55);background:rgba(29,29,32,0.5)}
+.pixtype.sel{transform:scale(1.06);border-color:var(--gold);background:rgba(240,212,147,0.12)}
+.pixtype.bad{border-color:rgba(255,154,143,0.6);background:rgba(192,57,43,0.12)}
+.pixtype.bad svg{stroke:var(--danger-soft)}
+.pixtype.bad span{color:var(--danger-soft)}
+.pixkey{width:100%;box-sizing:border-box;border-radius:10px;min-height:48px;padding:12px 14px;
+  text-align:center;font:inherit;font-size:15px;font-weight:600;color:var(--paper);
+  background:var(--dark-input-bg);border:1px solid var(--dark-input-border);outline:none}
+.pixkey:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,177,90,0.3)}
+.pixkey.err{border-color:var(--danger-soft)}
+.pixhint{margin:6px 0 14px;text-align:center;font-size:11.5px}
+.pixhint.ok{color:var(--gold-soft)}.pixhint.bad{color:var(--danger-soft)}.pixhint.mut{color:var(--muted-dark)}
+.pixwait{display:flex;align-items:center;gap:10px;border-radius:14px;border:1px solid rgba(147,194,238,0.3);
+  background:rgba(47,111,176,0.12);color:var(--info-soft);padding:14px 16px;font-weight:700;font-size:13.5px}
+/* ── selfie: acordo em cláusulas, visor e conferência (protótipo) ── */
+.acordo{max-height:200px;overflow-y:auto;border-radius:12px;border:1px solid rgba(231,228,221,0.15);
+  background:rgba(29,29,32,0.6);padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.acordo .ct{margin:0;font-size:13px;font-weight:700;color:var(--paper)}
+.acordo .cd{margin:2px 0 0;font-size:12.5px;line-height:1.6;color:var(--muted-dark)}
+.selfie-cam{display:flex;flex-direction:column;gap:12px;align-items:center}
+.selfie-cam .visor{position:relative;width:100%;aspect-ratio:3/4;max-height:300px;border-radius:14px;
+  background:#050506;border:1px solid rgba(231,228,221,0.15);display:flex;align-items:center;
+  justify-content:center;overflow:hidden}
+.selfie-cam .visor video,.selfie-cam .visor img{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;transform:scaleX(-1)}
+.selfie-cam .mascara{position:relative;height:86%;aspect-ratio:3/4;border:2px dashed rgba(217,177,90,0.7);
+  border-radius:999px 999px 46% 46%/60% 60% 40% 40%;display:flex;align-items:flex-end;
+  justify-content:center;padding-bottom:14px}
+.selfie-cam .mascara span{font-size:11.5px;font-weight:700;color:rgba(240,212,147,0.85);text-align:center}
+.selfie-cam .obturador{width:62px;height:62px;border-radius:999px;border:4px solid rgba(255,255,255,0.85);
+  background:var(--gold-grad);cursor:pointer;box-shadow:0 10px 26px -8px rgba(217,177,90,0.6);padding:0}
+.selfie-cam .visor img+.mascara,.selfie-cam .visor:has(img) .mascara{display:none}
 /* ── LMS · aula obrigatória (igual protótipo) ─────────────────────── */
 /* o card da aula NÃO é o card do funil: no protótipo é raso, 12px, padding 20 e sem chip */
 .card.lms{max-width:440px;border-radius:12px;padding:20px;gap:15px;

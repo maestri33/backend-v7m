@@ -1,26 +1,57 @@
-<div class="vpop">
-  <div class="small gold" style="text-align:center;letter-spacing:.2em;font-weight:800;margin:10px 0 20px">✦ IDENTIDADE ENCONTRADA ✦</div>
+{% comment %}O pergaminho SUBSTITUI o card do CPF (protótipo: cpfNormal e cpfDiscovery são
+exclusivos). O #cpf-step some por swap out-of-band; os erros continuam caindo em #cpf-zone.{% endcomment %}
+<div id="cpf-step" hx-swap-oob="true" hidden></div>
+
+<div class="vpop perg-wrap" x-data="pergaminho('{{ identity.name|escapejs }}')" x-init="revela()">
+  <div class="perg-eyebrow">✦ Identidade encontrada ✦</div>
   <div class="perg">
     <div class="roll"></div>
     {% if identity.photo %}
-      <img class="foto" src="{{ identity.photo }}" alt="">
+      <img class="foto perg-d1" src="{{ identity.photo }}" alt="">
     {% else %}
       {% comment %}sem foto do WhatsApp: placeholder de câmera igual ao print 07-funil{% endcomment %}
-      <div class="foto" style="flex-direction:column;gap:1px">
+      <div class="foto perg-d1" style="flex-direction:column;gap:1px">
         <svg viewBox="0 0 24 24" style="width:22px;height:22px;stroke:#a87b2e;fill:none;stroke-width:1.6" aria-hidden="true">
           <path d="M3 8a2 2 0 012-2h2.2l1.3-2h6.9l1.3 2H20a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12.5" cy="12.5" r="3.6"/>
         </svg>
         <span style="font-size:7.5px;letter-spacing:.16em;font-weight:700">FOTO</span>
       </div>
     {% endif %}
-    <h3>{{ identity.name }}</h3>
+    <h3 x-text="nome" aria-live="polite">&nbsp;</h3>
     <div style="width:46px;height:1px;background:rgba(168,123,46,.5);margin:10px auto"></div>
-    <div style="font-size:13px">Bem-vind{{ suffix }} ao time.</div>
-    <div style="font-size:14px;font-weight:700;margin-top:2px">Sua jornada como promotor{{ suffix_f }} começa agora.</div>
-    <div class="selo">✓ CADASTRO LIBERADO</div>
+    <div class="perg-d2">
+      <div style="font-size:13px">Bem-vind{{ suffix }} ao time.</div>
+      <div style="font-size:14px;font-weight:700;margin-top:2px">Sua jornada como promotor{{ suffix_f }} começa agora.</div>
+    </div>
+    <div class="selo perg-d3">✓ CADASTRO LIBERADO</div>
     <div class="roll bot"></div>
   </div>
-  <p class="sub" style="margin-top:24px">Prazer em encontrar você{% if first_name %}, <b style="color:var(--paper)">{{ first_name }}</b>{% endif %}.<br>Agora vamos confirmar seu e-mail.</p>
-  <div class="center"><span class="spin vspin"></span></div>
+  <p class="sub perg-d3" style="margin-top:22px">Prazer em encontrar você{% if first_name %}, <b style="color:var(--paper)">{{ first_name }}</b>{% endif %}.<br>Agora vamos confirmar seu e-mail.</p>
+  <a class="btn btn-gold perg-d4" href="{{ next_url }}">Continuar →</a>
 </div>
-<script>setTimeout(function(){window.location.href='{{ next_url }}'},3200)</script>
+
+<script>
+// nome revelado letra a letra (protótipo: 1.2s de espera, 55ms por caractere) e, se o
+// promotor não clicar, o app segue sozinho aos 7s — ninguém fica preso admirando a tela.
+function pergaminho(full) {
+  return {
+    nome: '',
+    revela() {
+      const pool = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#@%&*';
+      setTimeout(() => {
+        let frame = 0;
+        const it = setInterval(() => {
+          frame++;
+          let out = '';
+          for (let i = 0; i < full.length; i++) {
+            out += full[i] === ' ' ? ' ' : (i < frame ? full[i] : pool[Math.floor(Math.random() * pool.length)]);
+          }
+          this.nome = out;
+          if (frame >= full.length) { clearInterval(it); this.nome = full; }
+        }, 55);
+      }, 1200);
+      setTimeout(() => { window.location.href = '{{ next_url }}'; }, 7000);
+    },
+  };
+}
+</script>

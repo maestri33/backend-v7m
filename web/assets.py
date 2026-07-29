@@ -23,6 +23,7 @@ _ALLOWED = {
     # LMS: o componente Alpine da aula (gate do vídeo, gravação, revisão) vive em arquivo
     # próprio — a tela é a mais pesada do funil e inline aqui só engorda o HTML.
     "aula.js": "application/javascript",
+    "selfie.js": "application/javascript",
     "logo.svg": "image/svg+xml",
 }
 

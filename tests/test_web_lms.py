@@ -80,3 +80,33 @@ def test_painel_nunca_redireciona_pra_si_mesmo():
     assert "redirect(" not in depois.split("return fn(")[0], (
         "promoter ausente redirecionando pro próprio painel = loop infinito"
     )
+
+
+def test_candidato_sem_endereco_nao_explode():
+    """Endereço nulo é o estado NORMAL no início do funil. Estourava AttributeError dentro do
+    próprio gate (`current_step`), então a pessoa nem era redirecionada: 500 na cara dela."""
+    from users.roles.candidate import service as cand_svc
+    from users.roles.candidate.models import Candidate
+    from users.documents import service as docs
+    from users.roles import service as roles_svc
+    from hub.models import Hub
+    from users.address.models import Address
+
+    u = _user()
+    roles_svc.grant(u, "candidate")
+    docs.create_empty(u)
+    endereco = Address.objects.create(
+        zipcode="84010000",
+        street="R",
+        number="1",
+        neighborhood="C",
+        city="Ponta Grossa",
+        state="PR",
+    )
+    hub = Hub.objects.create(brand="V7M", address=endereco)
+    cand = Candidate.objects.create(user=u, hub=hub)
+    assert u.profile.address is None
+
+    me = cand_svc.me_dict(cand)
+    assert me["address"]["street"] is None
+    assert set(me["address"]["missing_fields"]) >= {"street", "city", "state"}
