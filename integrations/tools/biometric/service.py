@@ -209,6 +209,11 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
         .exclude(embedding=[])
         .order_by("-created_at")
     )
+    # A PRIMEIRA selfie aprovada vira âncora de identidade (Victor 2026-07-29): daí em diante
+    # toda selfie nova é comparada também com ela, não só com o documento. O documento envelhece
+    # (foto de 10 anos atrás); a selfie aprovada é a cara atual conferida.
+    ancoras = _selfies_aprovadas(user, exclude_id=probe.id)
+    references = references + ancoras
     if not references:
         return _record(
             user=user,
@@ -227,7 +232,13 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
     # (`selfie_gallery`) entra como probes ADICIONAIS: cada tentativa anterior continua valendo,
     # então a nota do passo é a MELHOR já obtida — é assim que "ir juntando foto" melhora o
     # resultado em vez de recomeçar do zero a cada tentativa.
-    probes = [probe, *_selfie_gallery(user, exclude_id=probe.id)]
+    # BURACO FECHADO (2026-07-29): a galeria entrava como probe e o "melhor par" podia aprovar
+    # a foto NOVA usando a nota de uma ANTIGA — ou seja, a pessoa da vez não precisava bater com
+    # ninguém. Acumular tentativas só vale ENQUANTO não há âncora: aí é a mesma pessoa tentando
+    # de novo. Com âncora, a foto atual se defende sozinha.
+    probes = (
+        [probe] if ancoras else [probe, *_selfie_gallery(user, exclude_id=probe.id)]
+    )
     best_score, best_ref, best_probe = None, None, None
     for p in probes:
         for ref in references:
@@ -267,6 +278,28 @@ def verify_identity(*, user, selfie_image_path: str, caller: str) -> FaceMatchRe
 # Quantas selfies anteriores entram na comparação. Teto porque cada par é um cosseno e a
 # galeria cresce a cada tentativa; 5 cobre o caso real (algumas tentativas) sem virar O(n²) solto.
 _GALLERY_LIMIT = 5
+
+
+def _selfies_aprovadas(user, *, exclude_id: int | None = None) -> list:
+    """Selfies deste usuário que já FORAM aprovadas num face-match — as âncoras de identidade.
+
+    Só entra quem passou: uma selfie reprovada ou em revisão não pode virar referência (senão o
+    impostor da primeira tentativa vira o gabarito das próximas)."""
+    aprovadas = (
+        FaceVerification.objects.filter(user=user, approved=True)
+        .exclude(probe__isnull=True)
+        .values_list("probe_id", flat=True)
+    )
+    qs = (
+        FaceBiometric.objects.filter(
+            user=user, source=Source.SELFIE, id__in=list(aprovadas)
+        )
+        .exclude(embedding=[])
+        .order_by("created_at")
+    )
+    if exclude_id is not None:
+        qs = qs.exclude(id=exclude_id)
+    return list(qs[:_GALLERY_LIMIT])
 
 
 def _selfie_gallery(user, *, exclude_id: int | None = None) -> list:

@@ -673,6 +673,66 @@ def cpf_submit(request):
     )
 
 
+# ── comprovante no nome de outra pessoa: quem é? ─────────────────────────────
+
+# Sugestões prontas (protótipo: a pessoa toca, não redige). "Outro" abre o campo livre.
+_PARENTESCO = (
+    "Pai ou mãe",
+    "Cônjuge ou companheiro(a)",
+    "Filho(a)",
+    "Irmão ou irmã",
+    "Avô ou avó",
+    "Sogro(a)",
+    "Moro de aluguel",
+)
+
+
+@step_page("kinship")
+def kinship_page(request):
+    from users.roles import _address_proof
+
+    sec = _address_proof.section_dict(_uid(request))
+    return render(
+        request,
+        "web/kinship.html",
+        {
+            "kinship_kind": sec.get("kinship_kind"),
+            "holder": sec.get("holder_name"),
+            "opcoes": _PARENTESCO,
+        },
+    )
+
+
+@require_POST
+@htmx_action
+def kinship_submit(request):
+    relation = (request.POST.get("relation") or "").strip()
+    if not relation:
+        return _feedback(
+            request,
+            tone="danger",
+            title="Falta contar quem é",
+            text="Escolha uma opção ou escreva com as suas palavras.",
+            shake=True,
+        )
+    candidate_iface.submit_address_proof_kinship(
+        user_external_id=_uid(request), relation=relation
+    )
+    from users.roles import _address_proof
+
+    sec = _address_proof.section_dict(_uid(request))
+    if sec.get("needs_kinship"):
+        # a IA não achou fundamento na explicação — a pessoa reescreve (human-in-the-loop)
+        return _feedback(
+            request,
+            tone="danger",
+            title="Não deu pra entender",
+            text="Explica de novo, com um pouco mais de detalhe: quem é o titular e por que você mora aí.",
+            shake=True,
+        )
+    return _hx_redirect(flow.step_url(flow.current_step(request), request))
+
+
 # ── passo 4: e-mail ──────────────────────────────────────────────────────────
 
 
@@ -824,30 +884,88 @@ def _doc_ctx(request) -> dict:
     ]
     photos = section.get("photos") or {}
 
-    def _slot(slot, label, hint):
+    def _slot(slot, label, hint, *, accept="image/*", capture=""):
+        """`accept`/`capture` mudam por método (Victor 2026-07-29): foto abre a câmera; arquivo
+        abre o seletor. Sem separar os dois, o `capture` do celular NUNCA oferece o arquivo —
+        quem tem a CNH digital em PDF ficava sem caminho."""
         p = photos.get(slot) or {}
         return {
             "slot": slot,
             "label": label,
             "hint": hint,
+            "accept": accept,
+            "capture": capture,
             "status": p.get("status"),
             "reason": p.get("reason"),
             "is_next": section.get("next_slot") == slot,
         }
 
-    rg_slots = [
-        _slot("rg_front", "Frente do RG", "O lado com a foto"),
-        _slot("rg_back", "Verso do RG", "O lado com os dados"),
+    IMG = "image/*"
+    ARQ = "image/*,application/pdf"
+    rg_foto = [
+        _slot(
+            "rg_front",
+            "Frente do RG",
+            "O lado com a foto",
+            accept=IMG,
+            capture="environment",
+        ),
+        _slot(
+            "rg_back",
+            "Verso do RG",
+            "O lado com os dados",
+            accept=IMG,
+            capture="environment",
+        ),
     ]
-    cnh_slots = [_slot("cnh_full", "CNH aberta", "O documento inteiro, aberto")]
+    rg_arquivo = [
+        _slot(
+            "rg_front", "Frente do RG", "Imagem ou PDF do lado com a foto", accept=ARQ
+        ),
+        _slot(
+            "rg_back", "Verso do RG", "Imagem ou PDF do lado com os dados", accept=ARQ
+        ),
+    ]
+    # CNH: o PDF do gov.br vale sozinho (traz frente e verso); por foto, precisa dos dois lados.
+    cnh_pdf = [
+        _slot(
+            "cnh_full",
+            "CNH Digital (PDF)",
+            "O arquivo baixado do gov.br / CDT",
+            accept="application/pdf",
+        )
+    ]
+    cnh_foto = [
+        _slot(
+            "cnh_front",
+            "Frente da CNH",
+            "O lado com a foto",
+            accept=IMG,
+            capture="environment",
+        ),
+        _slot(
+            "cnh_back",
+            "Verso da CNH",
+            "O lado com os dados",
+            accept=IMG,
+            capture="environment",
+        ),
+    ]
     return {
         "section": section,
         "me": me,
         "analyzing": analyzing,
         "has_photo": has_photo,
         "missing": missing,
-        "rg_slots": rg_slots,
-        "cnh_slots": cnh_slots,
+        "rg_foto": rg_foto,
+        "rg_arquivo": rg_arquivo,
+        "cnh_pdf": cnh_pdf,
+        "cnh_foto": cnh_foto,
+        # o que já foi enviado manda na tela de status/reenvio
+        "rg_slots": rg_foto,
+        "cnh_slots": cnh_pdf
+        if (photos.get("cnh_full") or {}).get("status")
+        else cnh_foto,
     }
 
 

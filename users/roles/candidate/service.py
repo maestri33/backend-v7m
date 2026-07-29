@@ -477,6 +477,9 @@ def submit_address_proof_kinship(*, user_external_id, relation: str) -> dict:
     """Titular do comprovante é outra pessoa (`needs_kinship`): a pessoa explica o parentesco → libera."""
     from users.roles import _address_proof
 
+    # APPROVED entra na lista (2026-07-29): o comprovante é revalidado DEPOIS que a pessoa já virou
+    # promotora — a IA lê e pede o parentesco. Sem isso ela caía em WRONG_STATUS e o app a mandava
+    # de volta pra mesma tela, em loop, sem nunca conseguir responder.
     cand = _require(
         user_external_id,
         _S.PROFILE,
@@ -485,10 +488,12 @@ def submit_address_proof_kinship(*, user_external_id, relation: str) -> dict:
         _S.PIX,
         _S.SELFIE,
         _S.COMPLETED,
+        _S.APPROVED,
     )
     _address_proof.submit_kinship(user_external_id, relation)
-    _advance_address(cand, user_external_id)
-    _complete_candidate(cand)
+    if cand.status != _S.APPROVED:
+        _advance_address(cand, user_external_id)
+        _complete_candidate(cand)
     return me_dict(cand)
 
 

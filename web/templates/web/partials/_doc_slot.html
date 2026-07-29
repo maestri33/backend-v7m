@@ -10,7 +10,7 @@ e a pessoa vê NA HORA se serve; só então sobe de verdade e o pesado corre ass
     <svg x-show="!preview" class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8a2 2 0 012-2h2.2l1.3-2h6.9l1.3 2H20a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12.5" cy="12.5" r="3.6"/></svg>
     <b>{{ s.label }}{% if s.status == 'approved' %} ✓{% endif %}</b>
     <small x-show="!preview">{% if s.status == 'rejected' %}<span style="color:var(--danger-soft)">{{ s.reason|default:"Ficou ilegível — tira outra?" }}</span>{% else %}{{ s.hint }}{% endif %}</small>
-    <input type="file" name="file" accept="image/*,application/pdf" capture="environment"
+    <input type="file" name="file" accept="{{ s.accept|default:"image/*,application/pdf" }}"{% if s.capture %} capture="{{ s.capture }}"{% endif %}
            @change="if ($el.files.length) {
                       preview = URL.createObjectURL($el.files[0]);
                       checando = true;

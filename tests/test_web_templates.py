@@ -72,3 +72,17 @@ def test_pergaminho_substitui_o_card_do_cpf():
     assert 'id="cpf-step"' in perg and "hx-swap-oob" in perg, (
         "pergaminho tem que remover o #cpf-step por out-of-band swap"
     )
+
+
+def test_documento_oferece_foto_E_arquivo():
+    """`capture` no celular abre a câmera DIRETO e esconde o seletor — quem tem a CNH digital em
+    PDF ficava sem caminho. Os dois métodos têm que existir, e o PDF do gov só na CNH."""
+    base = WEB / "templates" / "web"
+    painel = (base / "partials/document_panel.html").read_text(encoding="utf-8")
+    assert "metodo = 'foto'" in painel and "metodo = 'arquivo'" in painel
+    assert "gov.br" in painel, "o caminho do PDF do gov precisa estar dito na tela"
+
+    slot = (base / "partials/_doc_slot.html").read_text(encoding="utf-8")
+    assert "s.capture" in slot and "s.accept" in slot, (
+        "o accept/capture tem de vir do slot — hardcodado, todo slot vira câmera"
+    )

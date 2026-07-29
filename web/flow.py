@@ -65,6 +65,46 @@ def user_for(request):
     return user
 
 
+# Bloco de validação (source_type) → passo do funil onde a pessoa resolve. É o `rejectedSteps[]`
+# do protótipo: reprovou, volta pra etapa, não entra no painel enquanto não refizer.
+_BLOCO_PARA_PASSO = {
+    "rg": "document",
+    "cnh": "document",
+    "address_proof": "address",
+    "selfie": "selfie",
+}
+
+
+def _passo_reprovado(user) -> str | None:
+    """Primeira etapa reprovada que ainda trava a pessoa (mais antiga primeiro), ou None."""
+    from users.blocks import service as blocks
+
+    try:
+        ativos = blocks.get_active_blocks(user)
+    except Exception:  # noqa: BLE001 — gate nunca pode derrubar a navegação
+        return None
+    passos = [
+        _BLOCO_PARA_PASSO[b.source_type]
+        for b in reversed(ativos)
+        if b.source_type in _BLOCO_PARA_PASSO
+    ]
+    return passos[0] if passos else None
+
+
+def _precisa_parentesco(user) -> bool:
+    """Comprovante no nome de OUTRA pessoa: a IA leu, viu que o titular é outro e pediu o grau de
+    parentesco. Enquanto não responder, não anda — vale pra candidato E pra promotor já aprovado
+    (Victor 2026-07-29: "trava no menu, enquanto não indicar não vai pro painel")."""
+    from users.roles import _address_proof
+
+    try:
+        return bool(
+            _address_proof.section_dict(str(user.external_id)).get("needs_kinship")
+        )
+    except Exception:  # noqa: BLE001 — gate nunca pode derrubar a navegação
+        return False
+
+
 def current_step(request) -> str:
     """O passo REAL do usuário, olhando o servidor (roles + profile + Candidate.status)."""
     user = user_for(request)
@@ -73,10 +113,18 @@ def current_step(request) -> str:
             return "otp"
         return "check"
 
+    if _precisa_parentesco(user):
+        return "kinship"
+
     active = roles.active_roles(user)
     if "promoter" in active or "coordinator" in active:
         from users.roles.training import service as training_iface
 
+        # Protótipo: etapa reprovada tem prioridade sobre o painel. Antes o promotor aprovado ia
+        # direto pro painel mesmo com documento/selfie reprovados — o bloco existia e ninguém via.
+        reprovado = _passo_reprovado(user)
+        if reprovado is not None:
+            return reprovado
         return "training" if training_iface.is_locked(user) else "panel"
 
     profile = profiles.get(user)

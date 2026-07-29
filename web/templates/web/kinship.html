@@ -1,0 +1,55 @@
+{% extends "web/base.html" %}
+{% block title %}V7M · Quem mora com você{% endblock %}
+{% block body %}
+<main class="stage">
+  <section class="card vpop" x-data="{ escolha: '', outro: '', get texto() { return this.escolha === 'outro' ? this.outro : this.escolha } }">
+    <div class="step-label" style="text-align:center">Comprovante de endereço</div>
+    <h1 class="h1">A conta não está no seu nome</h1>
+    <p class="sub">
+      {% if kinship_kind == 'confirm' %}
+        O titular é <b style="color:var(--paper)">{{ holder|default:"outra pessoa da sua família" }}</b> —
+        parece ser parente seu. Confirma o parentesco pra gente liberar?
+      {% else %}
+        O titular do comprovante é <b style="color:var(--paper)">{{ holder|default:"outra pessoa" }}</b>.
+        Não tem problema morar na casa de alguém — só conta pra gente quem é.
+      {% endif %}
+    </p>
+
+    <div id="kin-zone">
+      <form hx-post="{% url 'web:kinship_submit' %}" hx-target="#kin-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-kin">
+        <input type="hidden" name="relation" :value="texto">
+        <div class="sugestoes">
+          {% for op in opcoes %}
+            <button type="button" class="sug" :class="{ on: escolha === '{{ op }}' }" @click="escolha = '{{ op }}'">
+              <span style="color:var(--paper);font-size:13.5px">{{ op }}</span>
+              <span x-show="escolha === '{{ op }}'" x-cloak class="gold">✓</span>
+            </button>
+          {% endfor %}
+          <button type="button" class="sug" :class="{ on: escolha === 'outro' }" @click="escolha = 'outro'; $nextTick(() => $refs.outro && $refs.outro.focus())">
+            <span style="color:var(--paper);font-size:13.5px">Outro — eu explico</span>
+            <span x-show="escolha === 'outro'" x-cloak class="gold">✓</span>
+          </button>
+        </div>
+
+        <div x-show="escolha === 'outro'" x-cloak style="margin-top:12px">
+          <label class="lb" for="outro">Conta com as suas palavras</label>
+          <textarea id="outro" x-ref="outro" x-model="outro" class="field"
+                    style="height:96px;padding:12px 16px;resize:vertical"
+                    placeholder="Ex.: é a casa da minha sogra, moro aqui desde 2023"></textarea>
+        </div>
+
+        <div id="fb-zone"></div>
+        <button id="btn-kin" class="btn btn-gold" style="margin-top:14px" type="submit" :disabled="!texto.trim()">
+          <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Enviar e continuar →
+        </button>
+      </form>
+    </div>
+
+    <p class="small mut" style="text-align:center;margin-top:12px">
+      Você também pode enviar um comprovante no seu próprio nome, se preferir.</p>
+    <div style="display:flex;justify-content:center;margin-top:12px">
+      <a class="pill" href="{% url 'web:address' %}">Enviar outro comprovante</a>
+    </div>
+  </section>
+</main>
+{% endblock %}
