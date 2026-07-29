@@ -163,8 +163,15 @@ def leads(user) -> dict:
     """Leads do promotor com o estágio derivado (whats → identified → payment → done)."""
     from users.roles.lead.models import Checkout, Lead
 
+    # "Leads desta semana" tem de ser DESTA SEMANA: o kanban trazia todos os leads de sempre
+    # sob esse título, então o número na tela não batia com nada (protótipo: `weekLeads`).
+    from finance.interface.commissions import week_window
+
+    inicio, fim = week_window()
     rows = (
-        Lead.objects.filter(promoter=user, self_study=False)
+        Lead.objects.filter(
+            promoter=user, self_study=False, created_at__gte=inicio, created_at__lt=fim
+        )
         .select_related("user")
         .order_by("-created_at")[:200]
     )
@@ -228,7 +235,9 @@ def pix_account(user) -> dict | None:
     row = PixKey.objects.filter(key=key).first()
     return {
         "bank": (getattr(row, "bank_name", "") or "Banco não informado"),
-        "bank_initials": initials(getattr(row, "bank_name", "") or "Banco"),
+        # 2 primeiras letras do banco, como no protótipo ("Nubank" → "NU"). `initials()` pega
+        # 1ª+última palavra e devolvia só "N" pra banco de nome único.
+        "bank_initials": (getattr(row, "bank_name", "") or "Banco")[:2].upper(),
         "type": _pix_type_label(
             getattr(p, "pix_key_type", "") or getattr(row, "key_type", "")
         ),

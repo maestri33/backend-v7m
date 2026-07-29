@@ -9,7 +9,7 @@
       <div style="font-weight:600;font-size:15px">{{ pix.bank }}</div>
       <div class="sc-mut tnum" style="font-size:12.5px">{{ pix.type }} · {{ pix.masked }}</div>
     </div>
-    <span class="badge b-ok">✓ Verificada</span>
+    <span class="badge b-ok" style="gap:4px"><svg viewBox="0 0 24 24" style="width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round"><path d="M5 13l4 4L19 7"/></svg>Verificada</span>
   </div>
   <div class="sc-item" style="flex-direction:column;align-items:flex-start;gap:2px;padding:12px">
     <span class="sc-mut" style="font-size:11.5px">Titular</span>
@@ -32,21 +32,28 @@
 <div class="sc-card">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
     <h2 class="sc-title" style="margin:0">Histórico de ciclos</h2>
-    <span class="sc-mut" style="font-size:12.5px">Recebido <b class="tnum" style="color:var(--sc-fg)">{{ total }}</b></span>
+    <span class="sc-mut tnum" style="font-size:13px">Recebido {{ total }}</span>
   </div>
   {% for c in cycles %}
     <button class="sc-item" style="width:100%;cursor:pointer;font-family:inherit;text-align:left"
             hx-get="{% url 'web:panel_cycle' c.id %}" hx-target="#modal-zone" hx-swap="innerHTML">
       <span style="display:flex;align-items:center;gap:9px;min-width:0">
-        {% if c.status == 'paid' %}<svg class="ico" style="width:16px;height:16px;color:#86efac" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.6 2.6 4.8-5"/></svg>
-        {% elif c.status == 'processing' %}<span class="spin vspin" style="width:15px;height:15px;border-width:2px"></span>
-        {% else %}<svg class="ico" style="width:16px;height:16px;color:var(--sc-mut2)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>{% endif %}
+        {% comment %}o status é um tile com fundo, não um ícone solto — é o que dá o "bloco"
+        da linha no protótipo.{% endcomment %}
+        <span class="cyctile {% if c.count == 0 %}zero{% elif c.id == record_id %}record{% else %}{{ c.status }}{% endif %}">
+          {% if c.status == 'paid' %}<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+          {% elif c.status == 'processing' %}<span class="spin vspin" style="width:15px;height:15px;border-width:2px"></span>
+          {% else %}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/><path d="M9 15h6"/></svg>{% endif %}
+        </span>
         <span style="min-width:0">
           <span style="display:block;font-size:13px;font-weight:500">{{ c.range }}{% if c.id == record_id %} <span class="badge b-info" style="margin-left:4px">Recorde</span>{% endif %}</span>
-          <span class="sc-mut" style="font-size:11.5px">{{ c.count }} matrícula{{ c.count|pluralize }} paga{{ c.count|pluralize }}{% if c.bonus %} + bônus{% endif %}</span>
+          <span class="sc-mut" style="font-size:11.5px">{% if c.count == 0 %}Semana sem comissão{% else %}{{ c.count }} matrícula{{ c.count|pluralize }} paga{{ c.count|pluralize }}{% if c.bonus %} + bônus{% endif %}{% endif %}</span>
         </span>
       </span>
-      <b class="tnum" style="color:{% if c.status == 'paid' %}#86efac{% elif c.status == 'processing' %}#e8c884{% else %}var(--sc-mut2){% endif %}">{{ c.total }}</b>
+      <span style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex-shrink:0">
+        {% if c.count %}<b class="tnum" style="color:{% if c.id == record_id %}#93c5fd{% elif c.status == 'paid' %}#86efac{% elif c.status == 'processing' %}#e8c884{% else %}var(--sc-mut2){% endif %}">{{ c.total }}</b>{% endif %}
+        <span class="sc-mut" style="font-size:11px">{% if c.count == 0 %}Nenhuma matrícula{% elif c.status == 'paid' %}Pago{% elif c.status == 'processing' %}Processando{% else %}Em aberto{% endif %}</span>
+      </span>
     </button>
   {% empty %}
     <div class="sc-item" style="justify-content:center;flex-direction:column;gap:6px;padding:20px">

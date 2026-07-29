@@ -61,7 +61,7 @@
     {% for col in leads.columns %}
       <div class="kcol">
         <div class="kcol-h">
-          {% if col.key == 'whats' %}<svg viewBox="0 0 24 24"><path d="M20 15a3 3 0 01-3 3H8l-4 3V6a3 3 0 013-3h10a3 3 0 013 3z"/></svg>
+          {% if col.key == 'whats' %}<svg viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M12 2a10 10 0 00-8.6 15l-1.3 4.7 4.9-1.3A10 10 0 1012 2zm5.6 14.2c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-3.2-.8-2.7-1.1-4.4-3.9-4.5-4-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.5-.3.3c-.1.1-.2.3 0 .5.1.2.6 1.1 1.4 1.8 1 .9 1.8 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.5-.1l2 .9c.2.1.4.2.4.3.1.1.1.6-.1 1.2z"/></svg>
           {% elif col.key == 'identified' %}<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0"/></svg>
           {% elif col.key == 'payment' %}<svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M2.5 10h19"/></svg>
           {% else %}<svg viewBox="0 0 24 24"><path d="M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.3L12 17l-5.6 3.2 1.3-6.3L3 9.6l6.3-.7z"/></svg>{% endif %}
@@ -74,18 +74,26 @@
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{% if l.name %}{{ l.name }}{% else %}{{ l.phone }}{% endif %}</div>
               {% if l.stage == 'done' %}<div style="font-size:11.5px;color:#86efac">+ {{ l.amount }}</div>
               {% elif l.name %}<div class="sc-mut tnum" style="font-size:11.5px">{{ l.phone }}</div>
-              {% else %}<div class="sc-mut" style="font-size:11.5px">{{ col.hint }}</div>{% endif %}
+              {% else %}<div class="sc-mut" style="font-size:11.5px">Entrou pelo seu link</div>{% endif %}
             </div>
-            {% if l.stage != 'done' and l.phone %}
+            {% if l.stage == 'done' %}
+              <span aria-hidden="true" style="flex:none;width:26px;height:26px;border-radius:7px;background:rgba(47,143,91,0.18);border:1px solid #79d39b;display:flex;align-items:center;justify-content:center;margin-left:auto">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#79d39b;fill:none;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round"><path d="M5 13l4 4L19 7"/></svg>
+              </span>
+            {% elif l.phone %}
               <a class="kwa" href="https://wa.me/55{{ l.phone|cut:'('|cut:')'|cut:'-'|cut:' ' }}" target="_blank" rel="noopener" aria-label="Falar no WhatsApp">
                 <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 00-8.6 15l-1.3 4.7 4.9-1.3A10 10 0 1012 2zm5.6 14.2c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-3.2-.8-2.7-1.1-4.4-3.9-4.5-4-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.5-.3.3c-.1.1-.2.3 0 .5.1.2.6 1.1 1.4 1.8 1 .9 1.8 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.5-.1l2 .9c.2.1.4.2.4.3.1.1.1.6-.1 1.2z"/></svg>
               </a>
             {% endif %}
           </div>
         {% empty %}
+          {% comment %}vazio não é aviso de erro: é convite. Textos do protótipo.{% endcomment %}
           <div class="kempty">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/><path d="M12 8v8M8 12h8"/></svg>
-            <span>{% if col.key == 'whats' %}Compartilhe seu link<br>e veja os leads chegarem{% elif col.key == 'identified' %}Ninguém se identificou<br>ainda esta semana{% elif col.key == 'payment' %}Nenhum lead escolheu<br>pagamento ainda{% else %}A primeira matrícula<br>garante {{ commission }}{% endif %}</span>
+            {% if col.key == 'whats' %}<svg class="vfloat" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M12 2a10 10 0 00-8.6 15l-1.3 4.7 4.9-1.3A10 10 0 1012 2zm5.6 14.2c-.2.6-1.2 1.2-1.7 1.2-.5.1-1 .1-3.2-.8-2.7-1.1-4.4-3.9-4.5-4-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.3 0 .5l-.4.5-.3.3c-.1.1-.2.3 0 .5.1.2.6 1.1 1.4 1.8 1 .9 1.8 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.5-.1l2 .9c.2.1.4.2.4.3.1.1.1.6-.1 1.2z"/></svg>
+            {% elif col.key == 'identified' %}<svg class="vfloat" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0"/></svg>
+            {% elif col.key == 'payment' %}<svg class="vfloat" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M2.5 10h19"/></svg>
+            {% else %}<svg class="vfloat" viewBox="0 0 24 24"><path d="M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.3L12 17l-5.6 3.2 1.3-6.3L3 9.6l6.3-.7z"/></svg>{% endif %}
+            <span>{% if col.key == 'whats' %}Mande o link pra mais gente —<br>todo mundo começa aqui.{% elif col.key == 'identified' %}Chame quem entrou pelo link<br>pra se identificar.{% elif col.key == 'payment' %}Quem escolhe o pagamento está<br>a um empurrão da matrícula.{% else %}Cada matrícula paga<br>vale {{ commission }} pra você.{% endif %}</span>
           </div>
         {% endfor %}
       </div>

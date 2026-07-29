@@ -86,3 +86,21 @@ def test_documento_oferece_foto_E_arquivo():
     assert "s.capture" in slot and "s.accept" in slot, (
         "o accept/capture tem de vir do slot — hardcodado, todo slot vira câmera"
     )
+
+
+def test_botao_falar_com_o_aluno_leva_o_numero():
+    """Apontava pra `wa.me/` puro: abria o WhatsApp em branco e o promotor não tinha como falar
+    com quem ele acabou de convidar."""
+    tpl = (WEB / "templates" / "web" / "panel" / "_invite_ok.html").read_text(
+        encoding="utf-8"
+    )
+    assert 'href="{{ wa_url }}"' in tpl
+    assert 'https://wa.me/"' not in tpl
+
+
+def test_kanban_da_home_e_da_semana():
+    """O card diz "Leads desta semana" — então a consulta tem de ser da semana, com a MESMA
+    janela do fechamento. Trazia todos os leads de sempre sob esse título."""
+    src = (WEB / "panel_data.py").read_text(encoding="utf-8")
+    trecho = src[src.index("def leads(") : src.index("def leads(") + 900]
+    assert "week_window" in trecho and "created_at__gte" in trecho

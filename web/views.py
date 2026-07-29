@@ -10,6 +10,8 @@ import functools
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from urllib.parse import quote
+
 import structlog
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
@@ -1574,7 +1576,23 @@ def panel_invite(request):
     result = promoter_iface.invite_lead(
         promoter=promoter, phone=phone, cpf=_digits(request.POST.get("cpf")) or None
     )
-    return render(request, "web/panel/_invite_ok.html", {"result": result})
+    # o botão "Falar com o aluno" apontava pra `wa.me/` sem número: abria o WhatsApp em branco
+    return render(
+        request,
+        "web/panel/_invite_ok.html",
+        {
+            "result": result,
+            "wa_url": (
+                "https://wa.me/55"
+                + phone
+                + "?text="
+                + quote(
+                    "Oi! Comecei sua matrícula no supletivo — é só abrir o link que "
+                    "te mandei e continuar por lá."
+                )
+            ),
+        },
+    )
 
 
 _MESES = (
