@@ -2,27 +2,47 @@
 {% block title %}V7M · Confirmação de identidade{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop" :class="{ vshake: shake }" x-data="cpfForm()">
-    <div class="card-chip">Confirmação de identidade</div>
+  <section class="card vpop" :class="{ vshake: shake }" x-data="cpfForm()" @modal-closed="$refs.cpf.focus()">
+    <div class="step-label" style="text-align:center">Confirmação de identidade</div>
     <h1 class="h1">Qual é o seu CPF?</h1>
-    <p class="sub">Vamos localizar a sua identidade pra montar o seu cadastro. Seus dados ficam protegidos.</p>
-    <form id="cpf-form" hx-post="{% url 'web:cpf_submit' %}" hx-target="#cpf-zone" hx-swap="innerHTML" hx-disabled-elt="#cpf">
-      <div class="scan">
-        <div class="line"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
-          <span style="font-size:10.5px;letter-spacing:.2em;color:var(--gold-ink);font-weight:700">CADASTRO DE PESSOA FÍSICA</span>
-          <svg viewBox="0 0 24 24" style="width:30px;height:30px;stroke:var(--gold);fill:none;stroke-width:1.6;border:1px solid rgba(217,177,90,.4);border-radius:6px;padding:3px;background:rgba(11,11,12,.4)" aria-hidden="true">
-            <circle cx="12" cy="9" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0"/>
-          </svg>
+    <form id="cpf-form" hx-post="{% url 'web:cpf_submit' %}" hx-target="#cpf-zone" hx-swap="innerHTML">
+      <input type="hidden" name="cpf" :value="cpf">
+      {% comment %}O cartão espelha o que está sendo digitado e conta quanto falta
+      (prints 04/05/06-funil); as 11 caixas abaixo em 3·3·3-2.{% endcomment %}
+      <div class="cpfcard">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div>
+            <div class="lbl">CADASTRO DE PESSOA FÍSICA</div>
+            <div style="font-size:17px;font-weight:700;color:var(--gold-soft);letter-spacing:.04em;margin-top:2px">CPF</div>
+          </div>
+          <div class="who">
+            <svg viewBox="0 0 24 24" style="width:20px;height:20px;stroke:var(--muted-dark);fill:none;stroke-width:1.7" aria-hidden="true">
+              <circle cx="12" cy="9" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0"/>
+            </svg>
+          </div>
         </div>
-        <input id="cpf" name="cpf" class="field field-big" style="background:rgba(11,11,12,0.5);position:relative;z-index:2"
-               type="text" inputmode="numeric" x-model="cpf" x-mask="999.999.999-99"
-               placeholder="000.000.000-00" required autofocus>
+        <div class="big" x-text="masked"></div>
+        <div class="rest" x-text="cpf.length === 11 ? 'CPF COMPLETO' : (11 - cpf.length) + ' DÍGITOS RESTANTES'"></div>
+        <div class="cpfbar"><i :style="`width:${cpf.length / 11 * 100}%`"></i></div>
       </div>
-      <p class="small" style="text-align:center;margin-top:2px"
-         :class="digits.length === 11 && !valid ? '' : 'mut'"
-         :style="digits.length === 11 && !valid ? 'color:var(--danger-soft)' : ''"
-         x-text="digits.length === 11 ? (valid ? 'Procurando sua identidade…' : 'Esse CPF não fechou a conta — confere os dígitos?') : 'Digite aqui seu CPF.'"></p>
+      <div class="codetap" style="margin-top:16px" @click="$refs.cpf.focus()">
+        <input x-ref="cpf" class="codeinput" type="text" inputmode="numeric" maxlength="11"
+               x-model="cpf" @input="cpf = cpf.replace(/\D/g,'').slice(0,11)" autofocus>
+        <div class="codewrap" aria-label="CPF">
+          <template x-for="i in 11" :key="i">
+            <div style="display:contents">
+              <span class="sep" x-show="i === 4 || i === 7">.</span>
+              <span class="sep" x-show="i === 10">–</span>
+              <div class="codebox" :class="{ on: focused && cpf.length === i-1, filled: cpf.length >= i }"
+                   x-text="cpf[i-1] || ''"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+      <p class="small" style="text-align:center;margin-top:12px"
+         :class="cpf.length === 11 && !valid ? '' : 'mut'"
+         :style="cpf.length === 11 && !valid ? 'color:var(--danger-soft)' : ''"
+         x-text="cpf.length === 11 ? (valid ? 'Procurando sua identidade…' : 'Esse CPF não fechou a conta — confere os dígitos?') : 'Digite nos campos acima.'"></p>
     </form>
     <div id="cpf-zone">
       <div x-show="searching" x-cloak class="center" style="padding:10px 0">
@@ -36,12 +56,18 @@
 {% block js %}<script>
 function cpfForm() {
   return {
-    cpf: '', shake: false, searching: false,
-    get digits() { return (this.cpf || '').replace(/\D/g, '') },
-    get valid() { return cpfOk(this.digits) },
+    cpf: '', shake: false, searching: false, focused: true,
+    get valid() { return cpfOk(this.cpf) },
+    get masked() {
+      const d = this.cpf.padEnd(11, '•');
+      return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9,11)}`;
+    },
     init() {
+      this.$nextTick(() => this.$refs.cpf && this.$refs.cpf.focus());
+      this.$refs.cpf.addEventListener('focus', () => this.focused = true);
+      this.$refs.cpf.addEventListener('blur', () => this.focused = false);
       this.$watch('cpf', () => {
-        if (this.digits.length !== 11 || this.searching) return;
+        if (this.cpf.length !== 11 || this.searching) return;
         if (this.valid) {
           this.searching = true;
           document.getElementById('cpf-form').requestSubmit();
@@ -50,7 +76,10 @@ function cpfForm() {
         }
       });
       document.body.addEventListener('htmx:afterSwap', e => {
-        if (e.target.id === 'cpf-zone') this.searching = false;
+        if (e.target.id === 'cpf-zone') {
+          this.searching = false;
+          if (e.target.querySelector('.js-clear-code')) { this.cpf = ''; this.$refs.cpf.focus() }
+        }
       });
     },
   }

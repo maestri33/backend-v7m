@@ -2,12 +2,12 @@
 {% block title %}V7M · Selfie e acordo{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop">
+  <section class="card vpop wiz">
     <div class="card-chip">Pra fechar: sua selfie</div>
     {% include "web/_wizard_top.html" %}
     <div id="selfie-zone">
     {% if selfie.status == 'rejected' or selfie.analysis_status == 'rejected' %}
-      <div class="alert alert-danger"><span>!</span><div><b>Vamos tirar outra?</b>{{ selfie.description|default:"A selfie não bateu com o documento enviado. Tire outra em um lugar iluminado." }}</div></div>
+      {% include "web/partials/_rejected.html" with reason=selfie.description|default:"A selfie não bateu com o documento enviado. Tire outra em um lugar iluminado." %}
     {% endif %}
     {% if selfie.analysis_status == 'pending' and selfie.exists %}
       {% include "web/partials/selfie_status.html" %}

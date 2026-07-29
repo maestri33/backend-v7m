@@ -106,7 +106,79 @@ _ERROR_TEXT = {
 }
 
 
+# Erros que o protótipo mostra como MODAL (prints NN-modais) — são os que BLOQUEIAM o passo:
+# não adianta continuar digitando, a pessoa precisa ler e decidir. O resto segue como alerta
+# inline dentro do card. `icon`/`support` espelham cada print.
+_ERROR_MODAL = {
+    "OTP_INVALID": {
+        "title": "Código incorreto",
+        "text": "O código não confere. Dê uma olhada no WhatsApp e digite novamente.",
+        "action_label": "Digitar de novo",
+        "clear_code": True,
+    },
+    "OTP_EXPIRED": {
+        "title": "Código expirado",
+        "text": "Esse código venceu. Peça um novo no botão Reenviar e confira o WhatsApp.",
+        "icon": "clock",
+        "action_label": "Pedir outro código",
+        "clear_code": True,
+    },
+    "CPF_CONFLICT": {
+        "title": "CPF já vinculado",
+        "text": (
+            "Encontramos uma conta com este CPF vinculada a outro número. Se você trocou "
+            "de número, fale com seu polo para recuperar o acesso."
+        ),
+        "icon": "shield",
+        "action_url": "/app/verificar",
+        "support": True,
+    },
+    "CPF_INVALID": {
+        "title": "Vamos conferir esse CPF?",
+        "text": "O número digitado não passou na verificação. Confira dígito por dígito.",
+        "action_label": "Revisar CPF",
+        "clear_code": True,
+    },
+    "CPF_NOT_FOUND": {
+        "title": "CPF não encontrado",
+        "text": "Não achamos esse CPF na base da Receita. Confira os números e tente de novo.",
+        "action_label": "Revisar CPF",
+        "clear_code": True,
+    },
+    "EMAIL_CONFLICT": {
+        "title": "Esse e-mail já tem dono",
+        "text": "Este e-mail já está em outra conta. Use outro e-mail seu para seguir.",
+        "icon": "shield",
+        "action_label": "Trocar e-mail",
+        "support": True,
+    },
+    "CPF_SERVICE_DOWN": {
+        "title": "Instabilidade no servidor",
+        "text": "A consulta está fora do ar por instantes — não é você. Tente em alguns segundos.",
+        "action_label": "Tentar de novo",
+    },
+    "RATE_LIMITED": {
+        "title": "Calma aí",
+        "text": "Foram muitas tentativas seguidas. Espere um pouquinho antes de pedir outro código.",
+        "icon": "clock",
+    },
+}
+
+
+def _modal(request, **ctx) -> HttpResponse:
+    return render(request, "web/partials/modal.html", ctx)
+
+
 def _domain_feedback(request, exc: DomainError) -> HttpResponse:
+    spec = _ERROR_MODAL.get(exc.code)
+    if spec is not None:
+        spec = dict(spec)
+        clear = spec.pop("clear_code", False)
+        resp = _modal(request, tone="danger", **spec)
+        if clear:
+            # marcador lido no htmx:afterSwap para limpar as caixas de código
+            resp.write('<span class="js-clear-code" hidden></span>')
+        return resp
     title, text = _ERROR_TEXT.get(exc.code, ("Não deu certo", exc.detail))
     tone = "danger" if exc.status != 429 else "warn"
     return _feedback(request, tone=tone, title=title, text=text, shake=True)
@@ -311,21 +383,23 @@ def check_submit(request):
         # seguia pro register, que também trata a falha como "existe" — resultado: conta real
         # criada a partir de um número que ninguém confirmou. Protótipo prevê este estado
         # ("Não conseguimos confirmar"). Bug achado no E2E de produção 2026-07-28.
-        return _feedback(
+        return _modal(
             request,
-            tone="warn",
-            shake=True,
-            title="Não conseguimos confirmar agora",
+            tone="danger",
+            icon="wifi",
+            title="Não conseguimos confirmar",
             text="A checagem do WhatsApp falhou do nosso lado — não é você. Tente de novo em instantes.",
+            action_label="Tentar de novo",
         )
 
     if result.get("whatsapp") is False:
-        return _feedback(
+        return _modal(
             request,
             tone="danger",
-            shake=True,
-            title="Esse número não tem WhatsApp",
-            text="O código de acesso chega pelo WhatsApp. Confira o número ou use outro que tenha WhatsApp.",
+            icon="phone",
+            title="Número sem WhatsApp",
+            text="O código de acesso chega pelo WhatsApp. Confira o número ou use outro que tenha WhatsApp ativo.",
+            action_label="Corrigir número",
         )
 
     # número novo com WhatsApp → cria a conta AQUI (passo 1 é o criador — DOCUMENTACAO,
@@ -472,7 +546,17 @@ def cpf_submit(request):
     return render(
         request,
         "web/partials/pergaminho.html",
-        {"identity": identity, "age": age, "next_url": reverse("web:email")},
+        {
+            "identity": identity,
+            "age": age,
+            # o protótipo flexiona o texto do pergaminho pelo gênero da identidade
+            # ("Bem-vinda ao time · Sua jornada como promotora começa agora")
+            # dois sufixos: "Bem-vind{o|a}" leva vogal sempre; "promotor{|a}" só no feminino
+            "suffix": "a" if (identity.get("sex") or "").upper() == "F" else "o",
+            "suffix_f": "a" if (identity.get("sex") or "").upper() == "F" else "",
+            "first_name": (identity.get("name") or "").split(" ")[0].title(),
+            "next_url": reverse("web:email"),
+        },
     )
 
 

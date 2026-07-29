@@ -38,7 +38,7 @@
   </div>
   {% else %}
     {% if section.analysis_status == 'rejected' or section.validation_status == 'rejected' %}
-      <div class="alert alert-danger"><span>!</span><div><b>A foto não passou</b>{{ section.analysis_reason|default:section.validation_reason|default:"A foto do documento ficou ilegível. Evite reflexos e enquadre o documento inteiro." }}</div></div>
+      {% include "web/partials/_rejected.html" with reason=section.analysis_reason|default:section.validation_reason|default:"A foto do documento ficou ilegível. Evite reflexos e enquadre o documento inteiro." %}
     {% endif %}
     {% if section.doc_type == 'rg' %}
       {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
