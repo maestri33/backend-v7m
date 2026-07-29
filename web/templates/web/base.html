@@ -182,6 +182,48 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .goalgrid{display:flex;gap:8px;justify-content:center;margin:10px 0 8px}
 .goalbox{flex:1;max-width:56px;aspect-ratio:1;border:1px solid var(--sc-border);border-radius:8px;background:var(--sc-bg);display:flex;align-items:center;justify-content:center}
 .goalbox.on{border-color:var(--sc-pri);background:rgba(217,177,90,0.13);box-shadow:0 0 16px rgba(217,177,90,.28)}
+.vmodal-ov{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:vfade .18s ease both}
+.vmodal{width:100%;max-width:406px;background:#1a1a1d;border:1px solid rgba(231,228,221,0.14);border-radius:18px;
+  padding:26px 24px 22px;text-align:center;box-shadow:0 30px 70px -20px rgba(0,0,0,.85);animation:vpop .26s cubic-bezier(.22,1.2,.36,1) both}
+.vmodal-ic{width:60px;height:60px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;
+  background:rgba(217,177,90,0.1);border:1px solid rgba(217,177,90,0.45)}
+.vmodal-ic svg{width:28px;height:28px;stroke:var(--gold);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.vmodal-ic.danger{background:rgba(192,57,43,0.12);border-color:rgba(255,154,143,0.5)}
+.vmodal-ic.danger svg{stroke:var(--danger-soft)}
+.vmodal h3{margin:0 0 8px;font-size:19px;font-weight:700;color:var(--paper)}
+.vmodal p{margin:0 0 18px;font-size:13.5px;line-height:1.6;color:var(--muted-dark)}
+.vmodal .btn{margin-bottom:8px}
+.vmodal .btn:last-child{margin-bottom:0}
+/* caixas de código — OTP (6) e CPF (11, em 3·3·3-2) */
+.codewrap{display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:nowrap;margin:6px 0 2px}
+.codewrap .sep{color:var(--muted-dark);font-weight:700;font-size:14px;flex-shrink:0}
+.codebox{flex:1;min-width:0;max-width:44px;aspect-ratio:.78;border-radius:9px;border:1.5px solid rgba(231,228,221,0.18);
+  background:rgba(29,29,32,0.6);display:flex;align-items:center;justify-content:center;
+  font-size:19px;font-weight:600;color:var(--paper);font-variant-numeric:tabular-nums;transition:border .15s,box-shadow .15s}
+.codebox.on{border-color:var(--gold);box-shadow:0 0 0 3px rgba(217,177,90,0.28)}
+.codebox.filled{border-color:rgba(217,177,90,0.45)}
+.codewrap.otp .codebox{max-width:52px;aspect-ratio:.82;font-size:22px}
+.codeinput{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.codetap{position:relative}
+/* cartão do CPF que espelha o que está sendo digitado */
+.cpfcard{border-radius:14px;padding:16px 18px 14px;background:linear-gradient(160deg,#26262b,#17171a);
+  border:1px solid rgba(231,228,221,0.12);border-top:3px solid var(--gold);position:relative;overflow:hidden}
+.cpfcard .lbl{font-size:9.5px;letter-spacing:.18em;color:var(--muted-dark);font-weight:700}
+.cpfcard .big{font-size:20px;font-weight:600;letter-spacing:.06em;font-variant-numeric:tabular-nums;color:var(--paper);margin:10px 0 4px}
+.cpfcard .rest{font-size:9.5px;letter-spacing:.14em;color:var(--gold-ink);font-weight:700}
+.cpfcard .who{width:38px;height:38px;border-radius:8px;border:1px solid rgba(231,228,221,0.2);display:flex;align-items:center;justify-content:center;background:rgba(11,11,12,.35)}
+.cpfbar{height:3px;border-radius:99px;background:rgba(255,255,255,0.08);margin:12px 0 4px;overflow:hidden}
+.cpfbar i{display:block;height:100%;background:var(--gold-grad);border-radius:99px;transition:width .18s}
+/* banner de etapa rejeitada (padrão único entre telas) */
+.rejected{display:flex;gap:11px;align-items:flex-start;border:1px solid rgba(255,154,143,0.5);background:rgba(192,57,43,0.13);
+  border-radius:12px;padding:13px 15px;margin-bottom:18px}
+.rejected svg{width:19px;height:19px;stroke:var(--danger-soft);fill:none;stroke-width:1.8;flex-shrink:0;margin-top:1px}
+.rejected b{display:block;font-size:13.5px;color:var(--danger-soft);margin-bottom:3px}
+.rejected span{font-size:13px;line-height:1.55;color:var(--silver)}
+/* telas do wizard alinham à esquerda (as de conta seguem centralizadas) */
+.card.wiz .h1,.card.wiz .sub,.card.wiz .step-label{text-align:left}
+.card.wiz .stepper{justify-content:flex-start}
 @media (max-width:480px){.stage{padding:48px 12px 32px}.card{padding:40px 18px 24px}}
 </style>
 {% block head %}{% endblock %}

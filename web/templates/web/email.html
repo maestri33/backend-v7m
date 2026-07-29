@@ -4,6 +4,7 @@
 <main class="stage">
   <section class="card vpop" x-data="emailField()">
     <div class="card-chip">Quase lá</div>
+    {% include "web/_account_top.html" with acct_step=3 %}
     <h1 class="h1">Qual é seu melhor e-mail?</h1>
     <p class="sub">É por ele que chegam as confirmações importantes do seu cadastro.</p>
     <form hx-post="{% url 'web:email_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-email">
