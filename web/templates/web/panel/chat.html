@@ -10,11 +10,15 @@
       <div style="font-weight:600;font-size:15px">Assistente V7M</div>
       <div class="sc-mut" style="font-size:12.5px">Vê seus leads, meta e pagamentos</div>
     </div>
-    <span class="badge b-ok">● online</span>
+    <span class="badge b-ok" style="gap:5px"><span style="width:7px;height:7px;border-radius:999px;background:#4ade80;display:inline-block"></span>online</span>
   </div>
 
   <div class="chatbox" id="chatbox">
     <div class="bub bub-ia">Oi! Sou a assistente da V7M. Eu vejo seus leads, sua meta e seus pagamentos — pergunta o que quiser.</div>
+    {% comment %}pontinhos enquanto a resposta não chega: sem isso a tela fica muda depois do envio{% endcomment %}
+    <div class="bub bub-ia digitando htmx-indicator" id="chat-typing" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
   </div>
 
   <div class="chips">
@@ -24,15 +28,18 @@
   </div>
 
   <form id="chat-form" hx-post="{% url 'web:panel_chat_send' %}" hx-target="#chatbox" hx-swap="beforeend"
+        hx-indicator="#chat-typing"
         hx-on::after-request="this.reset(); scrollChat()">
     <div style="display:flex;gap:8px">
-      <input id="chat-q" class="sc-input" name="q" placeholder="Escreva sua pergunta…" autocomplete="off" required>
+      <input id="chat-q" class="sc-input" name="q" placeholder="Escreva sua dúvida…" autocomplete="off" required>
       <button class="sc-btn" style="width:46px;flex-shrink:0;padding:0" aria-label="Enviar">
-        <svg class="ico" style="width:18px;height:18px" viewBox="0 0 24 24"><path d="M4 12l16-8-6 8 6 8z"/></svg>
+        <svg class="ico" style="width:19px;height:19px" viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
       </button>
     </div>
   </form>
 </div>
+<p class="sc-mut" style="font-size:12px;line-height:1.5;text-align:center;margin:0 4px">
+  A assistente responde com os seus dados reais de promotor. Casos que precisam de humano vão para o polo.</p>
 {% endblock %}
 {% block js %}<script>
 function scrollChat(){const b=document.getElementById('chatbox');b.scrollTop=b.scrollHeight}

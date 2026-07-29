@@ -4,7 +4,7 @@
 <div class="sc-card">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
     <h2 class="sc-title" style="margin:0">Seus alunos indicados</h2>
-    <span class="sc-mut" style="font-size:12.5px">{{ leads.total }} no total</span>
+    <span class="sc-mut" style="font-size:12.5px">{{ leads.total }} indicaç{{ leads.total|pluralize:"ão,ões" }}</span>
   </div>
   {% for l in leads.items %}
     <div class="sc-item">
@@ -16,10 +16,14 @@
         </span>
       </span>
       <span style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-        {% if l.stage == 'done' %}<span class="badge b-ok">Pago</span><b class="tnum" style="font-size:12.5px;color:#86efac">+ {{ l.amount }}</b>
+        {% if l.stage == 'done' %}<span class="badge b-ok">Pago</span>
         {% elif l.stage == 'payment' %}<span class="badge b-info">Escolheu pagamento</span>
         {% elif l.stage == 'identified' %}<span class="badge b-warn">Identificado</span>
         {% else %}<span class="badge b-dim">Indicado</span>{% endif %}
+        {% comment %}a coluna de dinheiro existe sempre: quem ainda não rendeu mostra "—",
+        pra pessoa ver a fileira e entender de onde vem a comissão (protótipo).{% endcomment %}
+        {% if l.stage == 'done' %}<b class="tnum" style="font-size:12.5px;color:#86efac;min-width:64px;text-align:right">+ {{ l.amount }}</b>
+        {% else %}<span class="sc-mut tnum" style="font-size:12.5px;min-width:64px;text-align:right">—</span>{% endif %}
       </span>
     </div>
   {% empty %}

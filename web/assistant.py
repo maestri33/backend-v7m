@@ -18,11 +18,12 @@ from users.roles.training import service as training_iface
 
 from web import panel_data
 
+# Perguntas prontas do protótipo — são as que a pessoa realmente faz, na ordem em que aparecem lá.
 SUGGESTIONS = (
     "Quando cai meu pagamento?",
-    "Como está minha meta?",
-    "Quantos leads eu tenho?",
-    "Qual é meu link?",
+    "Como funciona o bônus?",
+    "Como estão meus leads?",
+    "Qual chave Pix está cadastrada?",
 )
 
 
