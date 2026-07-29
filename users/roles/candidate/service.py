@@ -256,7 +256,15 @@ def me_dict(cand: Candidate) -> dict:
             "locked_fields": ["name", "birth_date"],
         }
 
-    address = address_iface.as_public_dict(address_iface.get_by_external_id(user_ext))
+    # Candidato ainda SEM endereço é o estado normal no começo do funil — não pode explodir.
+    # (Estourava AttributeError dentro do próprio gate `current_step`, então a pessoa nem
+    # chegava a ser redirecionada pro passo do endereço: 500 na cara.)
+    addr_obj = address_iface.get_by_external_id(user_ext)
+    address = (
+        address_iface.as_public_dict(addr_obj)
+        if addr_obj is not None
+        else dict.fromkeys(_ADDRESS_FIELDS)
+    )
     address["missing_fields"] = [f for f in _ADDRESS_FIELDS if not address.get(f)]
 
     from users.roles import _address_proof

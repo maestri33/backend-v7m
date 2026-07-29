@@ -60,3 +60,15 @@ def test_todo_codigo_de_erro_do_candidato_tem_mensagem():
     }
     faltando = sorted(achados - conhecidos - internos)
     assert not faltando, f"sem mensagem humana no funil web: {faltando}"
+
+
+def test_pergaminho_substitui_o_card_do_cpf():
+    """Protótipo: `cpfNormal` e `cpfDiscovery` são exclusivos — o pergaminho ocupa o lugar do
+    card, não fica pendurado embaixo. Quem garante isso é o swap out-of-band em `#cpf-step`."""
+    base = WEB / "templates" / "web"
+    cpf = (base / "cpf.html").read_text(encoding="utf-8")
+    perg = (base / "partials/pergaminho.html").read_text(encoding="utf-8")
+    assert 'id="cpf-step"' in cpf, "cpf.html precisa marcar o bloco que sai de cena"
+    assert 'id="cpf-step"' in perg and "hx-swap-oob" in perg, (
+        "pergaminho tem que remover o #cpf-step por out-of-band swap"
+    )

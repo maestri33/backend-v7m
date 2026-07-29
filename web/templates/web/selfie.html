@@ -1,9 +1,10 @@
 {% extends "web/base.html" %}
 {% block title %}V7M · Selfie e acordo{% endblock %}
+{% block head_js %}<script src="{% url 'web:asset' 'selfie.js' %}" defer></script>{% endblock %}
 {% block body %}
 <main class="stage">
   <section class="card vpop wiz">
-        {% include "web/_wizard_top.html" %}
+    {% include "web/_wizard_top.html" %}
     <div id="selfie-zone">
     {% if selfie.status == 'rejected' or selfie.analysis_status == 'rejected' %}
       {% include "web/partials/_rejected.html" with reason=selfie.description|default:"A selfie não bateu com o documento enviado. Tire outra em um lugar iluminado." %}
@@ -11,33 +12,65 @@
     {% if selfie.analysis_status == 'pending' and selfie.exists %}
       {% include "web/partials/selfie_status.html" %}
     {% else %}
-      <div x-data="{ read: false, agreed: false, preview: null }">
-    <h1 class="h1">Selfie de segurança</h1>
-        <p class="sub">Só pra confirmar que é você mesmo — igual fizemos com seu documento.</p>
-        <div class="contract"
-             @scroll="read = $el.scrollTop + $el.clientHeight >= $el.scrollHeight - 24">{{ contract.text }}</div>
-        <div class="small mut" style="text-align:center;margin:8px 0">
-          <span x-show="!read">↓ Role até o fim pra liberar o aceite</span>
-          <span x-show="read" x-cloak class="gold">Leitura completa ✓</span>
-        </div>
-        <label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13.5px;color:var(--silver)"
-               :style="read ? 'cursor:pointer' : 'opacity:.5;cursor:not-allowed'">
-          <input type="checkbox" x-model="agreed" :disabled="!read" style="width:18px;height:18px;accent-color:var(--gold);margin-top:1px">
-          <span>Li e concordo com o acordo de parceria <span class="mut">(v{{ contract.version }})</span>. Minha selfie registra este aceite.</span>
-        </label>
-        <form hx-post="{% url 'web:selfie_submit' %}" hx-encoding="multipart/form-data" hx-target="#selfie-zone" hx-swap="innerHTML">
-          <label class="up" :class="{ has: preview }" :style="agreed ? '' : 'opacity:.45;pointer-events:none'">
-            <img x-show="preview" x-cloak :src="preview" alt="" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">
-            <svg x-show="!preview" class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M8.5 17.5a4.2 4.2 0 017 0"/></svg>
-            <b x-text="preview ? 'Trocar a selfie' : 'Tirar minha selfie'"></b>
-            <small>Centralize o seu rosto, num lugar iluminado</small>
-            <input type="file" name="file" accept="image/*" capture="user"
-                   @change="preview = $el.files.length ? URL.createObjectURL($el.files[0]) : null">
-          </label>
-          <div id="fb-zone"></div>
-          <button class="btn btn-gold" style="margin-top:12px" type="submit" :disabled="!preview">
-            <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Assinar com a minha selfie →
-          </button>
+      {% comment %}Três fases, uma de cada vez (protótipo): acordo → câmera → conferência.
+      A análise não prende ninguém na tela — quem manda já segue.{% endcomment %}
+      <div x-data="selfie()" x-init="init()">
+
+        <template x-if="fase === 'acordo'">
+          <div class="vstep">
+            <h1 class="h1">Selfie de segurança</h1>
+            <p class="sub">Antes de tirar a selfie, leia e aceite o acordo de parceria.</p>
+            <div class="acordo" @scroll="leu = $el.scrollTop / ($el.scrollHeight - $el.clientHeight || 1) > 0.9">
+              {% for c in contract.clauses %}
+                <div><p class="ct">{{ c.t }}</p><p class="cd">{{ c.d }}</p></div>
+              {% endfor %}
+            </div>
+            <p class="small mut" style="text-align:center;margin:10px 0 0">Versão {{ contract.version }} · sua selfie assina este aceite</p>
+            <button class="btn btn-gold" style="margin-top:14px" type="button" :disabled="!leu" @click="fase = 'camera'; abreCamera()"
+                    x-text="leu ? 'Li e aceito o acordo' : 'Role até o fim para aceitar'"></button>
+          </div>
+        </template>
+
+        <template x-if="fase === 'camera'">
+          <div class="vpop selfie-cam">
+            <div class="visor">
+              {% comment %}o <video> só nasce depois que a câmera respondeu: se ele existir antes,
+              o x-init roda sem stream e o visor fica preto pra sempre.{% endcomment %}
+              <template x-if="camOk">
+                <video x-ref="cam" autoplay playsinline muted x-init="liga($el)" @loadedmetadata="pronta = true"></video>
+              </template>
+              <div class="mascara"><span>Centralize o seu rosto</span></div>
+            </div>
+            <template x-if="camOk">
+              <button class="obturador" type="button" :disabled="!pronta" @click="captura()" aria-label="Tirar selfie"></button>
+            </template>
+            <template x-if="!camOk">
+              <label class="btn btn-gold" style="margin-top:4px">
+                Tirar selfie
+                <input type="file" accept="image/*" capture="user" style="display:none" @change="doArquivo($event)">
+              </label>
+            </template>
+            <p class="small mut" x-show="!camOk" x-cloak style="text-align:center;margin:8px 0 0">
+              Sem acesso à câmera aqui — abre a câmera do seu celular.</p>
+          </div>
+        </template>
+
+        <template x-if="fase === 'confere'">
+          <div class="vpop selfie-cam">
+            <div class="visor"><img :src="url" alt=""></div>
+            <p style="margin:0;text-align:center;font-size:16px;font-weight:800;color:var(--paper)">Ficou boa?</p>
+            <div style="display:flex;gap:10px;width:100%">
+              <button class="btn btn-ghost" style="flex:1" type="button" @click="fase='camera'; abreCamera()">Tirar outra</button>
+              <button class="btn btn-gold" style="flex:1" type="button" :disabled="enviando" @click="envia()">
+                <span class="spin" style="width:16px;height:16px" x-show="enviando" x-cloak></span> Enviar</button>
+            </div>
+          </div>
+        </template>
+
+        <div id="fb-zone"></div>
+        <form id="selfie-form" hx-post="{% url 'web:selfie_submit' %}" hx-encoding="multipart/form-data"
+              hx-target="#selfie-zone" hx-swap="innerHTML" style="display:none">
+          <input id="selfie-file" type="file" name="file" accept="image/*">
         </form>
       </div>
     {% endif %}

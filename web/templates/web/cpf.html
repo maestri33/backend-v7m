@@ -3,6 +3,9 @@
 {% block body %}
 <main class="stage">
   <section class="card vpop" :class="{ vshake: shake }" x-data="cpfForm()" @modal-closed="$refs.cpf.focus()">
+    {% comment %}#cpf-step some quando a identidade aparece: no protótipo o pergaminho SUBSTITUI
+    o card, não fica pendurado embaixo dele.{% endcomment %}
+    <div id="cpf-step">
     <div class="step-label" style="text-align:center">Confirmação de identidade</div>
     {% include "web/_account_top.html" with acct_step=3 %}
     <h1 class="h1">Qual é o seu CPF?</h1>
@@ -45,6 +48,7 @@
          :style="cpf.length === 11 && !valid ? 'color:var(--danger-soft)' : ''"
          x-text="cpf.length === 11 ? (valid ? 'Procurando sua identidade…' : 'Esse CPF não fechou a conta — confere os dígitos?') : 'Digite nos campos acima.'"></p>
     </form>
+    </div>
     <div id="cpf-zone">
       <div x-show="searching" x-cloak class="center" style="padding:10px 0">
         <span class="spin vspin"></span>

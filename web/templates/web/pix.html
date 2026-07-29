@@ -3,52 +3,115 @@
 {% block body %}
 <main class="stage">
   <section class="card vpop wiz" x-data="pixField()">
-        {% include "web/_wizard_top.html" %}
+    {% include "web/_wizard_top.html" %}
     <h1 class="h1">Sua chave Pix</h1>
     <p class="sub">É nela que caem as comissões — digite que a gente identifica o tipo.</p>
-    <form hx-post="{% url 'web:pix_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-pix">
-      <div class="frame">
-        <label class="lb" for="key">Sua chave (CPF, celular, e-mail ou aleatória)</label>
-        <input id="key" name="key" class="field" type="text" x-model="key" placeholder="Cole ou digite a sua chave"
-               required autofocus autocapitalize="off" autocomplete="off">
-        <input type="hidden" name="key_type" :value="type">
-        <p class="small" style="margin-top:8px" :class="type === 'CNPJ' ? '' : (type ? 'gold' : 'mut')"
-           :style="type === 'CNPJ' ? 'color:var(--danger-soft)' : ''" x-text="hint"></p>
+
+    <form id="pix-form" hx-post="{% url 'web:pix_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML"
+          @htmx:before-request="fase = 'consultando'" @htmx:after-request="fase = 'idle'">
+
+      {% comment %}Badges do tipo: aparecem quando reconhecemos. 11 dígitos podem ser CPF OU
+      celular — aí em vez de chutar, mostramos os dois e a pessoa toca no certo.{% endcomment %}
+      <div class="pixtypes" x-show="badges.length" x-cloak>
+        <template x-for="b in badges" :key="b.code">
+          <button type="button" class="pixtype vpop" :class="{ sel: b.sel, bad: b.bad, pick: b.pick }"
+                  :disabled="!b.pick" @click="escolhido = b.code" :aria-pressed="b.sel ? 'true' : 'false'">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="b.icon"/></svg>
+            <span x-text="b.label"></span>
+          </button>
+        </template>
       </div>
+
+      <input id="key" name="key" class="pixkey" type="text" x-model="key" @focus="aviso()"
+             placeholder="CPF, e-mail, celular ou chave aleatória" :class="{ err: erro }"
+             required autocapitalize="off" autocomplete="off" spellcheck="false" aria-label="Sua chave Pix">
+      <input type="hidden" name="key_type" :value="tipo">
+      <p class="pixhint" :class="det === 'CNPJ' ? 'bad' : (det ? 'ok' : 'mut')" x-text="hint"></p>
+
       <div id="fb-zone"></div>
-      <button id="btn-pix" class="btn btn-gold" type="submit" :disabled="!valid">
-        <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Validar no banco →
+
+      {% comment %}#pix-actions some quando a chave é confirmada: o botão "Validar chave" não
+      pode continuar na tela junto do "validada ✓".{% endcomment %}
+      <div id="pix-actions">
+      <div class="pixwait" role="status" x-show="fase === 'consultando'" x-cloak>
+        <span class="spin" style="width:15px;height:15px"></span>
+        <span>Consultando o banco (DICT)… aguarde a confirmação.</span>
+      </div>
+
+      <button id="btn-pix" class="btn btn-gold" type="submit" x-show="fase === 'idle'" :disabled="!valid">
+        Validar chave
       </button>
+      </div>
     </form>
+
     <p class="small mut" style="text-align:center;margin-top:12px">Consultamos o banco (DICT) pra confirmar que a chave é sua.</p>
+
+    {% comment %}Na primeira vez que toca no campo, o app avisa de quem tem que ser a chave —
+    é o erro mais caro do funil (comissão caindo na conta de outra pessoa).{% endcomment %}
+    <div class="vmodal-ov" x-show="notice" x-cloak role="dialog" aria-modal="true" aria-labelledby="pix-av">
+      <div class="vmodal" style="max-width:340px">
+        <div class="vmodal-ic" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.2"/><path d="M5 20c1-6 13-6 14 0"/></svg>
+        </div>
+        <h3 id="pix-av">O PIX é <span class="gold">SEU</span></h3>
+        <p>É nessa chave que você vai receber os pagamentos. Por isso ela precisa,
+           <b style="color:var(--paper)">obrigatoriamente, estar no seu nome</b> — no mesmo CPF do cadastro.</p>
+        <button class="btn btn-gold" type="button" @click="notice = false; visto = true">Estou ciente</button>
+      </div>
+    </div>
   </section>
 </main>
 {% endblock %}
 {% block js %}<script>
 function pixField() {
+  const DEFS = {
+    CPF: { label: 'CPF', icon: 'M3 5h18v14H3zM7 9.5h4M7 13h6M15 9.5h2.5' },
+    PHONE: { label: 'Celular', icon: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 17.5h2' },
+    EMAIL: { label: 'E-mail', icon: 'M3 6h18v12H3zM3 7l9 6 9-6' },
+    CNPJ: { label: 'CNPJ — não aceito', icon: 'M5 21V5a2 2 0 0 1 2-2h7v18M14 9h5v12M9 7h1M9 11h1M9 15h1M4 21h17' },
+    EVP: { label: 'Aleatória', icon: 'M12 10.5a4.25 4.25 0 1 0-4.25 4.25A4.25 4.25 0 0 0 12 10.5zM11 11.5L20.5 2M17 5.5l3 3M14 8.5l2 2' },
+  };
+  const NOME = { EMAIL: 'E-mail', EVP: 'Chave aleatória', CNPJ: 'CNPJ', PHONE: 'Celular', CPF: 'CPF' };
   return {
-    key: '',
-    // classificação da chave = getter puro. Antes era detectPix() + 3 getElementById
-    // escrevendo no hidden e no hint na mão.
-    get type() {
+    key: '', escolhido: null, notice: false, visto: false, fase: 'idle', erro: false,
+    aviso() { if (!this.visto) this.notice = true; },
+    // EMAIL | EVP | CNPJ | PHONE | AMB (11 dígitos: pode ser CPF ou celular) | null
+    get det() {
       const v = (this.key || '').trim();
       if (!v) return null;
-      if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return 'EMAIL';
+      if (v.includes('@')) return 'EMAIL';
       if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return 'EVP';
       const d = v.replace(/\D+/g, '');
+      if (v.startsWith('+')) return d.length >= 12 && d.length <= 13 ? 'PHONE' : null;
+      if (/[a-z]/i.test(v)) return null;
       if (d.length === 14) return 'CNPJ';
-      if (d.length === 11) return cpfOk(d) ? 'CPF' : 'PHONE';
       if (d.length === 10) return 'PHONE';
-      if (v.startsWith('+') && d.length >= 12) return 'PHONE';
+      if (d.length === 11) return 'AMB';
       return null;
     },
-    get valid() { return !!this.type && this.type !== 'CNPJ' },
-    get hint() {
-      const L = { CPF: 'Chave CPF detectada ✓', PHONE: 'Chave celular detectada ✓',
-                  EMAIL: 'Chave e-mail detectada ✓', EVP: 'Chave aleatória detectada ✓' };
-      if (this.type === 'CNPJ') return 'Chave CNPJ não é aceita — só pessoa física.';
-      return L[this.type] || 'A gente identifica o tipo sozinho.';
+    get tipo() { return this.det === 'AMB' ? this.escolhido : this.det; },
+    get valid() { return !!this.tipo && this.tipo !== 'CNPJ'; },
+    get badges() {
+      const d = this.det;
+      const mk = (code, o) => ({ code, label: DEFS[code].label, icon: DEFS[code].icon,
+                                 sel: !!o.sel, bad: !!o.bad, pick: !!o.pick });
+      if (!d) return [];
+      if (d === 'CNPJ') return [mk('CNPJ', { bad: true })];
+      if (d === 'AMB') {
+        return this.escolhido ? [mk(this.escolhido, { sel: true, pick: true })]
+                              : [mk('CPF', { pick: true }), mk('PHONE', { pick: true })];
+      }
+      return [mk(d, {})];
     },
-  }
+    get hint() {
+      const d = this.det;
+      if (d === 'CNPJ') return 'Chave CNPJ não é aceita — só pessoa física.';
+      if (d === 'AMB') return this.escolhido ? 'Enviaremos como ' + NOME[this.escolhido] + '.'
+                                             : 'Pode ser CPF ou celular — toque no tipo correto.';
+      if (d) return 'Detectamos: ' + NOME[d];
+      return this.key.trim() ? 'Ainda não reconhecemos esse formato — confira se digitou certo.'
+                             : 'Precisa ser uma chave SUA, no seu nome.';
+    },
+  };
 }
 </script>{% endblock %}
