@@ -1,6 +1,6 @@
 {% if not section.doc_type %}
 <div class="doc-picks">
-  <button type="button" class="doc-pick js-docpick" data-doc="rg">
+  <button type="button" class="doc-pick" :class="{ on: pick === 'rg' }" @click="pick = 'rg'">
     <svg viewBox="0 0 72 46" aria-hidden="true">
       <rect x="1" y="1" width="70" height="44" rx="5"/>
       <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
@@ -8,7 +8,7 @@
     </svg>
     <b>RG</b><small>Registro Geral<br>(frente e verso)</small>
   </button>
-  <button type="button" class="doc-pick js-docpick" data-doc="cnh">
+  <button type="button" class="doc-pick" :class="{ on: pick === 'cnh' }" @click="pick = 'cnh'">
     <svg viewBox="0 0 72 46" aria-hidden="true">
       <rect x="1" y="1" width="70" height="44" rx="5"/>
       <rect x="8" y="10" width="18" height="22" rx="3"/><circle cx="17" cy="18" r="4"/><path d="M11 30a6 6 0 0112 0"/>
@@ -18,10 +18,10 @@
     <b>CNH</b><small>Carteira de<br>Habilitação</small>
   </button>
 </div>
-<div id="slots-rg" class="js-docslots" style="display:none">
+<div x-show="pick === 'rg'" x-cloak>
   {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
 </div>
-<div id="slots-cnh" class="js-docslots" style="display:none">
+<div x-show="pick === 'cnh'" x-cloak>
   {% for s in cnh_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
 </div>
 {% else %}
@@ -38,7 +38,7 @@
   </div>
   {% else %}
     {% if section.analysis_status == 'rejected' or section.validation_status == 'rejected' %}
-      <div class="alert alert-danger"><span>📄</span><div><b>A foto não passou</b>{{ section.analysis_reason|default:section.validation_reason|default:"A foto do documento ficou ilegível. Evite reflexos e enquadre o documento inteiro." }}</div></div>
+      <div class="alert alert-danger"><span>!</span><div><b>A foto não passou</b>{{ section.analysis_reason|default:section.validation_reason|default:"A foto do documento ficou ilegível. Evite reflexos e enquadre o documento inteiro." }}</div></div>
     {% endif %}
     {% if section.doc_type == 'rg' %}
       {% for s in rg_slots %}{% include "web/partials/_doc_slot.html" %}{% endfor %}
@@ -49,13 +49,21 @@
       <div class="frame" style="border-color:rgba(217,177,90,0.4)">
         <b class="gold" style="font-size:13.5px">Só confirma esses dados</b>
         <p class="small mut" style="margin:4px 0 0">A leitura automática não pegou tudo — completa pra gente?</p>
-        <form hx-post="/app/cadastro/documento/campos" hx-target="#doc-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-doc">
+        <form hx-post="/app/cadastro/documento/campos" hx-target="#doc-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-doc"
+              x-data="{ number: '' }">
           {% for f in missing %}
             <label class="lb" for="f-{{ f.name }}">{{ f.label }}</label>
-            <input id="f-{{ f.name }}" class="field" name="{{ f.name }}" type="{{ f.type }}" {% if f.name == 'number' %}required{% endif %}>
+            {% if f.name == 'number' %}
+              <input id="f-{{ f.name }}" class="field" name="{{ f.name }}" type="text" x-model="number" required>
+            {% else %}
+              <input id="f-{{ f.name }}" class="field" name="{{ f.name }}" type="{{ f.type }}">
+            {% endif %}
           {% endfor %}
           <div id="fb-zone"></div>
-          <button id="btn-doc" class="btn btn-gold" style="margin-top:12px" type="submit"><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Confirmar dados →</button>
+          <button id="btn-doc" class="btn btn-gold" style="margin-top:12px" type="submit"
+                  {% for f in missing %}{% if f.name == 'number' %}:disabled="!number.trim()"{% endif %}{% endfor %}>
+            <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Confirmar dados →
+          </button>
         </form>
       </div>
     {% elif has_photo and not missing %}

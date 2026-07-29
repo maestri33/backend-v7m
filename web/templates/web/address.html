@@ -11,20 +11,20 @@
       {% if me.address.zipcode or me.address.cep %}
         {% include "web/partials/address_form.html" %}
       {% else %}
-        <form hx-post="{% url 'web:address_cep' %}" hx-target="#addr-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-cep">
+        <form hx-post="{% url 'web:address_cep' %}" hx-target="#addr-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-cep"
+              x-data="{ cep: '' }">
           <div class="frame">
             <label class="lb" for="cep">Seu CEP</label>
-            <input id="cep" name="cep" class="field field-big" type="text" inputmode="numeric" maxlength="9" placeholder="00000-000" required autofocus>
+            <input id="cep" name="cep" class="field field-big" type="text" inputmode="numeric"
+                   x-model="cep" x-mask="99999-999" placeholder="00000-000" required autofocus>
           </div>
           <div id="fb-zone"></div>
-          <button id="btn-cep" class="btn btn-gold" type="submit" disabled><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Buscar endereço →</button>
+          <button id="btn-cep" class="btn btn-gold" type="submit" :disabled="cep.replace(/\D/g,'').length !== 8">
+            <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Buscar endereço →
+          </button>
         </form>
       {% endif %}
     </div>
   </section>
 </main>
 {% endblock %}
-{% block js %}<script>
-document.addEventListener('input',e=>{
-  if(e.target.id==='cep'){const el=e.target;const d=digits(el.value).slice(0,8);el.value=d.length>5?d.slice(0,5)+'-'+d.slice(5):d;const b=document.getElementById('btn-cep');if(b)b.disabled=d.length!==8}});
-</script>{% endblock %}

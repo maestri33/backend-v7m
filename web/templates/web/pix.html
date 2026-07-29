@@ -2,39 +2,54 @@
 {% block title %}V7M · Chave Pix{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop">
+  <section class="card vpop" x-data="pixField()">
     <div class="card-chip">Onde cai o seu dinheiro</div>
     {% include "web/_wizard_top.html" %}
     <h1 class="h1">Sua chave Pix</h1>
     <p class="sub">É nessa chave que você recebe as comissões. Por isso ela precisa, <b style="color:var(--gold-soft)">obrigatoriamente, estar no seu nome</b> (no seu CPF).</p>
-    <form id="pix-form" hx-post="{% url 'web:pix_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-pix">
+    <form hx-post="{% url 'web:pix_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#btn-pix">
       <div class="frame">
         <label class="lb" for="key">Sua chave (CPF, celular, e-mail ou aleatória)</label>
-        <input id="key" name="key" class="field" type="text" placeholder="Cole ou digite a sua chave" required autofocus autocapitalize="off" autocomplete="off">
-        <input type="hidden" id="key_type" name="key_type" value="">
-        <div id="pix-hint" class="small mut" style="margin-top:8px">A gente identifica o tipo sozinho.</div>
+        <input id="key" name="key" class="field" type="text" x-model="key" placeholder="Cole ou digite a sua chave"
+               required autofocus autocapitalize="off" autocomplete="off">
+        <input type="hidden" name="key_type" :value="type">
+        <p class="small" style="margin-top:8px" :class="type === 'CNPJ' ? '' : (type ? 'gold' : 'mut')"
+           :style="type === 'CNPJ' ? 'color:var(--danger-soft)' : ''" x-text="hint"></p>
       </div>
       <div id="fb-zone"></div>
-      <button id="btn-pix" class="btn btn-gold" type="submit" disabled><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Validar no banco →</button>
+      <button id="btn-pix" class="btn btn-gold" type="submit" :disabled="!valid">
+        <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Validar no banco →
+      </button>
     </form>
     <p class="small mut" style="text-align:center;margin-top:12px">Consultamos o banco (DICT) pra confirmar que a chave é sua.</p>
   </section>
 </main>
 {% endblock %}
 {% block js %}<script>
-const k=document.getElementById('key'),kt=document.getElementById('key_type'),ph=document.getElementById('pix-hint'),bp=document.getElementById('btn-pix');
-function detectPix(v){v=(v||'').trim();if(!v)return null;
- if(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v))return 'EMAIL';
- if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v))return 'EVP';
- const d=digits(v);
- if(d.length===11){return cpfOk(d)?'CPF':(/^[6-9]/.test(d.slice(2,3))?'PHONE':'CPF')}
- if(d.length===14)return 'CNPJ';
- if(v.startsWith('+')&&d.length>=12)return 'PHONE';
- if(d.length===10)return 'PHONE';
- return null}
-const LBL={CPF:'Chave CPF',PHONE:'Chave celular',EMAIL:'Chave e-mail',EVP:'Chave aleatória'};
-k.addEventListener('input',()=>{const t=detectPix(k.value);kt.value=t||'';
- if(t==='CNPJ'){ph.innerHTML='<span style="color:var(--danger-soft)">Chave CNPJ não é aceita — só pessoa física.</span>';bp.disabled=true}
- else if(t){ph.innerHTML='<span class="gold">'+LBL[t]+' detectada ✓</span>';bp.disabled=false}
- else{ph.textContent='A gente identifica o tipo sozinho.';bp.disabled=true}});
+function pixField() {
+  return {
+    key: '',
+    // classificação da chave = getter puro. Antes era detectPix() + 3 getElementById
+    // escrevendo no hidden e no hint na mão.
+    get type() {
+      const v = (this.key || '').trim();
+      if (!v) return null;
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return 'EMAIL';
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return 'EVP';
+      const d = v.replace(/\D+/g, '');
+      if (d.length === 14) return 'CNPJ';
+      if (d.length === 11) return cpfOk(d) ? 'CPF' : 'PHONE';
+      if (d.length === 10) return 'PHONE';
+      if (v.startsWith('+') && d.length >= 12) return 'PHONE';
+      return null;
+    },
+    get valid() { return !!this.type && this.type !== 'CNPJ' },
+    get hint() {
+      const L = { CPF: 'Chave CPF detectada ✓', PHONE: 'Chave celular detectada ✓',
+                  EMAIL: 'Chave e-mail detectada ✓', EVP: 'Chave aleatória detectada ✓' };
+      if (this.type === 'CNPJ') return 'Chave CNPJ não é aceita — só pessoa física.';
+      return L[this.type] || 'A gente identifica o tipo sozinho.';
+    },
+  }
+}
 </script>{% endblock %}

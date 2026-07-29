@@ -2,7 +2,7 @@
 {% block title %}V7M · Seu e-mail{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop">
+  <section class="card vpop" x-data="emailField()">
     <div class="card-chip">Quase lá</div>
     <h1 class="h1">Qual é seu melhor e-mail?</h1>
     <p class="sub">É por ele que chegam as confirmações importantes do seu cadastro.</p>
@@ -10,13 +10,20 @@
       <div class="frame">
         <label class="lb" for="email">Seu e-mail</label>
         <div style="display:flex;align-items:center;gap:10px">
-          <input id="email" name="email" class="field" type="email" autocomplete="email" placeholder="voce@exemplo.com" required autofocus>
-          <span id="email-dot" style="width:12px;height:12px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .2s"></span>
+          <input id="email" name="email" class="field" type="email" autocomplete="email"
+                 x-model="email" placeholder="voce@exemplo.com" required autofocus>
+          <span style="width:12px;height:12px;border-radius:50%;flex-shrink:0;transition:background .2s"
+                :style="`background:${dot}`"></span>
         </div>
-        <div id="email-sug" class="small" style="margin-top:8px"></div>
+        <div class="small" style="margin-top:8px">
+          <template x-if="suggestion">
+            <span>Você quis dizer <a href="#" class="gold" @click.prevent="email = suggestion"><b x-text="suggestion"></b></a>?</span>
+          </template>
+          <span x-show="temporary" x-cloak class="mut">E-mail temporário? Melhor um que você realmente usa 😉</span>
+        </div>
       </div>
       <div id="fb-zone"></div>
-      <button id="btn-email" class="btn btn-gold" type="submit" disabled>
+      <button id="btn-email" class="btn btn-gold" type="submit" :disabled="!valid">
         <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Confirmar e-mail →
       </button>
     </form>
@@ -24,11 +31,19 @@
 </main>
 {% endblock %}
 {% block js %}<script>
-const em=document.getElementById('email'),dot=document.getElementById('email-dot'),sug=document.getElementById('email-sug'),be=document.getElementById('btn-email');
-const TYPOS={'gmial.com':'gmail.com','gamil.com':'gmail.com','gmali.com':'gmail.com','hotmial.com':'hotmail.com','outlok.com':'outlook.com','yaho.com':'yahoo.com'};
-em.addEventListener('input',()=>{const v=em.value.trim();const ok=/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
- dot.style.background=v?(ok?'var(--ok-soft)':'var(--warn-soft)'):'var(--muted)';be.disabled=!ok;sug.innerHTML='';
- const dom=(v.split('@')[1]||'').toLowerCase();
- if(TYPOS[dom]){const fix=v.split('@')[0]+'@'+TYPOS[dom];sug.innerHTML='Você quis dizer <a href="#" class="gold" onclick="document.getElementById(\'email\').value=\''+fix+'\';document.getElementById(\'email\').dispatchEvent(new Event(\'input\'));return false"><b>'+fix+'</b></a>?'}
- else if(/mailinator|10minutemail|yopmail|tempmail/.test(dom)){sug.innerHTML='<span class="mut">E-mail temporário? Melhor um que você realmente usa 😉</span>'}});
+const EMAIL_TYPOS = { 'gmial.com':'gmail.com','gamil.com':'gmail.com','gmali.com':'gmail.com',
+                      'hotmial.com':'hotmail.com','outlok.com':'outlook.com','yaho.com':'yahoo.com' };
+function emailField() {
+  return {
+    email: '',
+    get valid() { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(this.email.trim()) },
+    get domain() { return (this.email.split('@')[1] || '').toLowerCase() },
+    get dot() { return !this.email ? 'var(--muted)' : (this.valid ? 'var(--ok-soft)' : 'var(--warn-soft)') },
+    get suggestion() {
+      const fix = EMAIL_TYPOS[this.domain];
+      return fix ? this.email.split('@')[0] + '@' + fix : null;
+    },
+    get temporary() { return /mailinator|10minutemail|yopmail|tempmail/.test(this.domain) },
+  }
+}
 </script>{% endblock %}

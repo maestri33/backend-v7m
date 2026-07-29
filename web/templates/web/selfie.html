@@ -12,40 +12,37 @@
     {% if selfie.analysis_status == 'pending' and selfie.exists %}
       {% include "web/partials/selfie_status.html" %}
     {% else %}
-      <h1 class="h1">Acordo de parceria</h1>
-      <p class="sub">Antes de tirar a selfie, leia e aceite o acordo. <b style="color:var(--gold-soft)">A sua selfie é a sua assinatura.</b></p>
-      <div class="contract" id="contract">{{ contract.text }}</div>
-      <div class="small mut" id="scroll-hint" style="text-align:center;margin:8px 0">⇣ Role até o fim pra liberar o aceite</div>
-      <label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13.5px;color:var(--silver);cursor:pointer">
-        <input type="checkbox" id="agree" disabled style="width:18px;height:18px;accent-color:var(--gold);margin-top:1px">
-        <span>Li e concordo com o acordo de parceria <span class="mut">(v{{ contract.version }})</span>. Minha selfie registra este aceite.</span>
-      </label>
-      <form id="selfie-form" hx-post="{% url 'web:selfie_submit' %}" hx-encoding="multipart/form-data" hx-target="#selfie-zone" hx-swap="innerHTML">
-        <label class="up" id="selfie-up" style="opacity:.45;pointer-events:none">
-          <img id="selfie-prev" style="display:none;width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">
-          <svg id="selfie-ic" class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M8.5 17.5a4.2 4.2 0 017 0"/></svg>
-          <b>Tirar minha selfie</b>
-          <small>Centralize o seu rosto, num lugar iluminado</small>
-          <input type="file" name="file" accept="image/*" capture="user" class="js-selfiefile">
+      <div x-data="{ read: false, agreed: false, preview: null }">
+        <h1 class="h1">Acordo de parceria</h1>
+        <p class="sub">Antes de tirar a selfie, leia e aceite o acordo. <b style="color:var(--gold-soft)">A sua selfie é a sua assinatura.</b></p>
+        <div class="contract"
+             @scroll="read = $el.scrollTop + $el.clientHeight >= $el.scrollHeight - 24">{{ contract.text }}</div>
+        <div class="small mut" style="text-align:center;margin:8px 0">
+          <span x-show="!read">↓ Role até o fim pra liberar o aceite</span>
+          <span x-show="read" x-cloak class="gold">Leitura completa ✓</span>
+        </div>
+        <label style="display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:13.5px;color:var(--silver)"
+               :style="read ? 'cursor:pointer' : 'opacity:.5;cursor:not-allowed'">
+          <input type="checkbox" x-model="agreed" :disabled="!read" style="width:18px;height:18px;accent-color:var(--gold);margin-top:1px">
+          <span>Li e concordo com o acordo de parceria <span class="mut">(v{{ contract.version }})</span>. Minha selfie registra este aceite.</span>
         </label>
-        <div id="fb-zone"></div>
-        <button id="btn-selfie" class="btn btn-gold" style="margin-top:12px" type="submit" disabled><span class="htmx-indicator spin" style="width:16px;height:16px"></span> Assinar com a minha selfie →</button>
-      </form>
+        <form hx-post="{% url 'web:selfie_submit' %}" hx-encoding="multipart/form-data" hx-target="#selfie-zone" hx-swap="innerHTML">
+          <label class="up" :class="{ has: preview }" :style="agreed ? '' : 'opacity:.45;pointer-events:none'">
+            <img x-show="preview" x-cloak :src="preview" alt="" style="width:96px;height:96px;border-radius:50%;object-fit:cover;border:2px solid var(--gold)">
+            <svg x-show="!preview" class="ico ico-lg" style="color:var(--gold-soft)" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><circle cx="12" cy="10" r="3"/><path d="M8.5 17.5a4.2 4.2 0 017 0"/></svg>
+            <b x-text="preview ? 'Trocar a selfie' : 'Tirar minha selfie'"></b>
+            <small>Centralize o seu rosto, num lugar iluminado</small>
+            <input type="file" name="file" accept="image/*" capture="user"
+                   @change="preview = $el.files.length ? URL.createObjectURL($el.files[0]) : null">
+          </label>
+          <div id="fb-zone"></div>
+          <button class="btn btn-gold" style="margin-top:12px" type="submit" :disabled="!preview">
+            <span class="htmx-indicator spin" style="width:16px;height:16px"></span> Assinar com a minha selfie →
+          </button>
+        </form>
+      </div>
     {% endif %}
     </div>
   </section>
 </main>
 {% endblock %}
-{% block js %}<script>
-const ct=document.getElementById('contract');
-if(ct){ct.addEventListener('scroll',()=>{
-  if(ct.scrollTop+ct.clientHeight>=ct.scrollHeight-24){
-    const a=document.getElementById('agree');a.disabled=false;
-    document.getElementById('scroll-hint').innerHTML='<span class="gold">Leitura completa ✓</span>'}});
- document.addEventListener('change',e=>{
-  if(e.target.id==='agree'){const up=document.getElementById('selfie-up');up.style.opacity=e.target.checked?'1':'.45';up.style.pointerEvents=e.target.checked?'auto':'none'}
-  if(e.target.matches('.js-selfiefile')&&e.target.files.length){
-    const f=e.target.files[0],img=document.getElementById('selfie-prev');
-    img.src=URL.createObjectURL(f);img.style.display='block';document.getElementById('selfie-ic').style.display='none';
-    document.getElementById('btn-selfie').disabled=false}})}
-</script>{% endblock %}

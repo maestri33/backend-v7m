@@ -2,7 +2,7 @@
 {% block title %}V7M · Código de acesso{% endblock %}
 {% block body %}
 <main class="stage">
-  <section class="card vpop">
+  <section class="card vpop" x-data="otpForm({{ cooldown }})">
     <div class="card-chip">Confirma que é você?</div>
     <h1 class="h1">Enviamos um código<br>no WhatsApp</h1>
     <p class="sub">Mandei um código pro WhatsApp <b style="color:var(--paper)">{{ phone_masked }}</b>.<br>É só digitar ele aqui embaixo.</p>
@@ -10,21 +10,53 @@
     <form id="otp-form" hx-post="{% url 'web:otp_submit' %}" hx-target="#fb-zone" hx-swap="innerHTML" hx-disabled-elt="#otp">
       <div class="frame">
         <label class="lb" for="otp">Seu código</label>
-        <input id="otp" name="otp" class="field field-big" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" required autofocus>
+        <input id="otp" name="otp" class="field field-big" type="text" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" x-model="code" x-mask="999999"
+               placeholder="••••••" required autofocus>
+      </div>
+      {# auto-submit no 6º dígito — antes era um listener de input com if de comprimento #}
+      <div x-show="sending" x-cloak class="center" style="padding:8px 0">
+        <span class="spin vspin"></span><span class="small mut">Conferindo seu código…</span>
       </div>
       <div id="fb-zone"></div>
     </form>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
       <a class="pill pill-red" href="{% url 'web:logout' %}">← Trocar número</a>
-      <button id="resend" class="pill pill-red" hx-post="{% url 'web:otp_resend' %}" hx-target="#fb-zone" hx-swap="innerHTML" disabled>Reenviar em {{ cooldown }}s</button>
+      <button class="pill" :class="secs > 0 ? 'pill-red' : 'pill-green'" :disabled="secs > 0"
+              hx-post="{% url 'web:otp_resend' %}" hx-target="#fb-zone" hx-swap="innerHTML"
+              @click="if (secs === 0) restart()"
+              x-text="secs > 0 ? `Reenviar em ${secs}s` : 'Reenviar código'"></button>
     </div>
   </section>
 </main>
 {% endblock %}
 {% block js %}<script>
-const o=document.getElementById('otp');
-o.addEventListener('input',()=>{o.value=digits(o.value).slice(0,6);
- if(o.value.length===6){document.getElementById('fb-zone').innerHTML='<div class="center" style="padding:8px 0"><span class="spin vspin"></span><span class="small mut">Conferindo seu código…</span></div>';htmx.trigger('#otp-form','submit')}});
-cooldown(document.getElementById('resend'),{{ cooldown }});
-document.addEventListener('htmx:afterSwap',e=>{if(e.target.id==='fb-zone'&&e.target.querySelector('.js-restart-cd')){cooldown(document.getElementById('resend'),30)}});
+function otpForm(cooldown) {
+  return {
+    code: '', secs: cooldown, sending: false, timer: null,
+    init() {
+      this.tick();
+      // 6º dígito → envia sozinho (o servidor é quem valida; isto é só UX)
+      this.$watch('code', v => {
+        if (v.length === 6 && !this.sending) {
+          this.sending = true;
+          this.$refs ? null : null;
+          document.getElementById('otp-form').requestSubmit();
+        }
+      });
+      // o servidor pode responder "código expirado, mandei outro" → reinicia o cooldown
+      document.body.addEventListener('htmx:afterSwap', e => {
+        if (e.target.id === 'fb-zone') {
+          this.sending = false;
+          if (e.target.querySelector('.js-restart-cd')) this.restart();
+        }
+      });
+    },
+    tick() {
+      clearInterval(this.timer);
+      this.timer = setInterval(() => { if (this.secs > 0) this.secs--; else clearInterval(this.timer) }, 1000);
+    },
+    restart() { this.secs = cooldown; this.tick() },
+  }
+}
 </script>{% endblock %}

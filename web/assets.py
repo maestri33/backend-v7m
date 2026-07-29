@@ -15,6 +15,11 @@ from django.http import FileResponse, Http404
 _ASSET_DIR = Path(__file__).resolve().parent / "static" / "web"
 _ALLOWED = {
     "htmx.min.js": "application/javascript",
+    # Alpine (core + plugin de máscara) vendorado junto: o funil roda com CSP `script-src
+    # 'self'` e sem egress garantido — CDN aqui seria uma dependência externa no caminho
+    # crítico do cadastro. Plugin ANTES do core, ambos com `defer` (ver base.html).
+    "alpine.min.js": "application/javascript",
+    "alpine-mask.min.js": "application/javascript",
     "logo.svg": "image/svg+xml",
 }
 
