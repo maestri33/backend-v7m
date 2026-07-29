@@ -10,6 +10,7 @@ import functools
 
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+import structlog
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
@@ -27,6 +28,9 @@ from web import assistant, flow
 from web import panel_data
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+
+logger = structlog.get_logger(__name__)
 
 
 def _hx_redirect(url: str) -> HttpResponse:
@@ -290,7 +294,21 @@ def panel_route(fn):
             return redirect(flow.step_url(current, request))
         promoter = promoter_iface.get_by_user_external_id(_uid(request))
         if promoter is None:
-            return redirect(flow.step_url(current, request))
+            # role de promotor sem registro Promoter: redirecionar pro painel aqui vira LOOP
+            # (o gate manda pro painel, o painel manda pro gate). Sai do laço com a verdade.
+            logger.error("web.panel.sem_promoter", uid=_uid(request))
+            return render(
+                request,
+                "web/erro.html",
+                {
+                    "titulo": "Seu acesso de promotor ainda não abriu",
+                    "texto": (
+                        "Sua conta está aprovada, mas o cadastro de promotor não foi criado. "
+                        "Fala com o seu polo — eles destravam isso em minutos."
+                    ),
+                },
+                status=409,
+            )
         return fn(request, promoter, *a, **kw)
 
     return wrapper
@@ -1120,10 +1138,22 @@ def analysis_status(request):
 def _training_ctx(request) -> dict:
     uid = _uid(request)
     materials = training_iface.assigned_materials(uid)
-    active = next(
-        (m for m in materials if m.get("submission_status") not in ("approved",)), None
-    )
-    return {"materials": materials, "active": active}
+    # "em correção" (pending) não é aula aberta: quem respondeu já pode seguir.
+    abertas = [
+        m
+        for m in materials
+        if m.get("submission_status") not in ("approved", "pending")
+    ]
+    active = abertas[0] if abertas else None
+    return {
+        "materials": materials,
+        "active": active,
+        "open_count": len(abertas),
+        # aula sem vídeo publicado ainda precisa do gate, mas reprovada volta destravada
+        "watched_default": bool(
+            active and active.get("submission_status") == "rejected"
+        ),
+    }
 
 
 @step_page("training")
@@ -1145,11 +1175,63 @@ def training_submit(request):
             text="Explica com suas palavras — pelo menos uma frase inteira.",
             shake=True,
         )
-    sub = training_iface.submit(
-        user_external_id=uid, material_external_id=material, answer=answer
+    try:
+        training_iface.submit(
+            user_external_id=uid, material_external_id=material, answer=answer
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _erro_treino(request, exc)
+    # manda e segue: a IA corrige em segundo plano. Se sobrou aula, cai na próxima.
+    return _apos_resposta(request, uid)
+
+
+def _apos_resposta(request, uid: str) -> HttpResponse:
+    """Depois de responder, o promotor não espera nota: vai pra próxima aula ou pro painel."""
+    restantes = [
+        m
+        for m in training_iface.assigned_materials(uid)
+        if m.get("submission_status") not in ("approved", "pending")
+    ]
+    destino = reverse("web:training") if restantes else reverse("web:panel")
+    return _hx_redirect(destino)
+
+
+def _erro_treino(request, exc: Exception) -> HttpResponse:
+    code = getattr(exc, "code", "") or ""
+    return _feedback(
+        request,
+        tone="danger",
+        title="Não deu pra enviar",
+        text=_ERROR_TEXT.get(code, str(exc) or "Tenta de novo em instantes."),
+        shake=True,
     )
-    training_iface.submission_to_dict(sub)
-    return render(request, "web/partials/training_wait.html", {})
+
+
+@require_POST
+@htmx_action
+def training_audio(request):
+    """Resposta falada: o backend transcreve e corrige — o promotor só grava e envia."""
+    uid = _uid(request)
+    up = request.FILES.get("audio")
+    material = request.POST.get("material") or ""
+    if up is None:
+        return _feedback(
+            request,
+            tone="danger",
+            title="Áudio não chegou",
+            text="Grava de novo, por favor.",
+            shake=True,
+        )
+    try:
+        training_iface.submit_audio(
+            user_external_id=uid,
+            material_external_id=material,
+            data=up.read(),
+            content_type=up.content_type or "audio/webm",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _erro_treino(request, exc)
+    return _apos_resposta(request, uid)
 
 
 @require_GET
