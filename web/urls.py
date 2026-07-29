@@ -48,6 +48,7 @@ urlpatterns = [
     path("analise/status", views.analysis_status, name="analysis_status"),
     path("treino", views.training_page, name="training"),
     path("treino/resposta", views.training_submit, name="training_submit"),
+    path("treino/audio", views.training_audio, name="training_audio"),
     path("treino/status", views.training_status, name="training_status"),
     # painel do promotor — uma rota por tela (contrato A2/F1)
     path("painel", views.panel_page, name="panel"),

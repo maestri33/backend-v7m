@@ -20,6 +20,9 @@ _ALLOWED = {
     # crítico do cadastro. Plugin ANTES do core, ambos com `defer` (ver base.html).
     "alpine.min.js": "application/javascript",
     "alpine-mask.min.js": "application/javascript",
+    # LMS: o componente Alpine da aula (gate do vídeo, gravação, revisão) vive em arquivo
+    # próprio — a tela é a mais pesada do funil e inline aqui só engorda o HTML.
+    "aula.js": "application/javascript",
     "logo.svg": "image/svg+xml",
 }
 

@@ -11,6 +11,9 @@
 <script src="{% url 'web:asset' 'htmx.min.js' %}" defer></script>
 {% comment %}Alpine: plugin ANTES do core (exigência do próprio Alpine), ambos com defer.
 Cuida só do estado de UI (máscara, gate de botão, chips); rede/navegação seguem 100% com o HTMX.{% endcomment %}
+{% comment %}componentes Alpine da página entram AQUI: `defer` roda na ordem do documento,
+então precisam vir antes do core — senão o Alpine inicia e não acha a função.{% endcomment %}
+{% block head_js %}{% endblock %}
 <script src="{% url 'web:asset' 'alpine-mask.min.js' %}" defer></script>
 <script src="{% url 'web:asset' 'alpine.min.js' %}" defer></script>
 <style>
@@ -233,6 +236,90 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .goalgrid{display:flex;gap:8px;justify-content:center;margin:10px 0 8px}
 .goalbox{flex:1;max-width:56px;aspect-ratio:1;border:1px solid var(--sc-border);border-radius:8px;background:var(--sc-bg);display:flex;align-items:center;justify-content:center}
 .goalbox.on{border-color:var(--sc-pri);background:rgba(217,177,90,0.13);box-shadow:0 0 16px rgba(217,177,90,.28)}
+/* ── LMS · aula obrigatória (igual protótipo) ─────────────────────── */
+/* o card da aula NÃO é o card do funil: no protótipo é raso, 12px, padding 20 e sem chip */
+.card.lms{max-width:440px;border-radius:12px;padding:20px;gap:15px;
+  background:var(--sc-card);border:1px solid var(--sc-border);backdrop-filter:none;
+  -webkit-backdrop-filter:none;box-shadow:0 1px 3px 0 rgba(0,0,0,0.45)}
+.vmodal.rev{max-width:360px;border-radius:12px;background:var(--sc-card);border:1px solid var(--sc-border);
+  box-shadow:0 24px 60px -20px rgba(0,0,0,0.8);padding:20px}
+.vmodal.rev h3{font-size:18px;font-weight:600;letter-spacing:-0.02em;color:var(--sc-fg);margin:0 0 4px}
+.vmodal.rev>p{font-size:13px;line-height:1.5;color:var(--sc-mut);margin:0 0 14px}
+.lms-rev .quote{max-height:150px;overflow-y:auto}
+/* a aula é lida, não anunciada: tudo alinhado à esquerda como no protótipo */
+.card.lms{text-align:left}
+.vmodal.rev .btn-ghost{color:var(--sc-fg);box-shadow:inset 0 0 0 1px var(--sc-border);background:transparent}
+.lms-lock{display:flex;align-items:center;gap:8px;border-radius:8px;border:1px solid rgba(217,177,90,0.3);
+  background:rgba(217,177,90,0.08);padding:9px 12px}
+.lms-lock svg{flex:none;width:14px;height:14px;color:#e8c884;fill:none;stroke:currentColor;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round}
+.lms-lock p{margin:0;font-size:12px;font-weight:500;color:#e8c884}
+.lms-queue{margin-left:auto;flex:none;border-radius:6px;background:var(--sc-acc);color:var(--sc-mut);
+  font-size:11px;font-weight:500;padding:2px 8px}
+.lms-head{display:flex;flex-direction:column;gap:4px}
+.lms-head .kick{margin:0;font-size:12px;color:var(--sc-mut)}
+.lms-head h1{margin:0;font-size:18px;font-weight:600;line-height:1.2;letter-spacing:-0.02em;color:var(--sc-fg)}
+.lms-head .sub{margin:0;font-size:13px;line-height:1.5;color:var(--sc-mut);text-align:left}
+.lms-video{display:flex;flex-direction:column;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--sc-border)}
+.lms-stage{cursor:pointer;position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(120% 120% at 50% 0%,#1c1c21 0%,#08080a 70%)}
+.lms-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#08080a}
+.lms-bt{position:relative;display:flex;width:52px;height:52px;align-items:center;justify-content:center;
+  border-radius:999px;background:var(--sc-pri);border:none;cursor:pointer;padding:0}
+.lms-bt svg{width:20px;height:20px;margin-left:3px;color:var(--sc-pri-fg);fill:currentColor}
+.lms-bt.pausa{background:rgba(255,255,255,0.08);border:1px solid var(--sc-border)}
+.lms-bt.pausa svg{width:19px;height:19px;margin-left:0;color:var(--sc-fg)}
+.lms-done{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;background:rgba(0,0,0,0.55)}
+.lms-done svg{width:32px;height:32px;color:#86efac;fill:none;stroke:currentColor;stroke-width:2.2;
+  stroke-linecap:round;stroke-linejoin:round}
+.lms-done p{margin:0;font-size:13px;font-weight:500;color:#86efac}
+.lms-time{position:absolute;right:10px;top:10px;border-radius:6px;background:rgba(0,0,0,0.65);
+  border:1px solid var(--sc-border);color:var(--sc-mut);font-size:11px;font-weight:500;padding:2px 8px;
+  font-variant-numeric:tabular-nums}
+.lms-bar{height:6px;background:var(--sc-acc)}
+.lms-bar i{display:block;height:100%;background:var(--sc-pri);transition:width .15s linear}
+.lms-ans{display:flex;flex-direction:column;gap:10px}
+.lms-ans[data-locked="1"]{opacity:.45;pointer-events:none}
+.lms-perg{margin:0;font-size:13.5px;line-height:1.55;color:var(--sc-fg);font-weight:500}
+.lms-comp{display:flex;align-items:flex-end;gap:8px}
+.lms-ta{flex:1;min-width:0;box-sizing:border-box;resize:none;min-height:44px;max-height:130px;height:44px;
+  border-radius:8px;border:1px solid var(--sc-border);background:var(--sc-bg);color:var(--sc-fg);
+  font-family:inherit;font-size:14px;line-height:1.5;padding:12px 13px;outline:none}
+.lms-ta:focus{border-color:var(--sc-mut2);box-shadow:0 0 0 3px rgba(161,161,170,0.16)}
+.lms-mic{flex:none;width:44px;height:44px;border-radius:8px;border:none;background:var(--sc-pri);
+  color:var(--sc-pri-fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.lms-mic svg{width:20px;height:20px;fill:currentColor}
+.lms-mic:disabled{opacity:.5;cursor:not-allowed}
+.lms-rec{display:flex;align-items:center;gap:8px}
+.lms-rec .lixo{flex:none;width:44px;height:44px;border-radius:8px;border:1px solid var(--sc-border);
+  background:transparent;color:var(--sc-mut);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.lms-rec .lixo svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.lms-recbox{flex:1;min-width:0;display:flex;align-items:center;gap:10px;min-height:44px;border-radius:8px;
+  border:1px solid rgba(248,113,113,0.4);background:var(--sc-bg);padding:0 13px}
+.lms-recbox .dot{flex:none;width:9px;height:9px;border-radius:999px;background:#f87171}
+.lms-recbox .secs{font-size:14px;font-weight:500;color:#fca5a5;font-variant-numeric:tabular-nums}
+.lms-recbox .lbl{font-size:12.5px;color:var(--sc-mut)}
+.lms-hint{margin:0;font-size:12px;line-height:1.45;color:var(--sc-mut);text-align:center}
+.lms-rev{display:flex;flex-direction:column;gap:10px;text-align:left}
+.lms-rev .quote{border-radius:8px;border:1px solid var(--sc-border);background:var(--sc-bg);padding:12px 13px}
+.lms-rev .quote p{margin:0;font-size:13.5px;line-height:1.55;color:var(--sc-fg);white-space:pre-wrap}
+.lms-rev .ouvir{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;border-radius:8px;
+  border:1px solid var(--sc-border);background:transparent;color:var(--sc-fg);padding:10px;font-family:inherit;
+  font-size:13px;font-weight:500;width:100%}
+.lms-rev .ouvir svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.lms-pb{display:flex;align-items:center;gap:10px;border-radius:8px;border:1px solid var(--sc-border);
+  background:var(--sc-bg);padding:10px 12px}
+.lms-pb .play{flex:none;width:36px;height:36px;border-radius:8px;border:none;background:var(--sc-pri);
+  color:var(--sc-pri-fg);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.lms-pb .play svg{width:16px;height:16px;fill:currentColor}
+.lms-pb .track{flex:1;height:6px;border-radius:999px;background:var(--sc-acc);overflow:hidden}
+.lms-pb .track i{display:block;height:100%;background:var(--sc-pri);transition:width .2s linear}
+.lms-pb .t{flex:none;font-size:12.5px;font-weight:500;color:var(--sc-mut);font-variant-numeric:tabular-nums}
+@keyframes vpulse{0%,100%{opacity:1}50%{opacity:.25}}
+.vpulse{animation:vpulse 1.1s ease-in-out infinite}
 .vmodal-ov{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:20px;
   background:rgba(0,0,0,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:vfade .18s ease both}
 .vmodal{width:100%;max-width:406px;background:#1a1a1d;border:1px solid rgba(231,228,221,0.14);border-radius:18px;

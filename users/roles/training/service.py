@@ -192,13 +192,24 @@ def assign_material(user, material) -> MaterialAssignment:
 
 
 def pending_blocking_count(user) -> int:
-    """Quantas matérias OBRIGATÓRIAS (blocking, ativas) o user ainda tem pendentes = a trava."""
-    return MaterialAssignment.objects.filter(
-        user=user,
-        status=MaterialAssignment.Status.PENDING,
-        material__blocking=True,
-        material__active=True,
-    ).count()
+    """Quantas matérias OBRIGATÓRIAS (blocking, ativas) ainda dependem do promotor = a trava.
+
+    Aula JÁ RESPONDIDA e esperando correção NÃO conta: quem respondeu fez a parte dele e segue
+    pro painel — a IA corrige em segundo plano (protótipo: `analise` não trava, só `open`).
+    Se a correção reprovar, a submissão vira `rejected` e a aula volta a travar sozinha."""
+    return (
+        MaterialAssignment.objects.filter(
+            user=user,
+            status=MaterialAssignment.Status.PENDING,
+            material__blocking=True,
+            material__active=True,
+        )
+        .exclude(
+            material__submissions__user=user,
+            material__submissions__status=Submission.Status.PENDING,
+        )
+        .count()
+    )
 
 
 def is_locked(user) -> bool:
