@@ -1,0 +1,53 @@
+{% comment %}Modal do ciclo (prints 11/12/13-painel): zerado · processando · pago.{% endcomment %}
+<div class="vmodal-ov" x-data="{ open: true }" x-show="open" x-cloak
+     @keydown.escape.window="open = false" @click.self="open = false"
+     role="dialog" aria-modal="true">
+  <div class="vmodal" style="max-width:430px;background:var(--sc-card);text-align:left;max-height:82vh;overflow-y:auto">
+    <div style="text-align:center">
+      <div class="vmodal-ic" style="background:rgba(96,165,250,.12);border-color:rgba(96,165,250,.4)">
+        {% if cycle.status == 'paid' %}
+          <svg viewBox="0 0 24 24" style="stroke:#86efac"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.6 2.6 4.8-5"/></svg>
+        {% elif cycle.status == 'processing' %}
+          <svg viewBox="0 0 24 24" style="stroke:#93c5fd"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M18 10.5l2 1.5-2 1.5"/></svg>
+        {% else %}
+          <svg viewBox="0 0 24 24" style="stroke:var(--sc-mut2)"><rect x="3" y="7" width="18" height="13" rx="2" stroke-dasharray="3 3"/></svg>
+        {% endif %}
+      </div>
+      <div class="sc-mut" style="font-size:12.5px">Ciclo {{ cycle.range }}</div>
+      <h3 style="margin:4px 0 6px">{% if is_record %}Recorde da sua semana!{% elif cycle.status == 'paid' %}Pagamento concluído{% elif cycle.status == 'processing' %}Pagamento a caminho{% else %}Semana sem matrícula{% endif %}</h3>
+      {% if cycle.status != 'zero' and cycle.count %}
+        <div class="tnum" style="font-size:30px;font-weight:600;color:{% if is_record %}#93c5fd{% elif cycle.status == 'paid' %}#86efac{% else %}#e8c884{% endif %}">{{ cycle.total }}</div>
+      {% endif %}
+      <p style="margin-top:8px">
+        {% if cycle.status == 'processing' %}Já solicitamos o Pix ao banco. Pode cair na sua chave a qualquer momento.
+        {% elif cycle.status == 'paid' %}O Pix já saiu para a sua chave cadastrada.
+        {% else %}Nenhum aluno concluiu a matrícula nessa semana.{% endif %}
+      </p>
+    </div>
+    {% if cycle.students %}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px">
+        <b style="font-size:13.5px;color:var(--sc-fg)">Alunos que geraram comissão</b>
+        <span class="sc-mut" style="font-size:12px">{{ cycle.count }} × {{ cycle.students.0.amount }}</span>
+      </div>
+      {% for s in cycle.students %}
+        <div class="sc-item">
+          <span style="display:flex;align-items:center;gap:9px">
+            <span style="width:29px;height:29px;border-radius:50%;background:var(--sc-acc);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600">{{ s.name|slice:":2"|upper }}</span>
+            <span style="font-size:13px">{{ s.name }}</span>
+          </span>
+          <b class="tnum" style="color:#86efac">+ {{ s.amount }}</b>
+        </div>
+      {% endfor %}
+      {% if cycle.bonus %}
+        <div class="sc-item" style="border-color:rgba(217,177,90,.4)">
+          <span style="display:flex;align-items:center;gap:8px;font-size:13px">
+            <svg class="ico" style="width:16px;height:16px;color:var(--sc-pri)" viewBox="0 0 24 24"><path d="M12 3l2.7 5.9 6.3.7-4.7 4.3 1.3 6.3L12 17l-5.6 3.2 1.3-6.3L3 9.6l6.3-.7z"/></svg>
+            Bônus de meta
+          </span>
+          <b class="tnum" style="color:var(--sc-pri)">+ {{ cycle.bonus }}</b>
+        </div>
+      {% endif %}
+    {% endif %}
+    <button type="button" class="sc-btn sc-btn-o" style="margin-top:14px" @click="open = false">Fechar</button>
+  </div>
+</div>

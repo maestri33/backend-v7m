@@ -1,0 +1,58 @@
+{% extends "web/panel/base.html" %}
+{% block title %}V7M · Finanças{% endblock %}
+{% block panel %}
+{% if pix %}
+<div class="sc-card">
+  <div style="display:flex;align-items:center;gap:11px">
+    <div style="width:42px;height:42px;border-radius:9px;background:var(--sc-acc);border:1px solid var(--sc-border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">{{ pix.bank_initials }}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:15px">{{ pix.bank }}</div>
+      <div class="sc-mut tnum" style="font-size:12.5px">{{ pix.type }} · {{ pix.masked }}</div>
+    </div>
+    <span class="badge b-ok">✓ Verificada</span>
+  </div>
+  <div class="sc-item" style="flex-direction:column;align-items:flex-start;gap:2px;padding:12px">
+    <span class="sc-mut" style="font-size:11.5px">Titular</span>
+    <b style="font-size:14px">{{ pix.holder }}</b>
+    {% if pix.verified_at %}<span class="sc-mut" style="font-size:11.5px">Confirmada na verificação · {{ pix.verified_at|date:"j M Y" }}</span>{% endif %}
+  </div>
+  <a class="sc-btn sc-btn-o" style="text-decoration:none;margin-top:10px" href="{% url 'web:pix' %}">
+    <svg class="ico" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M4 20l4-1 10-10-3-3L5 16z"/><path d="M14.5 5.5l3 3"/></svg> Alterar chave Pix
+  </a>
+  <p class="sc-mut" style="font-size:11.5px;margin:8px 0 0;text-align:center">Trocar a chave manda ela pra uma nova análise.</p>
+</div>
+{% else %}
+<div class="sc-card">
+  <h2 class="sc-title">Chave Pix</h2>
+  <p class="sc-mut" style="font-size:13px;margin:0 0 10px">Você ainda não tem chave cadastrada — sem ela o pagamento não sai.</p>
+  <a class="sc-btn" style="text-decoration:none" href="{% url 'web:pix' %}">Cadastrar chave Pix</a>
+</div>
+{% endif %}
+
+<div class="sc-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px">
+    <h2 class="sc-title" style="margin:0">Histórico de ciclos</h2>
+    <span class="sc-mut" style="font-size:12.5px">Recebido <b class="tnum" style="color:var(--sc-fg)">{{ total }}</b></span>
+  </div>
+  {% for c in cycles %}
+    <button class="sc-item" style="width:100%;cursor:pointer;font-family:inherit;text-align:left"
+            hx-get="{% url 'web:panel_cycle' c.id %}" hx-target="#modal-zone" hx-swap="innerHTML">
+      <span style="display:flex;align-items:center;gap:9px;min-width:0">
+        {% if c.status == 'paid' %}<svg class="ico" style="width:16px;height:16px;color:#86efac" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.3 12.3l2.6 2.6 4.8-5"/></svg>
+        {% elif c.status == 'processing' %}<span class="spin vspin" style="width:15px;height:15px;border-width:2px"></span>
+        {% else %}<svg class="ico" style="width:16px;height:16px;color:var(--sc-mut2)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3 3"/></svg>{% endif %}
+        <span style="min-width:0">
+          <span style="display:block;font-size:13px;font-weight:500">{{ c.range }}{% if c.id == record_id %} <span class="badge b-info" style="margin-left:4px">Recorde</span>{% endif %}</span>
+          <span class="sc-mut" style="font-size:11.5px">{{ c.count }} matrícula{{ c.count|pluralize }} paga{{ c.count|pluralize }}{% if c.bonus %} + bônus{% endif %}</span>
+        </span>
+      </span>
+      <b class="tnum" style="color:{% if c.status == 'paid' %}#86efac{% elif c.status == 'processing' %}#e8c884{% else %}var(--sc-mut2){% endif %}">{{ c.total }}</b>
+    </button>
+  {% empty %}
+    <div class="sc-item" style="justify-content:center;flex-direction:column;gap:6px;padding:20px">
+      <svg class="ico ico-lg" style="color:var(--sc-mut2)" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" stroke-dasharray="3 3"/><path d="M7 7V5.5A2.5 2.5 0 019.5 3h5A2.5 2.5 0 0117 5.5V7"/></svg>
+      <span class="sc-mut" style="font-size:13px;text-align:center">Seu primeiro ciclo aparece aqui<br>depois da primeira matrícula paga.</span>
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

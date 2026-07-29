@@ -45,6 +45,15 @@ urlpatterns = [
     path("treino", views.training_page, name="training"),
     path("treino/resposta", views.training_submit, name="training_submit"),
     path("treino/status", views.training_status, name="training_status"),
+    # painel do promotor — uma rota por tela (contrato A2/F1)
     path("painel", views.panel_page, name="panel"),
+    path("painel/financas", views.panel_finance, name="panel_finance"),
+    path("painel/financas/ciclo/<cycle_id>", views.panel_cycle, name="panel_cycle"),
+    path("painel/indicacoes", views.panel_referrals, name="panel_referrals"),
+    path("painel/matricular", views.panel_enroll, name="panel_enroll"),
     path("painel/convidar", views.panel_invite, name="panel_invite"),
+    path("painel/bate-papo", views.panel_chat, name="panel_chat"),
+    path("painel/bate-papo/enviar", views.panel_chat_send, name="panel_chat_send"),
+    path("painel/dados", views.panel_personal_data, name="panel_data"),
+    path("painel/dados/<key>", views.panel_file, name="panel_file"),
 ]

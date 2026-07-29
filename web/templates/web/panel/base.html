@@ -1,0 +1,7 @@
+{% extends "web/base.html" %}
+{% block body %}
+{% include "web/panel/_shell.html" %}
+<main class="panel-wrap">{% block panel %}{% endblock %}</main>
+{% include "web/panel/_nav.html" %}
+<div id="modal-zone"></div>
+{% endblock %}
