@@ -141,6 +141,14 @@ def join_candidate(*, user_external_id: str, otp: str, hub=None) -> dict:
     if user is None:
         raise NotFound("Usuário não encontrado.", code="USER_NOT_FOUND")
 
+    # Duas fases de propósito (E2E 2026-07-29):
+    # 1) CONFERE fora da transação — assim a tentativa ERRADA persiste o `attempts += 1`. Antes,
+    #    a exceção dentro do atomic fazia rollback do contador e o código de 6 dígitos ficava
+    #    aberto a brute-force (3 erros e o contador seguia em 0).
+    # 2) CONSOME dentro da transação — se o passo seguinte falhar (ex.: NO_HUB), o código CERTO
+    #    não é queimado e a pessoa tenta de novo, que é o contrato dos testes de join.
+    auth_iface.verify_otp_for_user(user=user, otp=otp, consume=False)
+
     with transaction.atomic():
         user = User.objects.select_for_update().get(pk=user.pk)
         auth_iface.verify_otp_for_user(user=user, otp=otp)

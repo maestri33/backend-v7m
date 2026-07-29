@@ -173,7 +173,7 @@ def generate_and_send(user) -> OtpCode:
     return otp
 
 
-def verify(user, code: str) -> str:
+def verify(user, code: str, *, consume: bool = True) -> str:
     """Valida o último OTP pendente do user. Conta tentativas; invalida no máximo configurado.
 
     Devolve o MOTIVO, não um bool (funil v2, tela 2 — protótipo 2026-07-18): "código errado" e
@@ -227,6 +227,9 @@ def verify(user, code: str) -> str:
         logger.info("otp.verify.invalid", id=otp.id, attempts=otp.attempts)
         return INVALID
 
+    if not consume:
+        # confere sem queimar: quem chama consome depois, já dentro da própria transação
+        return OK
     otp.status = STATUS_VERIFIED
     otp.verified_at = timezone.now()
     otp.save(update_fields=["status", "verified_at"])
