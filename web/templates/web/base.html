@@ -58,8 +58,8 @@ a{color:inherit}a:hover{color:var(--gold-soft)}
 .ft{margin-top:auto;background:rgba(11,11,12,0.82);border-top:1px solid rgba(231,228,221,0.08);padding:12px 20px;text-align:center}
 .ft small{color:var(--muted-dark);font-size:11px;line-height:1.6}
 /* layout do funil */
-.stage{flex:1;display:flex;align-items:center;justify-content:center;padding:44px 16px 32px}
-.card{position:relative;width:100%;max-width:440px;background:rgba(20,20,22,0.66);
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 16px 28px}
+.card{position:relative;width:100%;max-width:412px;background:rgba(20,20,22,0.66);
   border:1px solid rgba(231,228,221,0.14);border-radius:20px;padding:44px 26px 28px;
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
   box-shadow:0 24px 60px -24px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)}
@@ -68,6 +68,11 @@ a{color:inherit}a:hover{color:var(--gold-soft)}
   padding:9px 18px;font-size:13px;font-weight:700;color:var(--gold-soft);letter-spacing:.02em;
   backdrop-filter:blur(10px);box-shadow:0 10px 30px -12px rgba(0,0,0,0.8)}
 .h1{font-size:22px;font-weight:800;text-align:center;margin:6px 0 8px;letter-spacing:-0.01em}
+.hairline{width:56px;height:2px;border-radius:2px;background:var(--gold-grad);margin:10px auto 12px}
+.card.wiz .hairline{margin-left:0}
+.ask{font-size:15px;font-weight:700;color:var(--paper);text-align:center;margin:0 0 16px}
+.wa-badge{width:30px;height:30px;border-radius:50%;background:#25d366;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.wa-badge svg{width:18px;height:18px;fill:#08260f}
 .sub{font-size:14px;color:var(--muted-dark);text-align:center;line-height:1.55;margin:0 0 18px}
 .frame{background:rgba(15,15,17,0.55);border:1px solid rgba(231,228,221,0.12);border-radius:14px;padding:18px 16px;margin:14px 0}
 /* stepper */
@@ -160,6 +165,52 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .prog i{display:block;height:100%;background:var(--sc-pri);border-radius:99px}
 .hero{display:flex;justify-content:center;margin:0 0 4px}
 .hero svg{width:96px;height:96px}
+/* hero ILUSTRADO fora e acima do card — é assim no protótipo: a arte respira, o card só recebe
+   o texto e o campo. Antes a ilustração ficava espremida dentro do card. */
+.hero-out{display:flex;justify-content:center;margin:0 0 -18px;position:relative;z-index:2}
+.hero-out svg{width:190px;height:190px;filter:drop-shadow(0 18px 40px rgba(217,177,90,.28))}
+.metodos{display:flex;gap:10px;margin:4px 0 2px}
+.metodos form{flex:1;display:flex}
+.metodo{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  padding:20px 10px;border-radius:14px;border:1.5px solid rgba(231,228,221,0.22);background:rgba(29,29,32,0.5);
+  color:var(--silver);cursor:pointer;text-align:center;transition:border .15s,background .15s}
+.metodo:hover,.metodo:focus-within{border-color:var(--gold);background:rgba(240,212,147,0.1)}
+.metodo svg{width:26px;height:26px;stroke:var(--gold-soft);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.metodo b{font-size:13.5px;font-weight:600;color:var(--paper)}
+.metodo input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.checkline{display:flex;align-items:flex-start;gap:8px;margin:8px 0 0;font-size:12.5px;line-height:1.5}
+.checkline svg{width:16px;height:16px;fill:none;stroke-width:1.9;flex-shrink:0;margin-top:1px}
+.checkline.ok{color:var(--ok-soft)}.checkline.ok svg{stroke:var(--ok-soft)}
+.checkline.bad{color:var(--danger-soft)}.checkline.bad svg{stroke:var(--danger-soft)}
+.hero-in{display:flex;justify-content:center;margin:14px 0 16px}
+.hero-in svg{width:104px;height:104px}
+.balao{position:relative;background:rgba(29,29,32,.85);border:1px solid rgba(231,228,221,.16);border-radius:16px;
+  padding:15px 17px;font-size:15px;line-height:1.5;color:var(--paper);margin:18px 0 0;min-height:52px}
+.balao::after{content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);
+  width:0;height:0;border:9px solid transparent;border-top-color:rgba(29,29,32,.85)}
+.balao .cursor{color:var(--gold);animation:vfade .5s steps(1) infinite alternate}
+.robo{display:flex;flex-direction:column;align-items:center;margin:16px 0 4px}
+.robo .antena{width:3px;height:12px;background:var(--gold);border-radius:2px;position:relative}
+.robo .antena::after{content:"";position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+  width:8px;height:8px;border-radius:50%;background:var(--gold-soft);box-shadow:0 0 10px var(--gold)}
+.robo .cabeca{width:82px;height:62px;border-radius:18px;background:linear-gradient(165deg,#26262b,#17171a);
+  border:2px solid rgba(217,177,90,.5);display:flex;align-items:center;justify-content:center;gap:12px}
+.robo .olho{width:16px;height:16px;border-radius:50%;background:var(--gold-soft);box-shadow:0 0 12px rgba(240,212,147,.6)}
+.robo .olho.pisca{animation:blinkK 4.2s ease-in-out infinite}
+.robo .olho.pisca:nth-child(2){animation-duration:3.6s}
+.robo .boca{width:34px;height:14px;border-radius:0 0 10px 10px;background:#17171a;border:2px solid rgba(217,177,90,.4);border-top:none;margin-top:-2px}
+.robo.pensando .cabeca{animation:vfloat 1s ease-in-out infinite}
+.robo.pensando .olho{width:16px;height:4px;border-radius:3px}
+.robo.feliz .cabeca{border-color:var(--ok-soft)}
+.robo.feliz .olho{background:var(--ok-soft);box-shadow:0 0 12px rgba(121,211,155,.6)}
+@keyframes blinkK{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+.sugestoes{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sug{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(29,29,32,.6);
+  border:1px solid rgba(231,228,221,.16);border-radius:10px;padding:11px 13px;color:var(--paper);
+  font-family:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.sug:hover,.sug:focus-visible{border-color:var(--gold);background:rgba(240,212,147,.1)}
+.sug span{font-size:11.5px;color:var(--muted-dark);font-weight:600}
+@media (max-width:480px){.hero-out svg{width:150px;height:150px}}
 .valueprops{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:20px}
 .vp{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;text-align:center}
 .vp svg{width:26px;height:26px;stroke:var(--gold);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
@@ -289,6 +340,47 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
 .docpage .ph{width:78px;height:92px;border-radius:6px;background:var(--sc-acc);display:flex;align-items:center;justify-content:center}
 .docpage .ph svg{width:40px;height:40px;stroke:var(--sc-mut2);fill:none;stroke-width:1.4}
 .docpage .ln{height:9px;border-radius:4px;background:var(--sc-acc);margin-bottom:8px}
+.metodos{display:flex;gap:10px;margin:4px 0 2px}
+.metodos form{flex:1;display:flex}
+.metodo{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  padding:20px 10px;border-radius:14px;border:1.5px solid rgba(231,228,221,0.22);background:rgba(29,29,32,0.5);
+  color:var(--silver);cursor:pointer;text-align:center;transition:border .15s,background .15s}
+.metodo:hover,.metodo:focus-within{border-color:var(--gold);background:rgba(240,212,147,0.1)}
+.metodo svg{width:26px;height:26px;stroke:var(--gold-soft);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.metodo b{font-size:13.5px;font-weight:600;color:var(--paper)}
+.metodo input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.checkline{display:flex;align-items:flex-start;gap:8px;margin:8px 0 0;font-size:12.5px;line-height:1.5}
+.checkline svg{width:16px;height:16px;fill:none;stroke-width:1.9;flex-shrink:0;margin-top:1px}
+.checkline.ok{color:var(--ok-soft)}.checkline.ok svg{stroke:var(--ok-soft)}
+.checkline.bad{color:var(--danger-soft)}.checkline.bad svg{stroke:var(--danger-soft)}
+.hero-in{display:flex;justify-content:center;margin:14px 0 16px}
+.hero-in svg{width:104px;height:104px}
+.balao{position:relative;background:rgba(29,29,32,.85);border:1px solid rgba(231,228,221,.16);border-radius:16px;
+  padding:15px 17px;font-size:15px;line-height:1.5;color:var(--paper);margin:18px 0 0;min-height:52px}
+.balao::after{content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);
+  width:0;height:0;border:9px solid transparent;border-top-color:rgba(29,29,32,.85)}
+.balao .cursor{color:var(--gold);animation:vfade .5s steps(1) infinite alternate}
+.robo{display:flex;flex-direction:column;align-items:center;margin:16px 0 4px}
+.robo .antena{width:3px;height:12px;background:var(--gold);border-radius:2px;position:relative}
+.robo .antena::after{content:"";position:absolute;top:-5px;left:50%;transform:translateX(-50%);
+  width:8px;height:8px;border-radius:50%;background:var(--gold-soft);box-shadow:0 0 10px var(--gold)}
+.robo .cabeca{width:82px;height:62px;border-radius:18px;background:linear-gradient(165deg,#26262b,#17171a);
+  border:2px solid rgba(217,177,90,.5);display:flex;align-items:center;justify-content:center;gap:12px}
+.robo .olho{width:16px;height:16px;border-radius:50%;background:var(--gold-soft);box-shadow:0 0 12px rgba(240,212,147,.6)}
+.robo .olho.pisca{animation:blinkK 4.2s ease-in-out infinite}
+.robo .olho.pisca:nth-child(2){animation-duration:3.6s}
+.robo .boca{width:34px;height:14px;border-radius:0 0 10px 10px;background:#17171a;border:2px solid rgba(217,177,90,.4);border-top:none;margin-top:-2px}
+.robo.pensando .cabeca{animation:vfloat 1s ease-in-out infinite}
+.robo.pensando .olho{width:16px;height:4px;border-radius:3px}
+.robo.feliz .cabeca{border-color:var(--ok-soft)}
+.robo.feliz .olho{background:var(--ok-soft);box-shadow:0 0 12px rgba(121,211,155,.6)}
+@keyframes blinkK{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+.sugestoes{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sug{display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(29,29,32,.6);
+  border:1px solid rgba(231,228,221,.16);border-radius:10px;padding:11px 13px;color:var(--paper);
+  font-family:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.sug:hover,.sug:focus-visible{border-color:var(--gold);background:rgba(240,212,147,.1)}
+.sug span{font-size:11.5px;color:var(--muted-dark);font-weight:600}
 @media (max-width:480px){.stage{padding:48px 12px 32px}.card{padding:40px 18px 24px}}
 </style>
 {% block head %}{% endblock %}
@@ -303,6 +395,7 @@ label.lb{display:block;font-size:12px;font-weight:600;color:var(--muted-dark);ma
     {% if first_name %}<span class="hd-role">Olá, <b style="color:var(--paper)">{{ first_name }}</b></span>{% endif %}
   </div>
 </header>{% endif %}
+<input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
 {% block body %}{% endblock %}
 {% if not panel %}<footer class="ft">
   <small>

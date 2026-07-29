@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import functools
 
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
@@ -717,22 +717,27 @@ def _wizard_ctx(request, step: str, **extra) -> dict:
 
 @step_page("address")
 def address_page(request):
+    """Passo do endereço = SÓ o comprovante (protótipo). Nada de CEP: a IA lê o documento e
+    preenche logradouro/número/bairro/cidade/UF — o backend já faz isso em
+    `_address_proof.validate_and_store`, que chama `address_iface.fill_empty` com o extraído."""
     return render(request, "web/address.html", _wizard_ctx(request, "address"))
 
 
-@require_POST
+@require_GET
 @htmx_action
-def address_cep(request):
-    uid = _uid(request)
-    me = candidate_iface.set_address_cep(
-        user_external_id=uid, cep=_digits(request.POST.get("cep"))
-    )
+def address_status(request):
+    """Poll enquanto a IA lê o comprovante. Assim que o endereço estiver completo, avança."""
+    me = _me(request)
+    if me["status"] not in ("profile", "address"):
+        return _hx_redirect(flow.step_url(flow.current_step(request), request))
     return render(request, "web/partials/address_form.html", {"me": me})
 
 
 @require_POST
 @htmx_action
 def address_data(request):
+    """Completa APENAS o que a leitura do comprovante não trouxe. Não é formulário de endereço:
+    o CEP e o resto vêm da própria conta enviada (o promotor não digita duas vezes)."""
     uid = _uid(request)
     fields = {
         k: (request.POST.get(k) or "").strip()
@@ -743,12 +748,14 @@ def address_data(request):
     proof_ok = bool((me.get("address_proof") or {}).get("exists"))
     if complete and proof_ok:
         return _hx_redirect(reverse("web:document"))
-    return render(request, "web/partials/address_form.html", {"me": me, "saved": True})
+    return render(request, "web/partials/address_form.html", {"me": me})
 
 
 @require_POST
 @htmx_action
 def address_proof(request):
+    """Sobe o comprovante e devolve na hora — a leitura corre assíncrona no worker e a tela
+    acompanha por poll. O promotor não espera parado nem digita endereço."""
     uid = _uid(request)
     upload = request.FILES.get("file")
     if upload is None:
@@ -760,10 +767,12 @@ def address_proof(request):
             shake=True,
         )
     me = candidate_iface.upload_address_proof(user_external_id=uid, upload=upload)
-    complete = not me["address"]["missing_fields"]
-    if complete:
+    if not me["address"]["missing_fields"] and me["status"] not in (
+        "profile",
+        "address",
+    ):
         return _hx_redirect(reverse("web:document"))
-    return render(request, "web/partials/address_form.html", {"me": me, "saved": True})
+    return render(request, "web/partials/address_form.html", {"me": me})
 
 
 # ── documento (foto-primeiro → análise IA → campos que faltam) ───────────────
@@ -829,6 +838,51 @@ def document_page(request):
     ctx = _wizard_ctx(request, "document")
     ctx.update(_doc_ctx(request))
     return render(request, "web/document.html", ctx)
+
+
+@require_POST
+@htmx_action
+def document_classify(request):
+    """IA de leve, NA HORA: a foto passa por uma checagem rápida antes de subir de verdade.
+
+    É o contrato do protótipo ("a leitura é automática: você só tira a foto"): em vez de mandar
+    e esperar o ciclo assíncrono para descobrir que ficou tremida, a pessoa sabe em ~1s se serve.
+    A validação minuciosa (OCR, extração, biometria) segue assíncrona, sem travar ninguém."""
+    upload = request.FILES.get("file")
+    if upload is None:
+        return HttpResponse(status=204)
+    _guard_candidate(request)
+    from integrations.ai import service as ai
+
+    data = upload.read()
+    try:
+        r = ai.classify_document(
+            data,
+            caller="web.candidate.classify",
+            mime_type=upload.content_type or "image/jpeg",
+        )
+    except Exception:  # noqa: BLE001 — IA fora do ar não pode travar o envio
+        r = {}
+    ok = r.get("is_document") is not False and r.get("is_legible") is not False
+    return render(
+        request,
+        "web/partials/_doc_check.html",
+        {
+            "ok": ok,
+            "doc_type": (r.get("doc_type") or "").upper() or None,
+            "completeness": r.get("completeness"),
+            "reason": r.get("reason"),
+            "slot": request.POST.get("slot") or "",
+        },
+    )
+
+
+def _guard_candidate(request):
+    """Confere que há candidato na sessão (as views de upload já fazem isso via service)."""
+    uid = _uid(request)
+    if not uid:
+        raise DomainError("Sessão expirada.", code="USER_NOT_FOUND")
+    return uid
 
 
 @require_POST
@@ -915,6 +969,14 @@ def pix_submit(request):
 # ── escolaridade ─────────────────────────────────────────────────────────────
 
 
+@require_GET
+def cidades(request):
+    """Autocomplete de município (IBGE). A UF vem junto — nunca é perguntada."""
+    from integrations.tools.ibge import service as ibge
+
+    return JsonResponse(ibge.buscar(request.GET.get("q", "")), safe=False)
+
+
 @step_page("education")
 def education_page(request):
     return render(request, "web/education.html", _wizard_ctx(request, "education"))
@@ -930,6 +992,16 @@ def education_submit(request):
     year_raw = _digits(request.POST.get("year"))
     school = (request.POST.get("school") or "").strip() or None
     city = (request.POST.get("city") or "").strip() or None
+    uf = (request.POST.get("uf") or "").strip().upper() or None
+    if city:
+        # a cidade tem de existir no IBGE — o autocomplete já garante, mas ninguém confia no
+        # cliente. A UF vem da própria base (nunca é perguntada ao promotor).
+        from integrations.tools.ibge import service as ibge
+
+        achado = ibge.existe(city, uf)
+        if achado:
+            city, uf = achado["nome"], achado["uf"]
+        city = f"{city}/{uf}" if uf else city
     if level not in ("fundamental", "medio", "superior") or situacao not in (
         "completed",
         "attending",
