@@ -1,15 +1,16 @@
-"""Cliente HTTP fino do notify-server (Fase 2 — NOTIFY_MODE=remote).
+"""Cliente HTTP fino do notify-server genérico (NOTIFY_MODE=remote).
 
-Fala com a API /v1 do notify-server: send, send-event, notifications, phone/check e as rotas
-staff de template (dual-write do painel). Zero regra de negócio — payload pronto entra, dict da
-resposta sai; roteamento/montagem moram em notify/interface e o retry no Django-Q (notify/sdk/push).
+Fala com a API /v1 do notify-server: send (conteúdo pronto), notifications e phone/check. Zero
+regra de negócio — payload pronto entra, dict da resposta sai; o teor é resolvido AQUI (catálogo
+do supletivo) antes do POST. Roteamento/montagem em notify/interface e o retry no Django-Q
+(notify/sdk/push).
 
-Convenções do servidor (recon R6):
+Convenções do servidor:
 - Auth: header `Authorization: Bearer <NOTIFY_API_KEY>` — NUNCA logar a key.
-- A chave de idempotência chama-se `external_id` no POST /v1/send e `idempotency_key` no
-  POST /v1/send-event (mesmo campo no servidor; nomenclatura herdada da API).
-- 404 do /v1/send-event = evento inexistente/trigger inativo/sem canal → None (paridade com o
-  None do caminho local). Qualquer outro >=400 vira NotifyServerError(status_code, body).
+- Base: `NOTIFY_URL`; a instância que roteia WhatsApp/e-mail vai no payload como `instance`
+  (settings.NOTIFY_INSTANCE).
+- A chave de idempotência chama-se `external_id` no POST /v1/send. >=400 vira
+  NotifyServerError(status_code, body).
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def _request(
     if timeout is None:
         timeout = settings.NOTIFY_TIMEOUT
     with httpx.Client(
-        base_url=settings.NOTIFY_SERVER_URL,
+        base_url=settings.NOTIFY_URL,
         headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
         timeout=timeout,
     ) as client:
@@ -60,7 +61,7 @@ async def _request_async(
     if timeout is None:
         timeout = settings.NOTIFY_TIMEOUT
     async with httpx.AsyncClient(
-        base_url=settings.NOTIFY_SERVER_URL,
+        base_url=settings.NOTIFY_URL,
         headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
         timeout=timeout,
     ) as client:
@@ -93,18 +94,6 @@ def post_send(payload: dict, *, run_sync: bool = False) -> dict:
     timeout = settings.NOTIFY_SYNC_TIMEOUT if run_sync else settings.NOTIFY_TIMEOUT
     resp = _request("POST", "/v1/send", json=payload, timeout=timeout)
     return _ok(resp, "POST", "/v1/send")
-
-
-def post_send_event(payload: dict, *, run_sync: bool = False) -> dict | None:
-    """POST /v1/send-event (shape SendEventIn). 404 = não disparado → None (paridade local)."""
-    timeout = settings.NOTIFY_SYNC_TIMEOUT if run_sync else settings.NOTIFY_TIMEOUT
-    resp = _request("POST", "/v1/send-event", json=payload, timeout=timeout)
-    if resp.status_code == 404:
-        logger.debug(
-            "notify.sdk.request", method="POST", path="/v1/send-event", status=404
-        )
-        return None
-    return _ok(resp, "POST", "/v1/send-event")
 
 
 def get_notifications(
@@ -160,31 +149,3 @@ async def phone_check_async(numbers: list[str]) -> list[dict]:
     """Versão async do `phone_check` — o `_wa_check` do auth roda dentro do event loop."""
     resp = await _request_async("POST", "/v1/phone/check", json={"numbers": numbers})
     return _ok(resp, "POST", "/v1/phone/check")
-
-
-# ── staff (dual-write do painel — prefixo com a conta NOTIFY_ACCOUNT_SLUG) ──────
-
-
-def _staff_path(event: str) -> str:
-    return f"/v1/staff/templates/{settings.NOTIFY_ACCOUNT_SLUG}/{event}"
-
-
-def staff_put_template(event: str, payload: dict) -> dict:
-    """PUT /v1/staff/templates/{conta}/{event} — upsert FULL (o servidor não tem PATCH)."""
-    path = _staff_path(event)
-    resp = _request("PUT", path, json=payload)
-    return _ok(resp, "PUT", path)
-
-
-def staff_put_trigger(event: str, payload: dict) -> dict:
-    """PUT /v1/staff/templates/{conta}/{event}/trigger — upsert do Trigger."""
-    path = _staff_path(event) + "/trigger"
-    resp = _request("PUT", path, json=payload)
-    return _ok(resp, "PUT", path)
-
-
-def staff_delete_template(event: str) -> dict:
-    """DELETE /v1/staff/templates/{conta}/{event}."""
-    path = _staff_path(event)
-    resp = _request("DELETE", path)
-    return _ok(resp, "DELETE", path)

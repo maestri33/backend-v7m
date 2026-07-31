@@ -38,32 +38,3 @@ def push_send(payload: dict) -> None:
         server_id=resp.get("external_id"),
         caller=payload.get("caller"),
     )
-
-
-def push_send_event(payload: dict) -> None:
-    """Empurra um SendEventIn. Resposta None (404) = evento não disparado — descarte logado."""
-    try:
-        resp = client.post_send_event(payload)
-    except client.NotifyServerError as exc:
-        if exc.status_code in _PERMANENT_STATUSES:
-            logger.warning(
-                "notify.sdk.push_dropped",
-                event_key=payload.get("event"),
-                external_id=payload.get("idempotency_key"),
-                status=exc.status_code,
-            )
-            return
-        raise
-    if resp is None:
-        logger.warning(
-            "notify.sdk.event_not_dispatched",
-            event_key=payload.get("event"),
-            external_id=payload.get("idempotency_key"),
-        )
-        return
-    logger.info(
-        "notify.sdk.pushed",
-        external_id=payload.get("idempotency_key"),
-        server_id=resp.get("external_id"),
-        event_key=payload.get("event"),
-    )

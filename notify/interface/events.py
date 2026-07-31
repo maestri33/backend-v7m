@@ -1,12 +1,13 @@
-"""`send_event()` — despacho orientado a evento (Template no DB), a nova frente do notify.
+"""`send_event()` — despacho orientado a evento (Template no DB), a frente de negócio do notify.
 
 Diferente do `send()` (flags explícitas), aqui o caller diz só o EVENTO + destinatário + ctx, e o
 Template resolve: teor (md), canais default, mídia anexa, is_tts (modo áudio do WhatsApp),
 storytelling (LLM). `Trigger.active=False` desliga o evento sem código.
 
-Fonte de verdade = DB (`notify.Template`); sem row, cai no catálogo in-memory (`users.roles.notifications`
-— `msgs.text`/`is_tts`/`story_text` já são DB-com-fallback). Então `send_event` funciona antes do
-seed e sobrevive a DB fora do ar.
+O teor é resolvido SEMPRE aqui (o supletivo é dono do domínio): DB (`notify.Template`) é fonte de
+verdade e o catálogo in-memory (`users.roles.notifications`) é o fallback. O resultado — conteúdo
+JÁ pronto — é entregue ao `send()`, que decide o transporte: dispatcher local ou POST /v1/send ao
+notify-server genérico (NOTIFY_MODE=remote). O notify-server não conhece evento nem Template.
 
 Placeholders: `{nome}` (1º nome), `{nome-completo}` (nome todo), e os legados (`{valor}`, `{link}`...).
 `nome`/`nome_completo` são resolvididos do `profile.name` quando `profile` (ou `user`) é informado.
@@ -14,11 +15,7 @@ Placeholders: `{nome}` (1º nome), `{nome-completo}` (nome todo), e os legados (
 
 from __future__ import annotations
 
-import uuid
-
 import structlog
-from django.conf import settings
-from django.db import transaction
 
 from notify.interface import send as _send_iface
 from notify.interface import templates as _db
@@ -92,35 +89,6 @@ def send_event(
       Útil quando o caller quer mandar SÓ um canal e não há Template cadastrado.
       `None` = usa `Template.channels` (ou default `whatsapp+email` sem row).
     """
-    if settings.NOTIFY_MODE == "remote":
-        # só no ramo remote (achado do review: no local, Trigger.active PRECISA ser
-        # reavaliado a cada chamada — inclusive replay da mesma idempotency_key — e o
-        # pré-check aqui pularia essa checagem por completo, quebrando o kill-switch
-        # "sem código" pra qualquer caller com chave estável reusada). Mesma tabela local
-        # nos 2 modos: fecha a duplicidade do flip local→remote (send.py) sem tocar o local.
-        hit = _send_iface.local_idempotent_hit(idempotency_key, caller=f"event:{event}")
-        if hit is not None:
-            return hit
-        return _send_event_remote(
-            event,
-            user=user,
-            profile=profile,
-            phone=phone,
-            email=email,
-            ctx=ctx,
-            title=title,
-            subject=subject,
-            media_url=media_url,
-            media_type=media_type,
-            gender=gender,
-            mail_template=mail_template,
-            idempotency_key=idempotency_key,
-            run_sync=run_sync,
-            body_md_override=body_md_override,
-            is_tts_override=is_tts_override,
-            channels_override=channels_override,
-        )
-
     from users.roles import notifications as msgs
 
     data = _db.get(event)
@@ -198,6 +166,11 @@ def send_event(
         if ctx:
             render_ctx.update(ctx)
         body = msgs.text(event, **render_ctx)
+        # storytelling via catálogo mesmo sem row no DB (marco especial → texto por IA, com
+        # fallback pro teor fixo). Sem AI, story_text devolve o próprio body inalterado.
+        body = msgs.story_text(
+            event, name=nome or "tudo bem", fallback=body, age=msgs.age_from(birth)
+        )
         is_tts = msgs.is_tts(event) if is_tts_override is None else is_tts_override
         channels = (
             list(channels_override)
@@ -235,101 +208,6 @@ def send_event(
         idempotency_key=idempotency_key,
         run_sync=run_sync,
     )
-
-
-def _send_event_remote(
-    event: str,
-    *,
-    user,
-    profile,
-    phone: str | None,
-    email: str | None,
-    ctx: dict | None,
-    title: str | None,
-    subject: str | None,
-    media_url: str | None,
-    media_type: str | None,
-    gender: str | None,
-    mail_template: str | None,
-    idempotency_key: str | None,
-    run_sync: bool,
-    body_md_override: str | None,
-    is_tts_override: bool | None,
-    channels_override: tuple[str, ...] | list[str] | None,
-) -> str | None:
-    """Modo remote (Fase 2): resolve o destinatário AQUI (o servidor não conhece Profile) e
-    delega teor/canais/trigger ao notify-server (shape SendEventIn).
-
-    Deltas aceitos vs. local (recon R4): trigger inativo/evento desconhecido no caminho async
-    devolvem o uuid do cliente (não None) — o descarte acontece (e é logado) no push. O
-    storytelling continua no backend nesta fase: `story_or_none` gera e vai como
-    `body_md_override` (override do caller tem precedência — não gera story por cima).
-    """
-    from users.roles import notifications as msgs
-
-    _prof, nome, nome_completo, p_phone, p_email, p_gender, birth = _resolve_profile(
-        user, profile
-    )
-    phone = phone or p_phone
-    email = email or p_email
-    gender = gender or p_gender
-
-    # pré-check barato: sem destino algum não há o que despachar (paridade com o local).
-    if not phone and not email:
-        logger.warning("notify.event_no_recipient", event_key=event)
-        return None
-
-    if body_md_override is None:
-        body_md_override = msgs.story_or_none(
-            event, name=nome or "tudo bem", age=msgs.age_from(birth)
-        )
-
-    client_uuid = str(uuid.uuid4())
-    server_key = idempotency_key or client_uuid
-    payload = {
-        "event": event,
-        "phone": phone,
-        "email": email,
-        "nome": nome,
-        "nome_completo": nome_completo,
-        "gender": gender,
-        "ctx": ctx,
-        "title": title,
-        "subject": subject,
-        "media_url": media_url,
-        "media_type": media_type,
-        "mail_template": mail_template,
-        # no /v1/send-event a chave de idempotência tem o nome literal (recon R6).
-        "idempotency_key": server_key,
-        "body_md_override": body_md_override,
-        "is_tts_override": is_tts_override,
-        "channels_override": (
-            list(channels_override) if channels_override is not None else None
-        ),
-        "run_sync": run_sync,
-    }
-
-    if run_sync:
-        from notify.sdk import client as sdk
-
-        resp = sdk.post_send_event(payload, run_sync=True)
-        if resp is None:
-            return None  # 404: evento inexistente/trigger inativo/sem canal (paridade local)
-        return str(resp["external_id"])
-
-    from django_q.tasks import async_task
-
-    # POST só depois do commit (§12): rollback do caller não pode virar mensagem enviada.
-    transaction.on_commit(
-        lambda: async_task("notify.sdk.push.push_send_event", payload)
-    )
-    logger.info(
-        "notify.sdk.remote_queued",
-        external_id=client_uuid,
-        event_key=event,
-        has_key=bool(idempotency_key),
-    )
-    return client_uuid
 
 
 def _trigger_for(data) -> Trigger | None:

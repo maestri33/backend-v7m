@@ -237,15 +237,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # aqui, não pela URL pública. Vazio => o notify cai no EXTERNAL_URL. Ex. dev: http://10.1.20.30
 MEDIA_LAN_BASE = env("MEDIA_LAN_BASE", default="")
 
-# ── notify remoto (Fase 2 do desmembramento — wiki/notify/servico-multi-tenant.md) ──
-# NOTIFY_MODE: "local" (default) = dispatcher in-process de sempre; "remote" = o send() vira
-# cliente HTTP do notify-server (VPN). O corte de produção é SÓ trocar esta flag (rollback idem).
-NOTIFY_MODE = env("NOTIFY_MODE", default="local")
-NOTIFY_SERVER_URL = env("NOTIFY_SERVER_URL", default="")  # ex.: http://10.1.30.40
-NOTIFY_API_KEY = os.environ.get("NOTIFY_API_KEY", "")  # api-key da conta supletivo
-NOTIFY_TIMEOUT = env.float(
-    "NOTIFY_TIMEOUT", default=5.0
-)  # LAN; curto pra não travar caller
+# ── notify: config canônica no bloco "notify-server" mais abaixo (NOTIFY_URL/NOTIFY_INSTANCE). ──
 
 # Limite de upload de imagem dos documentos (users/documents) — config, não hardcoded (§10).
 MAX_UPLOAD_MB = env.int("MAX_UPLOAD_MB", default=10)
@@ -533,9 +525,16 @@ MAIL_TIMEOUT = env.int("MAIL_TIMEOUT", default=30)
 # NOTIFY_SYNC_TIMEOUT cobre o run_sync inline (staff /test espera o despacho real — mais folga).
 # Checks notify.E001/E002 validam a combinação no boot.
 NOTIFY_MODE = env("NOTIFY_MODE", default="local")  # local | remote
-NOTIFY_SERVER_URL = env("NOTIFY_SERVER_URL", default="http://notify.v7m.org")
+# Contrato genérico do notify: NOTIFY_URL (base do serviço) + NOTIFY_INSTANCE (a instância que
+# roteia o WhatsApp/e-mail da conta). Os nomes antigos NOTIFY_SERVER_URL/NOTIFY_ACCOUNT_SLUG
+# seguem aceitos como fallback pra não quebrar deploy existente.
+NOTIFY_URL = env(
+    "NOTIFY_URL", default=env("NOTIFY_SERVER_URL", default="http://notify.v7m.org")
+)
+NOTIFY_INSTANCE = env(
+    "NOTIFY_INSTANCE", default=env("NOTIFY_ACCOUNT_SLUG", default="supletivo")
+)
 NOTIFY_API_KEY = os.environ.get("NOTIFY_API_KEY", "")
-NOTIFY_ACCOUNT_SLUG = env("NOTIFY_ACCOUNT_SLUG", default="supletivo")
 NOTIFY_TIMEOUT = env.float("NOTIFY_TIMEOUT", default=10.0)
 NOTIFY_SYNC_TIMEOUT = env.float("NOTIFY_SYNC_TIMEOUT", default=60.0)
 

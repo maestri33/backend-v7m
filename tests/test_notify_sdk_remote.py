@@ -28,11 +28,11 @@ class _FakeResp:
 @pytest.fixture
 def remote(settings):
     settings.NOTIFY_MODE = "remote"
-    settings.NOTIFY_SERVER_URL = "http://notify.test"
+    settings.NOTIFY_URL = "http://notify.test"
+    settings.NOTIFY_INSTANCE = "supletivo"
     settings.NOTIFY_API_KEY = "test-key"
     settings.NOTIFY_TIMEOUT = 5.0
     settings.NOTIFY_SYNC_TIMEOUT = 33.0
-    settings.NOTIFY_ACCOUNT_SLUG = "supletivo"
     return settings
 
 
@@ -82,8 +82,8 @@ def http_capture(monkeypatch):
 def test_send_remote_devolve_uuid_e_enfileira_push(
     remote, q_capture, django_capture_on_commit_callbacks
 ):
-    """Async: retorno imediato (uuid do cliente) e push_send enfileirado com o payload INTEIRO
-    (todas as 15 chaves, com valores distintos) — um typo em qualquer chave quebra este teste."""
+    """Async: retorno imediato (uuid do cliente) e push_send enfileirado com o payload do contrato
+    genérico /v1/send (conteúdo pronto em `content`, roteamento por `instance`, `sexo` p/ TTS)."""
     from notify.interface.send import send
     from notify.models import Notification
 
@@ -110,7 +110,7 @@ def test_send_remote_devolve_uuid_e_enfileira_push(
     assert name == "notify.sdk.push.push_send"
     payload = args[0]
     assert payload == {
-        "text": "oi maria, tudo bem?",
+        "content": "oi maria, tudo bem?",
         "caller": "test.caller",
         "phone": "5511999990001",
         "email": "maria@x.com",
@@ -121,8 +121,8 @@ def test_send_remote_devolve_uuid_e_enfileira_push(
         "tts": True,
         "media_url": "http://x/doc.pdf",
         "media_type": "document",
-        "gender": "F",
-        "mail_template": "custom-tpl",
+        "sexo": "F",
+        "instance": "supletivo",
         "external_id": ret,
         "run_sync": False,
     }
@@ -231,29 +231,23 @@ def test_push_send_erro_de_conexao_propaga(remote, monkeypatch):
         push.push_send({"external_id": "x", "caller": "t"})
 
 
-def test_push_send_event_404_e_drop_logado(remote, http_capture):
-    """404 do send-event vira None no client → push loga event_not_dispatched e NÃO levanta."""
-    from notify.sdk import push
-
-    http_capture["responses"].append(_FakeResp(404, {"detail": "sem evento"}))
-    push.push_send_event({"event": "x.y", "idempotency_key": "k"})  # não levanta
-    http_capture["responses"].append(_FakeResp(503, None, text="down"))
-    from notify.sdk import client
-
-    with pytest.raises(client.NotifyServerError):
-        push.push_send_event({"event": "x.y", "idempotency_key": "k"})
-
-
-# ── send_event() remote ──────────────────────────────────────────────────────
+# ── send_event() remote — teor resolvido AQUI, POST /v1/send com content pronto ──────
 
 
 @pytest.mark.django_db
 def test_send_event_remote_resolve_profile_e_enfileira(
     remote, q_capture, django_capture_on_commit_callbacks
 ):
-    """Profile resolvido localmente; payload SendEventIn INTEIRO (todas as 17 chaves, com valores
-    distintos para as que aceitam override) enfileirado; retorno = uuid do cliente."""
+    """Profile + teor resolvidos localmente; push_send enfileirado com o `content` JÁ pronto
+    (o notify-server não conhece evento/Template) e roteado por `instance`."""
+    from notify.interface import templates as _tpl
     from notify.interface.events import send_event
+    from users.roles import notifications as msgs
+
+    _tpl.invalidate(
+        "lead.captured"
+    )  # garante o caminho catálogo in-memory (sem row no DB)
+    expected = msgs.text("lead.captured", nome="Maria", name="Maria", valor="R$ 999")
 
     prof = SimpleNamespace(
         name="Maria da Silva",
@@ -276,36 +270,37 @@ def test_send_event_remote_resolve_profile_e_enfileira(
 
     uuid.UUID(ret)
     name, args = q_capture[0]
-    assert name == "notify.sdk.push.push_send_event"
+    assert name == "notify.sdk.push.push_send"
     payload = args[0]
     assert payload == {
-        "event": "lead.captured",
+        "content": expected,
+        "caller": "event:lead.captured",
         "phone": "5511988887777",
         "email": "maria@x.com",
-        "nome": "Maria",
-        "nome_completo": "Maria da Silva",
-        "gender": "F",
-        "ctx": {"valor": "R$ 999"},
         "title": "Titulo do evento",
         "subject": "Assunto do evento",
+        "whatsapp": True,
+        "email_channel": True,
+        "tts": False,  # lead.captured não é TTS
         "media_url": "http://x/foto.png",
         "media_type": "image",
-        "mail_template": "evento-tpl",
-        "idempotency_key": ret,  # sem chave do caller → uuid do cliente
-        "body_md_override": None,  # lead.captured não é evento de story
-        "is_tts_override": None,
-        "channels_override": None,
+        "sexo": None,  # sexo só vai quando é voice-note (TTS)
+        "instance": "supletivo",
+        "external_id": ret,  # sem chave do caller → uuid do cliente
         "run_sync": False,
     }
 
 
 @pytest.mark.django_db
-def test_send_event_remote_overrides_no_payload(
+def test_send_event_remote_overrides_aplicados_localmente(
     remote, q_capture, django_capture_on_commit_callbacks
 ):
-    """idempotency_key/is_tts_override/channels_override do caller entram no payload."""
+    """is_tts_override/channels_override são aplicados AQUI (viram tts/whatsapp no payload pronto);
+    a idempotency_key do caller vira o external_id (chave do servidor)."""
+    from notify.interface import templates as _tpl
     from notify.interface.events import send_event
 
+    _tpl.invalidate("candidate.document_in_review")
     with django_capture_on_commit_callbacks(execute=True):
         ret = send_event(
             "candidate.document_in_review",
@@ -317,9 +312,12 @@ def test_send_event_remote_overrides_no_payload(
 
     uuid.UUID(ret)
     payload = q_capture[0][1][0]
-    assert payload["idempotency_key"] == "chave-estavel"
-    assert payload["is_tts_override"] is True
-    assert payload["channels_override"] == ["whatsapp"]
+    assert payload["external_id"] == "chave-estavel"
+    assert payload["whatsapp"] is True
+    assert (
+        payload["email_channel"] is False
+    )  # channels_override=("whatsapp",) tira o e-mail
+    assert payload["tts"] is True  # is_tts_override=True → voice-note
 
 
 def test_send_event_remote_sem_destinatario_vira_none(remote, monkeypatch):
@@ -334,37 +332,26 @@ def test_send_event_remote_sem_destinatario_vira_none(remote, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_send_event_remote_sync_404_vira_none(remote, http_capture):
-    """run_sync: 404 do servidor (evento inexistente/trigger inativo/sem canal) → None."""
-    from notify.interface.events import send_event
-
-    http_capture["responses"].append(
-        _FakeResp(404, {"detail": "Evento 'x' não encontrado ou inativo."})
-    )
-    assert (
-        send_event("evento.inexistente", phone="5511999990001", run_sync=True) is None
-    )
-
-
-@pytest.mark.django_db
 def test_send_event_remote_sync_devolve_id_do_servidor(remote, http_capture):
+    from notify.interface import templates as _tpl
     from notify.interface.events import send_event
 
+    _tpl.invalidate("lead.captured")
     http_capture["responses"].append(_FakeResp(200, {"external_id": "srv-77"}))
     ret = send_event("lead.captured", phone="5511999990001", run_sync=True)
 
     assert ret == "srv-77"
     call = http_capture["calls"][0]
-    assert call["path"] == "/v1/send-event"
+    assert call["path"] == "/v1/send"  # não há mais /v1/send-event
     assert call["json"]["run_sync"] is True
     assert call["timeout"] == 33.0
 
 
 @pytest.mark.django_db
-def test_send_event_remote_story_vira_body_md_override(
+def test_send_event_remote_story_vira_content(
     remote, q_capture, monkeypatch, django_capture_on_commit_callbacks
 ):
-    """Storytelling fica no backend: texto da IA vai como body_md_override no payload."""
+    """Storytelling fica no backend: o texto da IA vira o `content` pronto do POST /v1/send."""
     from integrations.ai import service as ai
     from notify.interface import templates as _tpl
     from notify.interface.events import send_event
@@ -383,20 +370,20 @@ def test_send_event_remote_story_vira_body_md_override(
     with django_capture_on_commit_callbacks(execute=True):
         send_event("enrollment.selfie_approved", profile=prof)
 
-    assert q_capture[0][1][0]["body_md_override"] == story
+    assert q_capture[0][1][0]["content"] == story
 
 
 @pytest.mark.django_db
 def test_send_event_remote_override_do_caller_tem_precedencia(
     remote, q_capture, monkeypatch, django_capture_on_commit_callbacks
 ):
-    """body_md_override do caller NÃO é sobrescrito por story (nem gera story à toa)."""
+    """body_md_override do caller vira o `content` sem gerar story por cima."""
     from notify.interface.events import send_event
     from users.roles import notifications as msgs
 
     monkeypatch.setattr(
         msgs,
-        "story_or_none",
+        "story_text",
         lambda *a, **k: pytest.fail("não gera story por cima do override do caller"),
     )
     with django_capture_on_commit_callbacks(execute=True):
@@ -405,7 +392,7 @@ def test_send_event_remote_override_do_caller_tem_precedencia(
             phone="5511999990001",
             body_md_override="texto do caller",
         )
-    assert q_capture[0][1][0]["body_md_override"] == "texto do caller"
+    assert q_capture[0][1][0]["content"] == "texto do caller"
 
 
 # ── story_or_none ────────────────────────────────────────────────────────────
@@ -542,3 +529,27 @@ def test_notify_send_command_modo_remote_consulta_o_sdk(remote, http_capture):
     assert http_capture["calls"][1]["path"] == f"/v1/notifications/{server_id}"
     assert server_id in out.getvalue()
     assert "sent" in out.getvalue()
+
+
+@pytest.mark.django_db
+def test_body_md_override_ainda_honra_trigger_inativo():
+    """body_md_override NÃO fura o kill-switch: Trigger.active=False desliga o evento mesmo com o
+    caller passando o corpo JÁ pronto (garantia documentada em events.py — regressão do review)."""
+    from notify.interface import templates as _tpl
+    from notify.interface.events import send_event
+    from notify.models import Notification, Template, Trigger
+
+    _tpl.invalidate("test.kill_override")
+    t = Template.objects.create(
+        event="test.kill_override", body_md="Oi {nome}", channels="whatsapp"
+    )
+    Trigger.objects.create(template=t, active=False)
+
+    ret = send_event(
+        "test.kill_override",
+        phone="5511999990000",
+        body_md_override="corpo pronto do caller",
+        run_sync=True,
+    )
+    assert ret is None
+    assert Notification.objects.filter(caller="event:test.kill_override").count() == 0

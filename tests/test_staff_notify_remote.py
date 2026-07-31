@@ -1,9 +1,9 @@
-"""Painel staff em NOTIFY_MODE=remote (Fase 2): /history proxia o notify-server e as mutações
-de Template/Trigger fazem dual-write (local + push, atômico).
+"""Painel staff em NOTIFY_MODE=remote: /history proxia o notify-server (a verdade dos ENVIOS mora
+lá) e as mutações de Template/Trigger são LOCAL-ONLY — o catálogo é do supletivo, sem dual-write.
 
 Transporte mockado na `notify.sdk.client._request` (ponto único de rede — mesma convenção do
 test_notify_sdk_remote). Cobre: mapeamento do history, params dos filtros, 502 NOTIFY_SERVER_DOWN,
-rollback local quando o push falha e o modo local intocado (zero HTTP).
+e que as mutações NÃO tocam o notify-server (nem em modo remote).
 """
 
 import json
@@ -41,11 +41,11 @@ def staff_headers():
 @pytest.fixture
 def remote(settings):
     settings.NOTIFY_MODE = "remote"
-    settings.NOTIFY_SERVER_URL = "http://notify.test"
+    settings.NOTIFY_URL = "http://notify.test"
+    settings.NOTIFY_INSTANCE = "supletivo"
     settings.NOTIFY_API_KEY = "test-key"
     settings.NOTIFY_TIMEOUT = 5.0
     settings.NOTIFY_SYNC_TIMEOUT = 33.0
-    settings.NOTIFY_ACCOUNT_SLUG = "supletivo"
     return settings
 
 
@@ -152,68 +152,18 @@ def test_history_local_intocado(client, staff_headers, no_http):
     assert resp.json() == []
 
 
-# ── PUT /templates/{event} (dual-write) ──────────────────────────────────────
+# ── Mutações de Template/Trigger: LOCAL-ONLY (o catálogo é do supletivo, sem dual-write) ──────
+# Em remote, as mutações NÃO tocam o notify-server: o teor é resolvido no ENVIO (send_event) e
+# entregue como `content` pronto. Qualquer chamada ao SDK numa mutação é bug → `no_http` derruba.
 
 _BODY = {"body_md": "Oi {nome}, chegou!", "is_tts": True, "channels": "whatsapp"}
-
-# valores distintos em TODOS os 11 campos que `_server_template_payload` monta — um typo em
-# qualquer chave do payload (ou um campo esquecido) quebra a igualdade exata abaixo.
-_BODY_FULL = {
-    "title": "Novo Template",
-    "subject": "Assunto novo",
-    "body_md": "Oi {nome}, chegou!",
-    "is_tts": True,
-    "storytelling": True,
-    "story_prompt": "conte uma historia de superacao",
-    "channels": "whatsapp",
-    "media_url": "http://x/img.png",
-    "media_type": "image",
-    "mail_template": "custom-template",
-    "notes": "nota interna do staff",
-}
+_SEED_EVENT = (
+    "candidate.awaiting_approval"  # primeiro evento do notify/seed/templates.md
+)
 
 
-def test_put_template_remote_dual_write(client, staff_headers, remote, http):
-    """Escreve local E faz PUT full no servidor (conta NOTIFY_ACCOUNT_SLUG) — TODOS os 11 campos
-    de `_server_template_payload` vão no payload, com valores distintos."""
-    from notify.models import Template
-
-    http["responses"].append(_FakeResp(200, {"event": "ev.x"}))
-    resp = _put(
-        client, "/api/v1/staff/notify/templates/ev.x", _BODY_FULL, staff_headers
-    )
-    assert resp.status_code == 200
-    assert Template.objects.filter(event="ev.x").exists()
-    call = http["calls"][0]
-    assert call["method"] == "PUT"
-    assert call["path"] == "/v1/staff/templates/supletivo/ev.x"
-    assert call["json"] == {
-        "title": "Novo Template",
-        "subject": "Assunto novo",
-        "body_md": "Oi {nome}, chegou!",
-        "is_tts": True,
-        "storytelling": True,
-        "story_prompt": "conte uma historia de superacao",
-        "channels": "whatsapp",
-        "media_url": "http://x/img.png",
-        "media_type": "image",
-        "mail_template": "custom-template",
-        "notes": "nota interna do staff",
-    }
-
-
-def test_put_template_remote_push_falha_rollback(client, staff_headers, remote, http):
-    """Push 5xx → 502 NOTIFY_SERVER_DOWN e a escrita local é DESFEITA (espelho coeso)."""
-    from notify.models import Template
-
-    http["responses"].append(_FakeResp(503, None, text="down"))
-    resp = _put(client, "/api/v1/staff/notify/templates/ev.x", _BODY, staff_headers)
-    assert resp.status_code == 502
-    assert resp.json()["code"] == "NOTIFY_SERVER_DOWN"
-    assert not Template.objects.filter(event="ev.x").exists()
-
-
-def test_put_template_local_sem_http(client, staff_headers, no_http):
+def test_put_template_remote_local_only(client, staff_headers, remote, no_http):
+    """PUT em modo remote escreve local e NÃO chama o notify-server."""
     from notify.models import Template
 
     resp = _put(client, "/api/v1/staff/notify/templates/ev.x", _BODY, staff_headers)
@@ -221,15 +171,10 @@ def test_put_template_local_sem_http(client, staff_headers, no_http):
     assert Template.objects.filter(event="ev.x").exists()
 
 
-# ── PATCH (parcial local → PUT full no servidor) ─────────────────────────────
-
-
-def test_patch_remote_faz_put_full_do_estado(client, staff_headers, remote, http):
-    """O servidor não tem PATCH: o parcial vira PUT do estado RESULTANTE (campos não tocados vão)."""
+def test_patch_template_remote_local_only(client, staff_headers, remote, no_http):
     from notify.models import Template
 
     Template.objects.create(event="ev.x", body_md="Oi {nome}", is_tts=False)
-    http["responses"].append(_FakeResp(200, {"event": "ev.x"}))
     resp = client.patch(
         "/api/v1/staff/notify/templates/ev.x",
         data=json.dumps({"is_tts": True}),
@@ -237,36 +182,13 @@ def test_patch_remote_faz_put_full_do_estado(client, staff_headers, remote, http
         **staff_headers,
     )
     assert resp.status_code == 200
-    call = http["calls"][0]
-    assert call["method"] == "PUT"
-    assert call["json"]["is_tts"] is True
-    assert call["json"]["body_md"] == "Oi {nome}"  # não veio no PATCH, vai no full
     assert Template.objects.get(event="ev.x").is_tts is True
 
 
-def test_patch_remote_push_falha_rollback(client, staff_headers, remote, http):
-    from notify.models import Template
-
-    Template.objects.create(event="ev.x", body_md="Oi {nome}", is_tts=False)
-    http["responses"].append(_FakeResp(500, None, text="erro"))
-    resp = client.patch(
-        "/api/v1/staff/notify/templates/ev.x",
-        data=json.dumps({"is_tts": True}),
-        content_type="application/json",
-        **staff_headers,
-    )
-    assert resp.status_code == 502
-    assert Template.objects.get(event="ev.x").is_tts is False  # rollback
-
-
-# ── PUT .../trigger ──────────────────────────────────────────────────────────
-
-
-def test_put_trigger_remote_dual_write(client, staff_headers, remote, http):
+def test_put_trigger_remote_local_only(client, staff_headers, remote, no_http):
     from notify.models import Template, Trigger
 
     Template.objects.create(event="ev.x", body_md="Oi")
-    http["responses"].append(_FakeResp(200, {"active": False}))
     resp = _put(
         client,
         "/api/v1/staff/notify/templates/ev.x/trigger",
@@ -279,98 +201,38 @@ def test_put_trigger_remote_dual_write(client, staff_headers, remote, http):
         staff_headers,
     )
     assert resp.status_code == 200
-    call = http["calls"][0]
-    assert call["method"] == "PUT"
-    assert call["path"] == "/v1/staff/templates/supletivo/ev.x/trigger"
-    assert call["json"]["fires_on"] == "lead.paid"
-    assert call["json"]["source"] == "manual-staff"  # nunca era asserido antes
-    assert call["json"]["delay_minutes"] == 0  # clamp ≥0 vale nos dois lados
-    assert call["json"]["active"] is False
-    assert Trigger.objects.get(template__event="ev.x").active is False
+    tr = Trigger.objects.get(template__event="ev.x")
+    assert tr.active is False
+    assert tr.delay_minutes == 0  # clamp ≥0
 
 
-def test_put_trigger_remote_push_falha_rollback(client, staff_headers, remote, http):
-    from notify.models import Template, Trigger
-
-    t = Template.objects.create(event="ev.x", body_md="Oi")
-    Trigger.objects.create(template=t, active=True)
-    http["responses"].append(_FakeResp(502, None, text="bad gateway"))
-    resp = _put(
-        client,
-        "/api/v1/staff/notify/templates/ev.x/trigger",
-        {"active": False},
-        staff_headers,
-    )
-    assert resp.status_code == 502
-    assert resp.json()["code"] == "NOTIFY_SERVER_DOWN"
-    assert Trigger.objects.get(template=t).active is True  # rollback
-
-
-# ── DELETE ───────────────────────────────────────────────────────────────────
-
-
-def test_delete_remote_dual_write(client, staff_headers, remote, http):
+def test_delete_template_remote_local_only(client, staff_headers, remote, no_http):
     from notify.models import Template
 
     Template.objects.create(event="ev.x", body_md="Oi")
-    http["responses"].append(_FakeResp(200, {"deleted": "ev.x"}))
-    resp = client.delete("/api/v1/staff/notify/templates/ev.x", **staff_headers)
-    assert resp.status_code == 200
-    assert not Template.objects.filter(event="ev.x").exists()
-    call = http["calls"][0]
-    assert call["method"] == "DELETE"
-    assert call["path"] == "/v1/staff/templates/supletivo/ev.x"
-
-
-def test_delete_remote_404_no_servidor_e_tolerado(client, staff_headers, remote, http):
-    """404 lá = já não existia — delete idempotente: local apaga e a resposta é 200."""
-    from notify.models import Template
-
-    Template.objects.create(event="ev.x", body_md="Oi")
-    http["responses"].append(_FakeResp(404, {"detail": "Template não encontrado."}))
     resp = client.delete("/api/v1/staff/notify/templates/ev.x", **staff_headers)
     assert resp.status_code == 200
     assert not Template.objects.filter(event="ev.x").exists()
 
 
-def test_delete_remote_push_falha_rollback(client, staff_headers, remote, http):
+def test_restore_seed_remote_local_only(client, staff_headers, remote, no_http):
     from notify.models import Template
 
-    Template.objects.create(event="ev.x", body_md="Oi")
-    http["responses"].append(_FakeResp(500, None, text="erro"))
-    resp = client.delete("/api/v1/staff/notify/templates/ev.x", **staff_headers)
-    assert resp.status_code == 502
-    assert Template.objects.filter(event="ev.x").exists()  # rollback: nada apagado
-
-
-# ── POST .../restore-seed ────────────────────────────────────────────────────
-
-_SEED_EVENT = (
-    "candidate.awaiting_approval"  # primeiro evento do notify/seed/templates.md
-)
-
-
-def test_restore_seed_remote_faz_put_full(client, staff_headers, remote, http):
-    from notify.models import Template
-
-    http["responses"].append(_FakeResp(200, {"event": _SEED_EVENT}))
     resp = client.post(
         f"/api/v1/staff/notify/templates/{_SEED_EVENT}/restore-seed", **staff_headers
     )
     assert resp.status_code == 200
-    t = Template.objects.get(event=_SEED_EVENT)
-    call = http["calls"][0]
-    assert call["method"] == "PUT"
-    assert call["path"] == f"/v1/staff/templates/supletivo/{_SEED_EVENT}"
-    assert call["json"]["body_md"] == t.body_md  # teor restaurado vai FULL pro servidor
+    assert Template.objects.filter(event=_SEED_EVENT).exists()
 
 
-def test_restore_seed_remote_push_falha_rollback(client, staff_headers, remote, http):
-    from notify.models import Template
-
-    http["responses"].append(_FakeResp(500, None, text="erro"))
+def test_test_template_unknown_event_returns_404(client, staff_headers, no_http):
+    """POST /templates/{event}/test de evento sem Template e fora do catálogo → 404 EVENT_NOT_FOUND
+    (send_event levanta KeyError via msgs.text; o endpoint traduz pra 404 em vez de 500)."""
     resp = client.post(
-        f"/api/v1/staff/notify/templates/{_SEED_EVENT}/restore-seed", **staff_headers
+        "/api/v1/staff/notify/templates/evento.que.nao.existe/test",
+        data=json.dumps({}),
+        content_type="application/json",
+        **staff_headers,
     )
-    assert resp.status_code == 502
-    assert not Template.objects.filter(event=_SEED_EVENT).exists()  # rollback
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "EVENT_NOT_FOUND"

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import structlog
 from django.conf import settings
-from django.db import transaction
 from ninja import Router, Schema
 
 from api.auth import require_superuser
@@ -87,7 +86,8 @@ class NotificationOut(Schema):
     created_at: str
 
 
-# ── Fase 2 (NOTIFY_MODE=remote): proxy do history + dual-write das mutações ────
+# ── NOTIFY_MODE=remote: proxy do /history (a verdade dos ENVIOS mora no notify-server). ────
+# O catálogo de Templates é do supletivo (fonte única, local) — não há mais dual-write ao servidor.
 def _remote() -> bool:
     """Lê a flag a cada chamada (rollback = trocar NOTIFY_MODE + restart, sem redeploy)."""
     return settings.NOTIFY_MODE == "remote"
@@ -107,60 +107,6 @@ def _server_call(fn):
             "notify-server indisponível — tente novamente.",
             code="NOTIFY_SERVER_DOWN",
         ) from exc
-
-
-def _server_template_payload(t: Template) -> dict:
-    """Estado FULL do Template local no shape TemplateUpsertIn do servidor (que não tem PATCH)."""
-    return dict(
-        title=t.title,
-        subject=t.subject,
-        body_md=t.body_md,
-        is_tts=t.is_tts,
-        storytelling=t.storytelling,
-        story_prompt=t.story_prompt,
-        channels=t.channels,
-        media_url=t.media_url,
-        media_type=t.media_type,
-        mail_template=t.mail_template,
-        notes=t.notes,
-    )
-
-
-def _push_template_remote(event: str, t: Template) -> None:
-    """PUT full do Template resultante no servidor (dual-write)."""
-    from notify.sdk import client
-
-    _server_call(lambda: client.staff_put_template(event, _server_template_payload(t)))
-
-
-def _push_trigger_remote(event: str, tr: Trigger) -> None:
-    """PUT do Trigger resultante no servidor (dual-write)."""
-    from notify.sdk import client
-
-    payload = dict(
-        fires_on=tr.fires_on or "",
-        source=tr.source,
-        delay_minutes=tr.delay_minutes,
-        active=tr.active,
-    )
-    _server_call(lambda: client.staff_put_trigger(event, payload))
-
-
-def _push_delete_remote(event: str) -> None:
-    """DELETE no servidor. 404 lá = já não existia — delete é idempotente, espelho segue coeso."""
-    from notify.sdk import client
-
-    def _delete():
-        try:
-            client.staff_delete_template(event)
-        except client.NotifyServerError as exc:
-            if exc.status_code == 404:
-                # kwarg não pode se chamar `event` (posicional do structlog)
-                logger.info("staff_notify.remote_delete_absent", event_slug=event)
-                return
-            raise
-
-    _server_call(_delete)
 
 
 @router.get("/history", response=list[NotificationOut])
@@ -427,13 +373,7 @@ def upsert_template(request, event: str, payload: TemplateUpsertIn):
         _db_cache.invalidate(event)  # cache em memória reflete a edição na hora
         return t
 
-    if _remote():
-        # Dual-write: falha do push desfaz a escrita local (espelho fica coeso).
-        with transaction.atomic():
-            t = _write()
-            _push_template_remote(event, t)
-    else:
-        t = _write()
+    t = _write()
     return _template_out(t)
 
 
@@ -457,12 +397,7 @@ def upsert_trigger(request, event: str, payload: TriggerUpsertIn):
         _db_cache.invalidate(event)
         return tr
 
-    if _remote():
-        with transaction.atomic():
-            tr = _write()
-            _push_trigger_remote(event, tr)
-    else:
-        tr = _write()
+    tr = _write()
     return _trigger_out(tr)
 
 
@@ -518,13 +453,7 @@ def patch_template(request, event: str, payload: TemplatePatchIn):
             t.save()
             _db_cache.invalidate(event)
 
-    if _remote():
-        # O servidor não tem PATCH: aplica o parcial local e faz PUT FULL do estado resultante.
-        with transaction.atomic():
-            _write()
-            _push_template_remote(event, t)
-    else:
-        _write()
+    _write()
     return _template_out(t)
 
 
@@ -534,13 +463,9 @@ def delete_template(request, event: str):
     """APAGA o Template (e o Trigger em cascata — OneToOne). Use com cuidado — o seed não vai
     recriar automaticamente (use POST /restore-seed pra isso).
 
-    NOTIFY_MODE=local: a próxima chamada de `send_event(event)` cai no catálogo in-memory
-    legado (`users.roles.notifications`). NOTIFY_MODE=remote: NÃO há esse fallback — o
-    notify-server não conhece o catálogo do monólito, então o evento simplesmente para de
-    disparar (404 tratado como no-op) até alguém restaurar o Template (review adversarial:
-    esse fallback só existe hoje pra 1 evento de baixo uso, `enrollment.concluded_referral`,
-    já quebrado por um bug pré-existente não relacionado — extra= inválido em
-    `student/signals.py`). Confirme os 2 lados (local + notify-server) antes de apagar em prod."""
+    Sem row no DB, a próxima chamada de `send_event(event)` cai no catálogo in-memory legado
+    (`users.roles.notifications`), tanto em modo local quanto remote (o teor é sempre resolvido
+    aqui antes de ir ao notify-server)."""
     require_superuser(request.auth)
     t = Template.objects.filter(event=event).first()
     if t is None:
@@ -550,12 +475,7 @@ def delete_template(request, event: str):
         t.delete()
         _db_cache.invalidate(event)
 
-    if _remote():
-        with transaction.atomic():
-            _write()
-            _push_delete_remote(event)
-    else:
-        _write()
+    _write()
     return {"deleted": event}
 
 
@@ -679,17 +599,22 @@ def test_template(request, event: str, payload: TestSendIn):
     require_superuser(request.auth)
     from notify.interface.events import send_event
 
-    ext = send_event(
-        event,
-        user=str(request.auth.external_id),
-        ctx=payload.ctx,
-        channels_override=tuple(payload.channels) if payload.channels else None,
-        # G19: SEM idempotency_key. A key era estável (event+staff), então o 2º clique em "testar"
-        # retornava a notificação anterior e NÃO enviava — o preview parava de funcionar. Preview é
-        # pra ver o resultado a CADA clique; idempotência não faz sentido aqui (não é evento de
-        # negócio com risco de duplicação, é o próprio staff testando).
-        run_sync=True,  # síncrono pra o staff ver o resultado AGORA
-    )
+    try:
+        ext = send_event(
+            event,
+            user=str(request.auth.external_id),
+            ctx=payload.ctx,
+            channels_override=tuple(payload.channels) if payload.channels else None,
+            # G19: SEM idempotency_key. A key era estável (event+staff), então o 2º clique em "testar"
+            # retornava a notificação anterior e NÃO enviava — o preview parava de funcionar. Preview é
+            # pra ver o resultado a CADA clique; idempotência não faz sentido aqui (não é evento de
+            # negócio com risco de duplicação, é o próprio staff testando).
+            run_sync=True,  # síncrono pra o staff ver o resultado AGORA
+        )
+    except KeyError:
+        # evento sem Template no DB e ausente do catálogo in-memory: msgs.text() levanta KeyError.
+        # Vira 404 EVENT_NOT_FOUND (senão o handler genérico devolveria 500).
+        ext = None
     if ext is None:
         raise NotFound(
             f"evento '{event}' não existe (nem Template, nem catálogo in-memory).",
@@ -737,11 +662,5 @@ def restore_from_seed(request, event: str):
         _db_cache.invalidate(event)
         return t
 
-    if _remote():
-        # restore-seed também é mutação → PUT full do teor restaurado no servidor.
-        with transaction.atomic():
-            t = _write()
-            _push_template_remote(event, t)
-    else:
-        t = _write()
+    t = _write()
     return _template_out(t)

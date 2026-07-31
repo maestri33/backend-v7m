@@ -207,8 +207,9 @@ def _send_remote(
     server_key = idempotency_key or client_uuid
     if media_url and not media_type:
         media_type = _guess_media_type(media_url)  # paridade com o caminho local
+    # Contrato genérico do notify: conteúdo JÁ pronto (`content`) + roteamento por `instance`.
     payload = {
-        "text": text,
+        "content": text,
         "caller": caller,
         "phone": phone,
         "email": email,
@@ -219,8 +220,8 @@ def _send_remote(
         "tts": tts,
         "media_url": media_url,
         "media_type": media_type,
-        "gender": gender,
-        "mail_template": mail_template,
+        "sexo": gender,
+        "instance": settings.NOTIFY_INSTANCE,
         # na API /v1/send o campo chama-se external_id, mas é a idempotency_key do servidor.
         "external_id": server_key,
         "run_sync": run_sync,

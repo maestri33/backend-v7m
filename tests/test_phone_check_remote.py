@@ -23,7 +23,7 @@ def remote_phone(settings):
     """Liga o caminho remote de verdade: TEST_MODE off (o conftest liga) + cache limpo."""
     settings.TEST_MODE = False
     settings.NOTIFY_MODE = "remote"
-    settings.NOTIFY_SERVER_URL = "http://notify.test"
+    settings.NOTIFY_URL = "http://notify.test"
     settings.NOTIFY_API_KEY = "test-key"
     settings.NOTIFY_TIMEOUT = 5.0
     service._remote_check_cache.clear()
@@ -147,7 +147,7 @@ def test_phone_check_async_corpo_real_da_requisicao(settings, monkeypatch):
     de phone_check_async/_request_async realmente monta, não o que o teste presume."""
     from notify.sdk import client
 
-    settings.NOTIFY_SERVER_URL = "http://notify.test"
+    settings.NOTIFY_URL = "http://notify.test"
     settings.NOTIFY_API_KEY = "super-secret-key"
     settings.NOTIFY_TIMEOUT = 5.0
 

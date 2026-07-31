@@ -46,12 +46,11 @@ def check_notify_mode(app_configs, **kwargs):
             )
         )
     elif mode == "remote" and not (
-        getattr(settings, "NOTIFY_SERVER_URL", "")
-        and getattr(settings, "NOTIFY_API_KEY", "")
+        getattr(settings, "NOTIFY_URL", "") and getattr(settings, "NOTIFY_API_KEY", "")
     ):
         errors.append(
             DjangoError(
-                "NOTIFY_MODE=remote exige NOTIFY_SERVER_URL e NOTIFY_API_KEY não-vazios.",
+                "NOTIFY_MODE=remote exige NOTIFY_URL e NOTIFY_API_KEY não-vazios.",
                 hint="Defina ambos em backend/.env (ou volte NOTIFY_MODE=local).",
                 id="notify.E002",
             )
