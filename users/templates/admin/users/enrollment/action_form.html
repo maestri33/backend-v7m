@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+<p>
+  Matrícula <code>{{ enrollment.external_id }}</code>
+  — status: <strong>{{ enrollment.get_status_display }}</strong>
+  — polo: {{ enrollment.hub.brand }}
+  {% if coordinator %}— coordenador: {{ coordinator.profile.name|default:coordinator.external_id }}{% endif %}
+</p>
+
+{% if warning %}
+  <p class="errornote">{{ warning }}</p>
+{% else %}
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="submit-row">
+      <input type="submit" class="default" value="{{ submit_label }}">
+    </div>
+  </form>
+{% endif %}
+
+<p><a class="button" href="{{ back_url }}">← Voltar pra matrícula</a></p>
+{% endblock %}

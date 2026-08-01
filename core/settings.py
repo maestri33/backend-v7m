@@ -656,9 +656,10 @@ COMMISSION_CLOSING_HOUR = env.int("COMMISSION_CLOSING_HOUR", default=18)
 
 # matrícula (funil do aluno, §4 itens 11/13) — preço por gateway. Victor 2026-06-07: o COBRADO é o MESMO
 # EXIBIDO na vitrine (GET /clients/pricing), uma fonte só. PIX em REAIS (valor cheio); CARTÃO em CENTAVOS
-# (total; o front mostra 12x). DEV: PIX R$5 / cartão R$1 (=100 centavos). PROD = pedir ao Victor (§8).
-ENROLLMENT_PRICE_CARD_CENTS = env.int("ENROLLMENT_PRICE_CARD_CENTS", default=100)
-ENROLLMENT_PRICE_PIX = env("ENROLLMENT_PRICE_PIX", default="5")
+# (total; o front mostra 12x). PROD (Victor 2026-07-25): PIX R$999 / cartão 12x de R$99 = R$1188 total.
+# Teste de gateway: sobrescrever no .env com os mínimos do Asaas (PIX 5 / cartão 100) — users.W002 avisa.
+ENROLLMENT_PRICE_CARD_CENTS = env.int("ENROLLMENT_PRICE_CARD_CENTS", default=118800)
+ENROLLMENT_PRICE_PIX = env("ENROLLMENT_PRICE_PIX", default="999")
 # Preço da AUTO-MATRÍCULA do promotor (Victor 2026-06-16: preço diferente, fluxo próprio, SEM comissão).
 # DEV: default = o preço normal (mini). PROD: «PENDÊNCIA» — Victor define o valor do promotor no .env.
 ENROLLMENT_PRICE_PROMOTER_CARD_CENTS = env.int(
