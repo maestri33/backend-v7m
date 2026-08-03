@@ -52,6 +52,9 @@ providers é recusado em `prod`.
   → [[wiki/core/fallback]]
 - **core/validation:** registro de validações (flags + horário) dos testes que rodamos, mostrado no
   `/status/` de cada integração. → [[wiki/core/validation]]
+- **core/sentry:** captura de erro (Sentry ou GlitchTip) — opcional, sem `SENTRY_DSN` é no-op. Com
+  scrub de PII em 4 camadas (§LGPD: cpf/telefone/pix e o token de `/media/` nunca saem no evento).
+  → [[wiki/core/sentry]]
 - **integrations/tools/cep (§4 item 1):** tool de CEP — lookup ViaCEP (API pública, sem api-key).
   Cliente async; o app `address` consome depois. → [[wiki/integrations/tools/cep]]
 - **integrations/tools/cpf (§4 item 1):** tool de CPF — lookup CPFHub.io (api-key `x-api-key`,

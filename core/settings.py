@@ -726,12 +726,27 @@ structlog.configure(
 )
 
 # ── Sentry / GlitchTip (opcional — sem DSN = no-op) ──────────────────────────
+# A lógica (scrub de PII, fail-closed, no-op sem DSN) mora em `core/sentry.py` e é testada em
+# `tests/test_sentry.py` — aqui só a config (§10), como no `resolve_environment` acima.
+# SENTRY_ENVIRONMENT default = APP_ENV: o ambiente já é resolvido/validado ali em cima (prod,
+# staging, preview, test), então repetir a informação no .env só criaria chance de divergir —
+# um erro do staging carimbado "prod" no painel. O override existe pra quem roda mais de um
+# deploy no MESMO APP_ENV (ex.: "staging-v7m" e "staging-qa") e precisa separar os dois.
+# SENTRY_RELEASE vazio => o painel agrupa tudo em "sem release"; o deploy preenche com o SHA.
 SENTRY_DSN = env("SENTRY_DSN", default="")
-if SENTRY_DSN:
-    import sentry_sdk
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default=APP_ENV)
+SENTRY_RELEASE = env("SENTRY_RELEASE", default="")
+SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.1)
+# Corpo do request no evento: "never" (default) o mantém FORA — o funil dá POST de cpf/telefone/
+# pix e o `send_default_pii=False` do SDK não cobre o corpo. Afrouxe só em dev/staging.
+SENTRY_REQUEST_BODY = env("SENTRY_REQUEST_BODY", default="never")
 
-    sentry_sdk.init(
-        dsn=SENTRY_DSN,
-        traces_sample_rate=env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.1),
-        environment=env("SENTRY_ENVIRONMENT", default="development"),
-    )
+from core.sentry import init_sentry  # noqa: E402 — import perto da sua config (padrão do structlog acima)
+
+SENTRY_ENABLED = init_sentry(
+    dsn=SENTRY_DSN,
+    environment=SENTRY_ENVIRONMENT,
+    release=SENTRY_RELEASE,
+    traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+    request_body=SENTRY_REQUEST_BODY,
+)

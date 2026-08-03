@@ -15,6 +15,7 @@ dependencies = [
     "opencv-python-headless>=4.13.0.92",
     "pillow>=12.2.0",
     "pypdfium2>=5.9.0",
+    "sentry-sdk[django]>=2.66.1",
     "structlog>=25.5.0",
     "whitenoise>=6.12.0",
 ]
