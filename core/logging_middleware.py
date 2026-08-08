@@ -8,10 +8,13 @@ import structlog
 logger = structlog.get_logger("http")
 
 
-def _safe_path(path: str) -> str:
+def safe_path(path: str) -> str:
     """G1/#31: o nome do arquivo de mídia É a credencial (token aleatório, sem gate de dono ainda),
     então logá-lo em claro vaza o acesso. `/media/<prefixo>/<token>.<ext>` → loga só até o prefixo.
-    O resto do site loga o path inteiro (é o que serve pra diagnóstico)."""
+    O resto do site loga o path inteiro (é o que serve pra diagnóstico).
+
+    Público (era `_safe_path`) porque o `core/sentry.py` reusa a MESMA regra na URL do evento —
+    o token não pode vazar pro log nem pro Sentry, e a regra tem que ser uma só."""
     if path.startswith("/media/"):
         head, sep, tail = path.rpartition("/")
         if sep and tail:
@@ -33,7 +36,7 @@ class RequestLoggingMiddleware:
             "request",
             request_id=request_id,
             method=request.method,
-            path=_safe_path(request.path),
+            path=safe_path(request.path),
             status=response.status_code,
             duration_ms=duration_ms,
         )
