@@ -5,11 +5,14 @@ de um evento; (2) o token de `/media/` não vira URL no painel; (3) sem DSN nada
 config quebrada trava o boot em vez de passar batido. Nenhum deles precisa de banco nem de rede.
 """
 
+from pathlib import Path
+
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from core.sentry import (
     DENYLIST,
+    git_sha,
     init_sentry,
     mask_pii_text,
     redact_media_url,
@@ -180,6 +183,33 @@ def test_init_recusa_sample_rate_fora_da_faixa(rate):
 def test_init_recusa_request_body_invalido():
     with pytest.raises(ImproperlyConfigured, match="SENTRY_REQUEST_BODY"):
         init_sentry(dsn="https://k@o.test/1", environment="test", request_body="sempre")
+
+
+# ── release = SHA do HEAD ────────────────────────────────────────────────────────────────────
+def test_git_sha_devolve_o_head_do_checkout():
+    """O deploy deixa o HEAD no commit validado pelo CI, então o HEAD É a release."""
+    import subprocess
+
+    sha = git_sha(Path(__file__).resolve().parent.parent)
+    esperado = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=Path(__file__).resolve().parent.parent,
+    ).stdout.strip()
+
+    assert sha == esperado
+    assert len(sha) == 40  # SHA completo, não abreviado
+
+
+def test_git_sha_fora_de_repo_git_devolve_vazio(tmp_path):
+    """Best-effort: sem `.git` o Sentry só fica sem release — não é erro de boot."""
+    assert git_sha(tmp_path) == ""
+
+
+def test_git_sha_com_caminho_inexistente_devolve_vazio():
+    """`git -C` num path que não existe sai com erro; o boot não pode cair por isso."""
+    assert git_sha("/nao/existe/em/lugar/nenhum") == ""
 
 
 # ── denylist ─────────────────────────────────────────────────────────────────────────────────

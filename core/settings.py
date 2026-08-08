@@ -732,7 +732,11 @@ structlog.configure(
 # staging, preview, test), então repetir a informação no .env só criaria chance de divergir —
 # um erro do staging carimbado "prod" no painel. O override existe pra quem roda mais de um
 # deploy no MESMO APP_ENV (ex.: "staging-v7m" e "staging-qa") e precisa separar os dois.
-# SENTRY_RELEASE vazio => o painel agrupa tudo em "sem release"; o deploy preenche com o SHA.
+# SENTRY_RELEASE se resolve sozinho: vazio => o SHA do HEAD do checkout, que o `deploy.yml`
+# deixa exatamente no commit validado pelo CI (`git reset --hard <sha>`). Ou seja, "esse erro
+# começou em qual deploy?" já responde sem ninguém editar .env a cada subida. O env var existe
+# como override (build sem git, imagem de container). Só consulta o git quando HÁ DSN — em
+# dev/CI, onde o Sentry está desligado, nem o subprocesso roda.
 SENTRY_DSN = env("SENTRY_DSN", default="")
 SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default=APP_ENV)
 SENTRY_RELEASE = env("SENTRY_RELEASE", default="")
@@ -741,7 +745,13 @@ SENTRY_TRACES_SAMPLE_RATE = env.float("SENTRY_TRACES_SAMPLE_RATE", default=0.1)
 # pix e o `send_default_pii=False` do SDK não cobre o corpo. Afrouxe só em dev/staging.
 SENTRY_REQUEST_BODY = env("SENTRY_REQUEST_BODY", default="never")
 
-from core.sentry import init_sentry  # noqa: E402 — import perto da sua config (padrão do structlog acima)
+from core.sentry import (  # noqa: E402 — import perto da sua config (padrão do structlog acima)
+    git_sha,
+    init_sentry,
+)
+
+if SENTRY_DSN and not SENTRY_RELEASE:
+    SENTRY_RELEASE = git_sha(BASE_DIR)
 
 SENTRY_ENABLED = init_sentry(
     dsn=SENTRY_DSN,

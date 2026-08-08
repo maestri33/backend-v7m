@@ -34,6 +34,8 @@ Pra esse modo de falha não virar "Sentry silencioso e ninguém percebe", o desc
 from __future__ import annotations
 
 import re
+import subprocess
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -180,6 +182,32 @@ def scrub_event(event: dict, hint: Any = None) -> dict | None:
         # Sem `raise`: exceção aqui dentro do SDK viraria outro evento → laço. Loga e engole.
         log.error("sentry_scrub_failed", event_id=str(event.get("event_id", ""))[:32])
         return None
+
+
+def git_sha(base_dir: Path | str) -> str:
+    """SHA do HEAD do checkout, ou "" se não der pra saber.
+
+    Serve de default do `SENTRY_RELEASE` — e é EXATO aqui por causa de como o deploy funciona: o
+    `deploy.yml` faz `git reset --hard <sha que passou no CI>` em `/opt/backend-supletivo`, então o
+    HEAD **é** a release rodando, sem ninguém ter que lembrar de atualizar um .env a cada deploy.
+    Sem isso o painel joga todo erro num balde só, e "isso começou em qual deploy?" — a primeira
+    pergunta de todo incidente — vira arqueologia de log.
+
+    Best-effort por toda parte: `git` ausente, `.git` ilegível pelo usuário do serviço, timeout →
+    devolve "" e o Sentry só fica sem release. Nunca derruba o boot. Roda UMA vez por processo (no
+    import do settings) e só quando há DSN — ver a chamada em `core/settings.py`.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(base_dir), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout.strip()
 
 
 def init_sentry(

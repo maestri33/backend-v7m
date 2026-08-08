@@ -24,13 +24,24 @@ O SDK é o `sentry-sdk[django]`. O DSN pode ser do Sentry SaaS **ou de um Glitch
 | --- | --- | --- |
 | `SENTRY_DSN` | *(vazio)* | Vazio = **desligado**, o resto é ignorado. |
 | `SENTRY_ENVIRONMENT` | `APP_ENV` | Separa prod/staging/preview/test no painel. Só sobrescreva se houver **dois deploys no mesmo `APP_ENV`** (ex.: `staging-v7m` e `staging-qa`). |
-| `SENTRY_RELEASE` | *(vazio)* | SHA do deploy; vazio agrupa tudo em "sem release". |
+| `SENTRY_RELEASE` | *(SHA do HEAD)* | **Se resolve sozinho** — ver abaixo. Só preencha se o deploy não for um checkout git. |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | Fração de transações com tracing. Fora de `0.0–1.0` **trava o boot**. |
 | `SENTRY_REQUEST_BODY` | `never` | `never` \| `small` \| `medium` \| `always`. Ver **LGPD** abaixo antes de afrouxar. |
 
 Config quebrada levanta `ImproperlyConfigured` no import do settings (fail-fast, padrão do
 `core/environment.py`) — um sample-rate inválido é aceito calado pelo SDK, e o efeito só apareceria
 semanas depois na fatura.
+
+### A release sai do próprio deploy
+
+`SENTRY_RELEASE` vazio => o SHA do `HEAD` do checkout (`core.sentry.git_sha`). Isso é EXATO por
+construção: o `deploy.yml` faz `git reset --hard <sha que passou no CI>` em `/opt/backend-supletivo`,
+então o HEAD **é** a versão rodando. Ninguém precisa lembrar de editar o `.env` a cada subida — e
+"esse erro começou em qual deploy?", que é a primeira pergunta de todo incidente, já vem respondida.
+
+Best-effort em tudo: sem `git`, sem `.git` legível pelo usuário do serviço, ou timeout → fica sem
+release e o resto funciona. **Nunca** derruba o boot. Roda uma vez por processo, no import do
+settings, e **só quando há DSN** — em dev/CI o subprocesso nem é chamado.
 
 ## LGPD — as quatro camadas de scrub
 
