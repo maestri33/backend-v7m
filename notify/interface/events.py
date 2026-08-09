@@ -76,7 +76,9 @@ def send_event(
         "idempotency_key": idempotency_key or client_uuid,
         "body_md_override": body_md_override,
         "is_tts_override": is_tts_override,
-        "channels_override": list(channels_override) if channels_override is not None else None,
+        "channels_override": list(channels_override)
+        if channels_override is not None
+        else None,
         "run_sync": run_sync,
     }
     if run_sync:
@@ -87,6 +89,8 @@ def send_event(
 
     from django_q.tasks import async_task
 
-    transaction.on_commit(lambda: async_task("notify.sdk.push.push_send_event", payload))
+    transaction.on_commit(
+        lambda: async_task("notify.sdk.push.push_send_event", payload)
+    )
     logger.info("notify.remote_queued", external_id=client_uuid, event_key=event)
     return client_uuid

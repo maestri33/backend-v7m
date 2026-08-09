@@ -410,7 +410,9 @@ def test_identity_cpf_conflict_notifica_e_purga(client, default_hub, monkeypatch
     from users.auth.models import User
 
     sent = []
-    monkeypatch.setattr(notify_send, "send", lambda **kwargs: sent.append(kwargs) or str(uuid.uuid4()))
+    monkeypatch.setattr(
+        notify_send, "send", lambda **kwargs: sent.append(kwargs) or str(uuid.uuid4())
+    )
 
     cpf = _valid_cpf("111444777")
     token_dono = _enter(client, "11987650012")
