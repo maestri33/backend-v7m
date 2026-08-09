@@ -10,8 +10,7 @@ Formato no `.env` (preço por 1 MILHÃO de tokens, na moeda que o Victor escolhe
               └ provider ┘└─ model ──┘ └in┘ └out┘
 
 `in` = preço por 1M tokens de prompt; `out` = por 1M de completion. Modelo sem entrada na tabela →
-`None` (não estima). Mídia (TTS/visão/imagem/OCR) não tem tokens → fica `None` também (cobrança é
-por caractere/imagem; quando o Victor passar essa régua, somamos aqui sem tocar no resto).
+`None` (não estima). Visão/OCR/STT via clients REST não reportam tokens e também ficam sem custo.
 """
 
 from __future__ import annotations

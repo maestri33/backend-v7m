@@ -187,28 +187,6 @@ class LLMClient:
 
     # ---------- capacidades (cada uma devolve ChatResult cru) ----------
 
-    async def text(
-        self,
-        prompt: str,
-        *,
-        model: str,
-        instruction: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-    ) -> ChatResult:
-        """Texto natural a partir de um prompt (+ instrução opcional de comportamento)."""
-        instruction_line = f"Instrucao adicional: {instruction}" if instruction else ""
-        payload = self._build_payload(
-            [
-                {"role": "system", "content": SYSTEM_PROMPT_PT},
-                {"role": "user", "content": f"Prompt: {prompt}\n{instruction_line}"},
-            ],
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return await self._request(payload)
-
     async def json(
         self,
         prompt: str,

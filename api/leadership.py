@@ -26,8 +26,8 @@ from api.base import (
     build_group,
     resolve_rg_slot,
 )
+from api.schemas import PublicAddressOut, StudentPlatformFields, TokenOut
 from core.net import source_ip
-from api.schemas import TokenOut
 from users.auth import service as auth_iface
 from users.auth.models import User
 from users.exceptions import Forbidden, NotFound
@@ -315,17 +315,8 @@ class EnrollmentEducationOut(Schema):
     last_year_when: str | None = None
 
 
-class EnrollmentAddressOut(Schema):
-    cep: str | None = None
-    zipcode: str | None = None
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
-    country: str | None = None
-    missing_fields: list[str] = []
+class EnrollmentAddressOut(PublicAddressOut):
+    pass
 
 
 class EnrollmentSelfieOut(Schema):
@@ -558,11 +549,8 @@ class HubStudentRowOut(Schema):
 
 # ── detalhe RICO do aluno (A1 — Victor 2026-06-21: /students/{id} devolvia dict solto; agora tipa o
 # que `student.detail_for_coordinator` monta = `to_dict` + self_study + user, tudo estático).
-class StudentPlatformOut(Schema):
-    url: str | None = None
-    login: str | None = None
-    password: str | None = None
-    notes: str | None = None
+class StudentPlatformOut(StudentPlatformFields):
+    pass
 
 
 class StudentDocItemOut(Schema):

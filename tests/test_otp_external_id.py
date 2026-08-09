@@ -60,18 +60,6 @@ def test_otp_grava_string_devolvida_pelo_send(monkeypatch):
     assert str(otp.notification_external_id) == sentinel
 
 
-def test_otp_fluxo_real_aponta_pra_notification_local():
-    """Modo local de verdade: a string gravada resolve a Notification criada pelo send()."""
-    from notify.models import Notification
-
-    otp = otp_service.generate_and_send(_user_com_phone("11999990012"))
-
-    assert otp.notification_external_id
-    notif = Notification.objects.get(external_id=otp.notification_external_id)
-    assert notif.caller == "users.auth.otp"
-    assert str(otp.notification_external_id) == str(notif.external_id)
-
-
 @pytest.mark.django_db(transaction=True)
 def test_migracao_0033_fk_to_uuid_copia_fk_para_uuid():
     """A cadeia que EXECUTA de verdade (`0033_otpcode_notification_fk_to_uuid`, do funil v2):
@@ -100,36 +88,6 @@ def test_migracao_0033_fk_to_uuid_copia_fk_para_uuid():
         assert saved.notification_external_id == notif.external_id
     finally:
         # garante o schema final pros demais testes, mesmo se algo acima falhar
-        call_command("migrate", verbosity=0)
-
-
-@pytest.mark.django_db(transaction=True)
-def test_migracao_reversa_restaura_fk_com_dados_reais():
-    """Reverso ponta a ponta: do estado atual (head) até 0032, com uma row REAL preenchida.
-    Confere que desmigrar restaura a FK a partir do UUID (`restore_uuid_to_fk`).
-
-    Desmigrar até 0032 também desfaz `0034_profile_cpf_nullable` (cpf volta a NOT NULL) — o
-    Profile de teste precisa nascer COM cpf preenchido pra sobreviver a essa reversão, senão o
-    SQLite recusa recriar a tabela com uma row nula violando a constraint restaurada."""
-    # a suíte já está no head (pytest-django migra o DB de teste antes de qualquer teste rodar)
-    # — cria a row com os models REAIS, sem precisar de app registry histórico pra isso.
-    from users.auth.models import User
-    from users.profiles.models import Profile
-    from notify.models import Notification
-
-    user = User.objects.create_user()
-    Profile.objects.create(user=user, phone="11999990013", cpf="11122233396")
-    notif = Notification.objects.create(caller="users.auth.otp", text="codigo 654321")
-    otp = OtpCode.objects.create(
-        user=user, code_hash="y" * 64, notification_external_id=notif.external_id
-    )
-
-    executor = MigrationExecutor(connection)
-    try:
-        old_state = executor.migrate([("users", "0032_validationblock")])
-        restored = old_state.apps.get_model("users", "OtpCode").objects.get(id=otp.id)
-        assert restored.notification_id == notif.id
-    finally:
         call_command("migrate", verbosity=0)
 
 

@@ -2,15 +2,13 @@
 
 Porte da lógica do micro legado (charge.apply_webhook + payment.apply_webhook) pro mono Django,
 ORM síncrono. Fluxo (CONVENTION §7): persiste o evento bruto → mapeia PAYMENT_*/TRANSFER_* pra
-Payment.status (só altera estado DENTRO do app asaas) → o que não casa com nada nosso vai pro
-fallback logger do core (consumidores reais — fees/commissions — ainda não existem).
+Payment.status (só altera estado DENTRO do app Asaas). O payload bruto permanece em WebhookEvent.
 """
 
 import structlog
 from django.utils import timezone
 
 from core import hooks as core_hooks
-from core.fallback import log_unrouted_event
 
 from .models import Payment, WebhookEvent
 
@@ -101,18 +99,19 @@ def handle_event(payload, source_ip=None, user_agent=None):
         row.forwarded_ok = True
         row.forwarded_at = timezone.now()
         row.save(update_fields=["forwarded_ok", "forwarded_at"])
-        # ninguém consumiu (ou não é cobrança paga) -> fallback rastreável (§7.4), não perde o evento.
         if not consumed:
-            log_unrouted_event(
-                "asaas",
-                event or "",
-                f"applied_no_consumer: {reason}",
-                payload if isinstance(payload, dict) else {},
+            logger.warning(
+                "webhook_unconsumed",
+                provider="asaas",
+                provider_event=event or "",
+                reason=f"applied_no_consumer: {reason}",
             )
     else:
-        # nada nosso consumiu o evento -> fallback rastreável (não descarta em silêncio)
-        log_unrouted_event(
-            "asaas", event or "", reason, payload if isinstance(payload, dict) else {}
+        logger.warning(
+            "webhook_unconsumed",
+            provider="asaas",
+            provider_event=event or "",
+            reason=reason,
         )
 
     return row

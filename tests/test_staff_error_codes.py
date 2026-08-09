@@ -30,16 +30,6 @@ def test_integration_inexistente_tem_code(client, staff_headers):
     assert data.get("code") == "INTEGRATION_NOT_FOUND"
 
 
-def test_template_inexistente_tem_code(client, staff_headers):
-    """GET /notify/templates/<evento desconhecido> → 404 `TEMPLATE_NOT_FOUND` (era `ERROR`)."""
-    resp = client.get(
-        "/api/v1/staff/notify/templates/evento_que_nao_existe", **staff_headers
-    )
-    assert resp.status_code == 404
-    data = resp.json()
-    assert data.get("code") == "TEMPLATE_NOT_FOUND"
-
-
 def test_hub_inexistente_tem_code(client, staff_headers):
     """GET /leads?hub=<uuid inexistente> → 404 `HUB_NOT_FOUND` (era `ERROR`)."""
     resp = client.get(f"/api/v1/staff/leads?hub={uuid.uuid4()}", **staff_headers)

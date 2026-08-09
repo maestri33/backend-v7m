@@ -2,7 +2,7 @@
 
 Trava dois eixos que o student NÃO cobria: (a) o endereço extraído bate com o informado? (b) titular
 diferente NÃO reprova → `needs_kinship`. Mocka a IA (visão + extração) e afirma a tabela de decisão.
-O comparador puro `_address_matches` tem seu próprio self-check no `__main__` do módulo.
+O comparador puro `_address_matches` é coberto diretamente no fim deste arquivo.
 """
 
 from __future__ import annotations
@@ -84,5 +84,18 @@ def test_visao_reprova_nem_extrai():
     assert status == ap.REJECTED
 
 
-def test_comparador_puro_self_check():
-    ap.demo()  # os asserts do __main__ do módulo
+def test_comparador_puro():
+    cases = [
+        ({"zip": "01310-100", "city": "São Paulo"}, _Addr(), True),
+        ({"zip": "01310100", "street": "Av. Paulista"}, _Addr(), True),
+        ({"city": "Campinas"}, _Addr(), False),
+        ({"zip": "99999-000"}, _Addr(), False),
+        ({}, _Addr(), True),
+        (
+            {"street": "Rua das Flores"},
+            _Addr(zipcode=None, street="Avenida Brasil", city=None),
+            False,
+        ),
+    ]
+    for extracted, address, expected in cases:
+        assert ap._address_matches(extracted, address)[0] is expected

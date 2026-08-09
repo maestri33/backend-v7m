@@ -1,56 +1,34 @@
-"""`send_event()` — despacho orientado a evento (Template no DB), a nova frente do notify.
-
-Diferente do `send()` (flags explícitas), aqui o caller diz só o EVENTO + destinatário + ctx, e o
-Template resolve: teor (md), canais default, mídia anexa, is_tts (modo áudio do WhatsApp),
-storytelling (LLM). `Trigger.active=False` desliga o evento sem código.
-
-Fonte de verdade = DB (`notify.Template`); sem row, cai no catálogo in-memory (`users.roles.notifications`
-— `msgs.text`/`is_tts`/`story_text` já são DB-com-fallback). Então `send_event` funciona antes do
-seed e sobrevive a DB fora do ar.
-
-Placeholders: `{nome}` (1º nome), `{nome-completo}` (nome todo), e os legados (`{valor}`, `{link}`...).
-`nome`/`nome_completo` são resolvididos do `profile.name` quando `profile` (ou `user`) é informado.
-"""
+"""Despacho por evento; templates e triggers pertencem ao notify-server."""
 
 from __future__ import annotations
 
 import uuid
 
 import structlog
-from django.conf import settings
 from django.db import transaction
-
-from notify.interface import send as _send_iface
-from notify.interface import templates as _db
-from notify.models import Trigger
 
 logger = structlog.get_logger()
 
-# canais default quando o Template não existe no DB (catálogo in-memory legado).
-_DEFAULT_CHANNELS = ("whatsapp", "email")
+
+def _name(value: str | None, *, full: bool = False) -> str | None:
+    clean = " ".join((value or "").split())
+    return clean if full else (clean.split()[0] if clean else None)
 
 
 def _resolve_profile(user, profile):
-    """Devolve (profile, nome, nome_completo, phone, email, gender, birth_date)."""
     if profile is None and user:
         from users.profiles import interface as profiles
 
-        # user pode ser external_id (str) ou User; find_by_external_id aceita str.
-        uid = getattr(user, "external_id", user)
-        profile = profiles.find_by_external_id(str(uid))
+        profile = profiles.find_by_external_id(str(getattr(user, "external_id", user)))
     if profile is None:
-        return None, None, None, None, None, None, None
-    name = (getattr(profile, "name", None) or "").strip() or None
-    from users.roles import notifications as msgs
-
+        return None, None, None, None, None
+    raw_name = getattr(profile, "name", None)
     return (
-        profile,
-        msgs.first_name(name),
-        msgs.full_name(name),
+        _name(raw_name),
+        _name(raw_name, full=True),
         getattr(profile, "phone", None) or None,
         getattr(profile, "email", None) or None,
         getattr(profile, "gender", None) or None,
-        getattr(profile, "birth_date", None),
     )
 
 
@@ -74,264 +52,41 @@ def send_event(
     is_tts_override: bool | None = None,
     channels_override: tuple[str, ...] | list[str] | None = None,
 ) -> str | None:
-    """Despacha a notificação do `event` ao destinatário. Devolve o `external_id` (ou None se o
-    Trigger estiver inativo / não houver destinatário em canal algum).
-
-    - `user` (external_id ou User) ou `profile`: resolve phone/email/nome do Profile.
-    - `phone`/`email`: sobrescreve o do Profile (destino livre).
-    - `ctx`: placeholders extras (`valor`, `link`, `detail`, ...). `nome`/`nome_completo` injetados.
-    - overrides (`title`/`subject`/`media_url`/`gender`/`mail_template`) vencem o Template.
-    - `body_md_override` (wave-2): corpo JÁ renderizado pelo caller, pula a leitura do
-      `Template.body_md` e o `msgs.story_text()` (preserva storytelling RICO como
-      `enrollment._selfie_story` que concatena link, faz append de saudação etc.). NÃO pula
-      o `Trigger.active` — desativar evento ainda desliga.
-    - `is_tts_override` (wave-2): força o modo TTS do WhatsApp independente do `Template.is_tts`.
-      Útil quando o caller já sabe a regra (ex.: `_notify_resolution` lê `msgs.is_tts` direto).
-      `None` = honra o Template (ou o catálogo in-memory, sem row).
-    - `channels_override` (wave-2): força os canais (whatsapp/email) ignorando o Template.
-      Útil quando o caller quer mandar SÓ um canal e não há Template cadastrado.
-      `None` = usa `Template.channels` (ou default `whatsapp+email` sem row).
-    """
-    if settings.NOTIFY_MODE == "remote":
-        # só no ramo remote (achado do review: no local, Trigger.active PRECISA ser
-        # reavaliado a cada chamada — inclusive replay da mesma idempotency_key — e o
-        # pré-check aqui pularia essa checagem por completo, quebrando o kill-switch
-        # "sem código" pra qualquer caller com chave estável reusada). Mesma tabela local
-        # nos 2 modos: fecha a duplicidade do flip local→remote (send.py) sem tocar o local.
-        hit = _send_iface.local_idempotent_hit(idempotency_key, caller=f"event:{event}")
-        if hit is not None:
-            return hit
-        return _send_event_remote(
-            event,
-            user=user,
-            profile=profile,
-            phone=phone,
-            email=email,
-            ctx=ctx,
-            title=title,
-            subject=subject,
-            media_url=media_url,
-            media_type=media_type,
-            gender=gender,
-            mail_template=mail_template,
-            idempotency_key=idempotency_key,
-            run_sync=run_sync,
-            body_md_override=body_md_override,
-            is_tts_override=is_tts_override,
-            channels_override=channels_override,
-        )
-
-    from users.roles import notifications as msgs
-
-    data = _db.get(event)
-
-    # ── Trigger.active=False desliga o evento (Victor, sem código) — vale mesmo com body_override ──
-    if data is not None:
-        trigger = _trigger_for(data)
-        if trigger is not None and not trigger.active:
-            logger.info("notify.event_inactive", event_key=event, caller="send_event")
-            return None
-
-    prof, nome, nome_completo, p_phone, p_email, p_gender, birth = _resolve_profile(
-        user, profile
-    )
+    nome, nome_completo, p_phone, p_email, p_gender = _resolve_profile(user, profile)
     phone = phone or p_phone
     email = email or p_email
-    gender = gender or p_gender
-
-    # ── teor: 3 caminhos (override > DB.Template w/storytelling > catálogo in-memory) ──
-    if body_md_override is not None:
-        # Caller já compôs o texto (storytelling RICO + link appended, p.ex.). NÃO re-renderiza.
-        body = body_md_override
-        if is_tts_override is not None:
-            is_tts = is_tts_override
-        else:
-            is_tts = data.is_tts if data is not None else msgs.is_tts(event)
-        if channels_override is not None:
-            channels = list(channels_override)
-        elif data is not None:
-            channels = list(data.channels) or list(_DEFAULT_CHANNELS)
-        else:
-            channels = list(_DEFAULT_CHANNELS)
-        t_title = title or (data.title if data is not None else None)
-        t_subject = (
-            subject
-            or (data.subject if data is not None else None)
-            or "Sua matrícula — atualização"
-        )
-        t_media_url = media_url or (data.media_url if data is not None else None)
-        t_media_type = media_type or (data.media_type if data is not None else None)
-        t_mail_tpl = (
-            mail_template
-            or (data.mail_template if data is not None else None)
-            or "default"
-        )
-    elif data is not None:
-        # ctx base: nome/nome-completo + aliases legados (`name` = `nome`).
-        render_ctx: dict = {
-            "nome": nome or "tudo bem",
-            "nome_completo": nome_completo or "tudo bem",
-            "name": nome or "tudo bem",
-        }
-        if ctx:
-            render_ctx.update(ctx)
-        body = _db.render(data.body_md, render_ctx)
-        is_tts = data.is_tts if is_tts_override is None else is_tts_override
-        channels = (
-            list(channels_override)
-            if channels_override is not None
-            else (list(data.channels) or list(_DEFAULT_CHANNELS))
-        )
-        t_title = title or data.title
-        t_subject = subject or data.subject
-        t_media_url = media_url or data.media_url
-        t_media_type = media_type or data.media_type
-        t_mail_tpl = mail_template or data.mail_template
-        # storytelling: IA gera o teor (body_md é fallback). story_text honra o flag DB.
-        if data.storytelling and body_md_override is None:
-            body = msgs.story_text(
-                event, name=nome or "tudo bem", fallback=body, age=msgs.age_from(birth)
-            )
-    else:
-        # sem row no DB — catálogo in-memory (msgs.text/is_tts já são DB-com-fallback).
-        render_ctx = {"nome": nome or "tudo bem", "name": nome or "tudo bem"}
-        if ctx:
-            render_ctx.update(ctx)
-        body = msgs.text(event, **render_ctx)
-        is_tts = msgs.is_tts(event) if is_tts_override is None else is_tts_override
-        channels = (
-            list(channels_override)
-            if channels_override is not None
-            else list(_DEFAULT_CHANNELS)
-        )
-        t_title = title
-        t_subject = subject
-        t_media_url = media_url
-        t_media_type = media_type
-        t_mail_tpl = mail_template or "default"
-
-    # ── flags por canal (TTS é MODO de entrega do WhatsApp, não canal paralelo) ──
-    want_whatsapp = "whatsapp" in channels and bool(phone)
-    want_email = "email" in channels and bool(email)
-    want_tts = is_tts and want_whatsapp  # voice-note só faz sentido no WhatsApp
-    if not want_whatsapp and not want_email:
-        logger.warning("notify.event_no_recipient", event_key=event)
-        return None
-
-    return _send_iface.send(
-        text=body,
-        caller=f"event:{event}",
-        phone=phone if want_whatsapp else None,
-        email=email if want_email else None,
-        title=t_title,
-        subject=t_subject,
-        whatsapp=want_whatsapp,
-        email_channel=want_email,
-        tts=want_tts,
-        media_url=t_media_url,
-        media_type=t_media_type,
-        gender=gender if want_tts else None,
-        mail_template=t_mail_tpl or "default",
-        idempotency_key=idempotency_key,
-        run_sync=run_sync,
-    )
-
-
-def _send_event_remote(
-    event: str,
-    *,
-    user,
-    profile,
-    phone: str | None,
-    email: str | None,
-    ctx: dict | None,
-    title: str | None,
-    subject: str | None,
-    media_url: str | None,
-    media_type: str | None,
-    gender: str | None,
-    mail_template: str | None,
-    idempotency_key: str | None,
-    run_sync: bool,
-    body_md_override: str | None,
-    is_tts_override: bool | None,
-    channels_override: tuple[str, ...] | list[str] | None,
-) -> str | None:
-    """Modo remote (Fase 2): resolve o destinatário AQUI (o servidor não conhece Profile) e
-    delega teor/canais/trigger ao notify-server (shape SendEventIn).
-
-    Deltas aceitos vs. local (recon R4): trigger inativo/evento desconhecido no caminho async
-    devolvem o uuid do cliente (não None) — o descarte acontece (e é logado) no push. O
-    storytelling continua no backend nesta fase: `story_or_none` gera e vai como
-    `body_md_override` (override do caller tem precedência — não gera story por cima).
-    """
-    from users.roles import notifications as msgs
-
-    _prof, nome, nome_completo, p_phone, p_email, p_gender, birth = _resolve_profile(
-        user, profile
-    )
-    phone = phone or p_phone
-    email = email or p_email
-    gender = gender or p_gender
-
-    # pré-check barato: sem destino algum não há o que despachar (paridade com o local).
     if not phone and not email:
         logger.warning("notify.event_no_recipient", event_key=event)
         return None
 
-    if body_md_override is None:
-        body_md_override = msgs.story_or_none(
-            event, name=nome or "tudo bem", age=msgs.age_from(birth)
-        )
-
     client_uuid = str(uuid.uuid4())
-    server_key = idempotency_key or client_uuid
     payload = {
         "event": event,
         "phone": phone,
         "email": email,
         "nome": nome,
         "nome_completo": nome_completo,
-        "gender": gender,
+        "gender": gender or p_gender,
         "ctx": ctx,
         "title": title,
         "subject": subject,
         "media_url": media_url,
         "media_type": media_type,
         "mail_template": mail_template,
-        # no /v1/send-event a chave de idempotência tem o nome literal (recon R6).
-        "idempotency_key": server_key,
+        "idempotency_key": idempotency_key or client_uuid,
         "body_md_override": body_md_override,
         "is_tts_override": is_tts_override,
-        "channels_override": (
-            list(channels_override) if channels_override is not None else None
-        ),
+        "channels_override": list(channels_override) if channels_override is not None else None,
         "run_sync": run_sync,
     }
-
     if run_sync:
-        from notify.sdk import client as sdk
+        from notify.sdk import client
 
-        resp = sdk.post_send_event(payload, run_sync=True)
-        if resp is None:
-            return None  # 404: evento inexistente/trigger inativo/sem canal (paridade local)
-        return str(resp["external_id"])
+        result = client.post_send_event(payload, run_sync=True)
+        return str(result["external_id"]) if result else None
 
     from django_q.tasks import async_task
 
-    # POST só depois do commit (§12): rollback do caller não pode virar mensagem enviada.
-    transaction.on_commit(
-        lambda: async_task("notify.sdk.push.push_send_event", payload)
-    )
-    logger.info(
-        "notify.sdk.remote_queued",
-        external_id=client_uuid,
-        event_key=event,
-        has_key=bool(idempotency_key),
-    )
+    transaction.on_commit(lambda: async_task("notify.sdk.push.push_send_event", payload))
+    logger.info("notify.remote_queued", external_id=client_uuid, event_key=event)
     return client_uuid
-
-
-def _trigger_for(data) -> Trigger | None:
-    """Trigger do Template (lookup pelo event; cache do Template não expõe PK — usa o slug)."""
-    return Trigger.objects.filter(template__event=data.event).first()

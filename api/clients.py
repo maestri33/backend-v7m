@@ -21,7 +21,14 @@ from api.base import (
     build_group,
     resolve_rg_slot,
 )
-from api.schemas import CheckIn, CheckOut
+from api.schemas import (
+    AddressCepIn,
+    AddressDataIn,
+    CheckIn,
+    CheckOut,
+    PublicAddressOut,
+    StudentPlatformFields,
+)
 from core.net import source_ip
 from users.auth import service as auth_iface
 from users.blocks import service as blocks_svc
@@ -155,23 +162,8 @@ class LeadMeOut(Schema):
     checkout: LeadSelfCheckoutOut | None = None
 
 
-class AddressOut(Schema):
-    cep: str | None = None
-    zipcode: str | None = Field(
-        None, description="DEPRECATED — use `cep` (alias temporário)"
-    )
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
-    country: str | None = None
-    missing_fields: list[str] = Field(
-        default=[],
-        description='O que ainda falta preencher (plan/13): ["number"] = ViaCEP achou tudo, '
-        "só falta o número; rua/bairro na lista = cidade de CEP único (digitar no PATCH)",
-    )
+class AddressOut(PublicAddressOut):
+    pass
 
 
 class AddressProofSectionOut(Schema):
@@ -199,11 +191,8 @@ class AddressProofSectionOut(Schema):
     )
 
 
-class StudentPlatformOut(Schema):
-    url: str | None = None
-    login: str | None = None
-    password: str | None = None
-    notes: str | None = None
+class StudentPlatformOut(StudentPlatformFields):
+    pass
 
 
 class StudentDocumentOut(Schema):
@@ -305,7 +294,7 @@ def register(request, payload: LeadCreateIn):
     email + método) + o checkout e devolve o pagamento na hora.
 
     **APOSENTADO no funil v2 (protótipo 2026-07-18):** a conta nasce no `POST /auth/check` (telefone)
-    e cpf/e-mail/checkout entram nos passos 3/5/6. Mantido por compatibilidade (bot/legado)."""
+    e cpf/e-mail/checkout entram nos passos 3/5/6. Mantido para consumidores externos."""
     result = lead_iface.create_lead(
         cpf=payload.cpf,
         phone=payload.phone,
@@ -467,20 +456,6 @@ api.add_router("/lead", lead_router)
 # Fluxo plan/13 (Victor 2026-06-11): DOCUMENTO primeiro (a IA extrai e povoa o perfil) →
 # endereço (POST só com CEP) → educação → selfie (= ASSINATURA da matrícula) → liberação.
 # Convenção: as seções devolvem `missing_fields` — o front renderiza input SÓ do que falta.
-class AddressCepIn(Schema):
-    cep: str
-
-
-class AddressDataIn(Schema):
-    # PATCH — sobrescreve o que vier no payload (corrige valor errado); vazio/None é ignorado.
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
-
-
 class KinshipIn(Schema):
     relation: str  # quem é o titular do comprovante + grau de parentesco
 

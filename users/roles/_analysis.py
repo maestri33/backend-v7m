@@ -77,6 +77,60 @@ def stale_reason() -> str:
     return _STALE_REASON
 
 
+def age_stale_selfies(model, notify) -> int:
+    """Move selfies expiradas para revisão e avisa o coordenador uma única vez."""
+    cutoff = timezone.now() - timedelta(seconds=ttl_seconds())
+    stale = model.objects.select_related("hub", "hub__coordinator").filter(
+        selfie_status=PENDING, selfie_taken_at__lt=cutoff
+    )
+    aged = 0
+    for obj in stale:
+        if not is_stale(obj.selfie_status, obj.selfie_taken_at):
+            continue
+        obj.selfie_status = REVIEW
+        obj.selfie_description = (obj.selfie_description or "").strip() or stale_reason()
+        obj.save(update_fields=["selfie_status", "selfie_description", "updated_at"])
+        notify(obj)
+        aged += 1
+    return aged
+
+
+def sweep_stale_selfies(model, hub) -> None:
+    cutoff = timezone.now() - timedelta(seconds=ttl_seconds())
+    model.objects.filter(
+        hub=hub, selfie_status=PENDING, selfie_taken_at__lt=cutoff
+    ).update(selfie_status=REVIEW, selfie_description=stale_reason())
+
+
+def sweep_stale_documents(queryset, started_at) -> None:
+    for document in queryset.filter(validation_status=PENDING):
+        if is_stale(document.validation_status, started_at(document)):
+            document.validation_status = REVIEW
+            document.save(update_fields=["validation_status"])
+
+
+def next_document_slot(doc_type: str, photos: dict) -> str | None:
+    """Próxima foto do documento, ou None enquanto a análise aguarda/concluiu."""
+    full, front, back = (f"{doc_type}_{side}" for side in ("full", "front", "back"))
+
+    def status(slot: str) -> str | None:
+        return (photos.get(slot) or {}).get("status")
+
+    if status(full) == APPROVED or (
+        status(front) == APPROVED and status(back) == APPROVED
+    ):
+        return None
+    if any(status(slot) in (PENDING, REVIEW) for slot in (full, front, back)):
+        return None
+    if status(full) == REJECTED:
+        return full
+    if status(front) == APPROVED:
+        return back
+    if status(back) == APPROVED:
+        return front
+    return front
+
+
 def ack(status: str | None, started_at: datetime | None) -> dict:
     """Ack de uma mutação que dispara análise async (proposta #2): o front sabe QUANDO voltar a
     perguntar (`poll_after_ms`) e até QUANDO o `pending` vale (`expires_at`). Já reflete o TTL: se

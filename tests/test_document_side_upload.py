@@ -10,6 +10,22 @@ from users.exceptions import ValidationError
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize(
+    ("photos", "expected"),
+    [
+        ({}, "rg_front"),
+        ({"rg_front": {"status": "approved"}}, "rg_back"),
+        ({"rg_full": {"status": "rejected"}}, "rg_full"),
+        ({"rg_front": {"status": "pending"}}, None),
+        ({"rg_front": {"status": "approved"}, "rg_back": {"status": "approved"}}, None),
+    ],
+)
+def test_proximo_slot_do_documento(photos, expected):
+    from users.roles._analysis import next_document_slot
+
+    assert next_document_slot("rg", photos) == expected
+
+
 def _png(color: str) -> SimpleUploadedFile:
     buffer = io.BytesIO()
     Image.new("RGB", (8, 8), color).save(buffer, "PNG")

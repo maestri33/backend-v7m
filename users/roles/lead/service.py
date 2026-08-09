@@ -45,7 +45,7 @@ def create_lead(
     promotor (landing); sem ref → promotor padrão (coordenador do hub padrão).
 
     **Caminho LEGADO no funil v2** (protótipo 2026-07-18): o funil novo cria a conta no
-    `check_or_capture` (telefone) e o checkout no `set_checkout` (passo 6). Mantido pro bot/legado.
+    `check_or_capture` (telefone) e o checkout no `set_checkout` (passo 6). Mantido para a API.
     """
     method = _API_METHODS.get((payment_method or "card").strip().lower())
     if method is None:

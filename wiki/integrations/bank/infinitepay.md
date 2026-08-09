@@ -27,7 +27,7 @@ Doc oficial (Context7): `/websites/api_infinitepay_io_invoices_public_checkout`.
 3. **Webhook** (`webhooks.py`, público, sem auth): InfinitePay chama `/webhook/?order_nsu=<uuid>` com
    `transaction_nsu`+`invoice_slug` → persiste `WebhookEvent` bruto → **`payment_check` reconfirma** →
    marca `Checkout.PAID` (paid_amount, capture_method, receipt_url) → roteia pro
-   [[../../../core/fallback|fallback do core]] (consumidor lead/enrollment ainda não existe).
+   warning estruturado quando nenhum consumidor reconhece o evento.
 
 ## Endpoints
 

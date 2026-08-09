@@ -11,7 +11,6 @@ Convenções (CONVENTION §4/§6/§8):
 """
 
 from django.db import models
-from django.utils import timezone
 
 from core.models import ExternalIdModel
 
@@ -134,30 +133,6 @@ class WebhookEvent(models.Model):
 
     def __str__(self):
         return f"{self.event} @ {self.received_at:%Y-%m-%d %H:%M:%S}"
-
-
-class OutboundJob(models.Model):
-    """Fila de saída persistente (caminho do dinheiro) com retry/backoff.
-
-    `external_id` aqui é só CORRELAÇÃO (ex.: asaas payment_id "pay_xyz") — NÃO é o UUID de
-    borda do CONVENTION §4 nem FK; serve pra correlacionar/observar.
-    «PENDÊNCIA: o papel desta fila vs Django-Q se decide em 1a-v (payout) — pode ser redundante
-    se o Django-Q assumir a entrega.»
-    """
-
-    url = models.TextField()
-    payload = models.JSONField(default=dict)
-    external_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
-    attempts = models.IntegerField(default=0)
-    max_attempts = models.IntegerField(default=6)
-    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
-    delivered_at = models.DateTimeField(null=True, blank=True)
-    last_error = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"job {self.pk} -> {self.url} ({self.attempts}/{self.max_attempts})"
 
 
 class UrlVerifyNonce(models.Model):

@@ -137,8 +137,8 @@ reaproveitado) e a decisão humana é **FINAL** — não há uma segunda revisã
 
 - Pré-condição: `enr.selfie_status == "review"`. Fora disso → `422 SELFIE_NOT_IN_REVIEW`.
 - **Aprovou**: `selfie_status=approved`, `selfie_verified=true`; notifica o aluno
-  (`enrollment.selfie_approved`) e avança a matrícula para `awaiting_release` (dispara o signal
-  `enrollment_ready_for_matricula` e notifica o coordenador de que a matrícula está esperando ele).
+  (`enrollment.selfie_approved`), avança a matrícula para `awaiting_release` e notifica o
+  coordenador de que a matrícula está esperando ele.
 - **Reprovou**: `selfie_status=rejected`, `selfie_verified=false`; notifica o aluno a refazer
   (`enrollment.selfie_rejected`). O motivo interno da IA (`selfie_description`) **nunca** vai para
   o aluno — ele recebe só a mensagem genérica do catálogo.

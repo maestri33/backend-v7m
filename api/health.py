@@ -84,12 +84,8 @@ def staff_health(request):
         )
         if getattr(settings, "IA_OMNIROUTE_BASE_URL", "")
         else {"ok": None, "note": "não configurado"},
-        "whatsapp": _ping(
-            settings.WHATSAPP_API_BASE_URL
-            + "/instance/connectionState/"
-            + getattr(settings, "WHATSAPP_INSTANCE", "default")
-        )
-        if settings.WHATSAPP_API_BASE_URL
+        "notify": _ping(settings.NOTIFY_SERVER_URL + "/healthz")
+        if settings.NOTIFY_SERVER_URL
         else {"ok": None, "note": "não configurado"},
         "migrations_pending": _pending_migrations(),
         "deploy": _deploy_info(),

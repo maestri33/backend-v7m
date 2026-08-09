@@ -108,7 +108,7 @@ def tools_leads(
 
 
 class ToolsNotifyIn(Schema):
-    """Espelha o `StaffNotifyIn` do staff/notify: usuário cadastrado OU destino livre."""
+    """Aceita usuário cadastrado ou destino livre para envio pelo notify-server."""
 
     user_external_id: str | None = None
     phone: str | None = None

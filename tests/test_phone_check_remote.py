@@ -1,4 +1,4 @@
-"""Testes do phone/check remoto (Fase 2 — NOTIFY_MODE=remote em users.auth._wa_check).
+"""Testes do phone/check no notify-server.
 
 Mocka a `notify.sdk.client.phone_check_async` (ponto único de rede do caminho remote).
 Cobrem: variantes BR no payload, primeiro exists → resolvido, nenhum → (False, original),
@@ -22,7 +22,6 @@ _VALID_CPF = "52998224725"
 def remote_phone(settings):
     """Liga o caminho remote de verdade: TEST_MODE off (o conftest liga) + cache limpo."""
     settings.TEST_MODE = False
-    settings.NOTIFY_MODE = "remote"
     settings.NOTIFY_SERVER_URL = "http://notify.test"
     settings.NOTIFY_API_KEY = "test-key"
     settings.NOTIFY_TIMEOUT = 5.0
@@ -193,7 +192,6 @@ def test_phone_check_async_corpo_real_da_requisicao(settings, monkeypatch):
 
 def test_test_mode_curto_circuita_sem_sdk(settings, sdk_mock):
     """TEST_MODE=1 continua curto-circuitando ANTES de qualquer HTTP, mesmo em remote."""
-    settings.NOTIFY_MODE = "remote"  # conftest já deixa TEST_MODE=True
     assert service._check_phone_whatsapp("5543996648750") == (True, "5543996648750")
     assert sdk_mock["calls"] == []
 

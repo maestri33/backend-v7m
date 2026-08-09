@@ -97,3 +97,36 @@ class TokenOut(Schema):
     access_token: str
     refresh_token: str
     token_type: str
+
+
+class AddressCepIn(Schema):
+    cep: str
+
+
+class AddressDataIn(Schema):
+    street: str | None = None
+    number: str | None = None
+    complement: str | None = None
+    neighborhood: str | None = None
+    city: str | None = None
+    state: str | None = None
+
+
+class PublicAddressOut(Schema):
+    cep: str | None = None
+    zipcode: str | None = None
+    street: str | None = None
+    number: str | None = None
+    complement: str | None = None
+    neighborhood: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    missing_fields: list[str] = []
+
+
+class StudentPlatformFields(Schema):
+    url: str | None = None
+    login: str | None = None
+    password: str | None = None
+    notes: str | None = None

@@ -114,7 +114,7 @@ def set_platform_credentials(
     platform_notes: str | None = None,
 ) -> Student:
     """Staff corrige as credenciais da plataforma de um aluno JÁ concluído (Victor 2026-06-23: SÓ
-    staff altera — coordenador/bot não mexem depois de concluído). Login único por matrícula."""
+    staff altera; coordenadores não mexem depois de concluído). Login único por matrícula."""
     student = _by_external_id(student_external_id)
     ensure_platform_login_available(
         platform_login=platform_login,

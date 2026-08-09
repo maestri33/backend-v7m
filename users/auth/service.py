@@ -20,11 +20,6 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
-from integrations.communication.whatsapp.client import (
-    WhatsAppError,
-    _br_phone_variants,
-    get_client,
-)
 from notify.sdk import client as notify_client
 from notify.sdk.client import NotifyServerError
 from integrations.tools.cpf.scripts import cpfhub
@@ -95,10 +90,23 @@ def _lookup_cpf(cpf: str):
         ) from exc
 
 
-# Cache do phone/check remoto (NOTIFY_MODE=remote): phone → (resolvido|None, monotonic_ts).
-# Análogo ao _br_jid_cache do client Evolution; cacheia inclusive o negativo (None). TTL 1h.
+# Cache do phone/check remoto: phone → (resolvido|None, monotonic_ts).
 _REMOTE_CHECK_TTL_S = 3600
 _remote_check_cache: dict[str, tuple[str | None, float]] = {}
+
+
+def _br_phone_variants(phone: str) -> list[str]:
+    digits = "".join(c for c in phone if c.isdigit())
+    if digits.startswith("55"):
+        local = digits[2:]
+    else:
+        local = digits
+    variants = ["55" + local]
+    if len(local) == 11 and local[2] == "9":
+        variants.append("55" + local[:2] + local[3:])
+    elif len(local) == 10:
+        variants.append("55" + local[:2] + "9" + local[2:])
+    return list(dict.fromkeys(variants))
 
 
 async def _wa_check_remote(phone: str) -> tuple[bool, str]:
@@ -120,10 +128,10 @@ async def _wa_check_remote(phone: str) -> tuple[bool, str]:
     variants = _br_phone_variants(phone)
     try:
         result = await notify_client.phone_check_async(variants)
-    except NotifyServerError as exc:
-        raise WhatsAppError(exc.status_code, exc.body) from exc
-    except httpx.HTTPError as exc:
-        raise WhatsAppError(0, f"{type(exc).__name__}: {exc}") from exc
+    except (NotifyServerError, httpx.HTTPError) as exc:
+        raise IntegrationError(
+            "Serviço de validação de telefone indisponível.", code="PHONE_SERVICE_DOWN"
+        ) from exc
 
     resolved: str | None = None
     for item in result or []:
@@ -140,23 +148,18 @@ async def _wa_check(phone: str) -> tuple[bool, str]:
             True,
             phone,
         )  # TEST_MODE=1: número "existe" no zap sem chamar a Evolution API.
-    if getattr(settings, "NOTIFY_MODE", "local") == "remote":
-        return await _wa_check_remote(phone)
-    async with get_client() as wa:
-        resolved = await wa.resolve_br_number(phone)
-        result = await wa.check_numbers([resolved])
-    exists = bool(result and result[0].get("exists"))
-    return exists, resolved
+    return await _wa_check_remote(phone)
 
 
 def _check_phone_whatsapp(phone: str) -> tuple[bool, str]:
     """WhatsApp: (existe_no_zap, número_resolvido). Erro real → IntegrationError.
 
-    NOTIFY_MODE=remote (Fase 2 do desmembramento): `_wa_check` roteia pra `_wa_check_remote`
-    (POST /v1/phone/check no notify-server) — o backend deixa de falar com a Evolution direto."""
+    O backend consulta somente o notify-server; Evolution não existe mais neste processo."""
     try:
         return async_to_sync(_wa_check)(phone)
-    except WhatsAppError as exc:
+    except IntegrationError:
+        raise
+    except Exception as exc:
         raise IntegrationError(
             "Serviço de validação de telefone indisponível.", code="PHONE_SERVICE_DOWN"
         ) from exc
@@ -430,7 +433,7 @@ def check(
 
     active = roles.active_roles(user)
     if not send_otp:
-        # modo sem OTP (bot_v2): JWT direto — SÓ com o segredo de serviço (service_authed).
+        # Modo sem OTP: JWT direto, somente com segredo de serviço (service_authed).
         # Sem o segredo, a rota pública `/auth/check` viraria bypass de OTP: recusa fail-closed.
         if not service_authed:
             raise Unauthorized(

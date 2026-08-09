@@ -172,32 +172,6 @@ def _run(
 # ---------------------------------------------------------------------------
 
 
-def generate_text(
-    prompt: str,
-    *,
-    caller: str,
-    instruction: str | None = None,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    model: str | None = None,
-) -> str:
-    """Gera texto natural. Devolve a string já limpa."""
-
-    async def attempt(client, m):
-        return await client.text(
-            prompt,
-            model=m,
-            instruction=instruction,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
-    result, _p, _m, _c = _run(
-        AiCall.Operation.TEXT, caller, attempt, providers.fallback_chain(model)
-    )
-    return _strip_think(result.content).strip('"')
-
-
 def generate_json(
     prompt: str,
     *,
@@ -227,36 +201,6 @@ def generate_json(
         return json.loads(_strip_think(result.content))
     except json.JSONDecodeError as exc:
         raise LLMError(f"resposta não é JSON válido: {exc}", retryable=False) from exc
-
-
-def chat(
-    messages: list[dict],
-    *,
-    caller: str,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-    json_mode: bool = False,
-    model: str | None = None,
-    return_call: bool = False,
-):
-    """Chat multi-turn. Devolve o conteúdo da resposta do assistente (str). Com `return_call=True`
-    devolve `(str, AiCall)` — o AiCall exato desta chamada, pro caller ligá-lo ao seu contexto sem
-    adivinhar por timestamp (o bot liga à Message da conversa, evitando trocar sob 2 workers)."""
-
-    async def attempt(client, m):
-        return await client.chat(
-            messages,
-            model=m,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            json_mode=json_mode,
-        )
-
-    result, _p, _m, ai_call = _run(
-        AiCall.Operation.CHAT, caller, attempt, providers.fallback_chain(model)
-    )
-    text = _strip_think(result.content)
-    return (text, ai_call) if return_call else text
 
 
 def summarize(
@@ -339,22 +283,9 @@ def grade(
 
 
 # ---------------------------------------------------------------------------
-# Mídia (single-provider, SEM cadeia de fallback): Gemini visão/imagem, ElevenLabs TTS, Vision OCR.
-# Cada uma grava 1 AiCall (tokens=0 — não se aplica). Imagem/áudio gerados vão pro media/ai/.
+# Mídia: visão com fallback, STT Gemini e OCR Google Vision.
+# Cada chamada grava um AiCall; tokens não se aplicam aos clients REST de mídia.
 # ---------------------------------------------------------------------------
-
-
-def _save_media(subdir: str, ext: str, data: bytes) -> str:
-    """Salva bytes em MEDIA_ROOT/ia/<subdir>/<uuid>.<ext>. Devolve o caminho relativo ao MEDIA_ROOT."""
-    import os
-    import uuid
-
-    folder = os.path.join(settings.MEDIA_ROOT, "ai", subdir)
-    os.makedirs(folder, exist_ok=True)
-    name = f"{uuid.uuid4().hex}.{ext}"
-    with open(os.path.join(folder, name), "wb") as fh:
-        fh.write(data)
-    return f"ai/{subdir}/{name}"
 
 
 def _media_call(*, operation: str, provider: str, model: str, caller: str, coro):
@@ -628,101 +559,12 @@ def evaluate_kinship(relation: str, *, caller: str) -> dict:
     }
 
 
-def generate_image(prompt: str, *, caller: str) -> str:
-    """Gemini imagem: gera uma imagem a partir de um prompt. Salva em media/ai/image/ e devolve o caminho."""
-    from .gemini import GeminiClient
-
-    client = GeminiClient()
-
-    async def coro():
-        return await client.generate_image(prompt)
-
-    raw, mime = _media_call(
-        operation=AiCall.Operation.IMAGE,
-        provider="gemini",
-        model=settings.GEMINI_IMAGE_MODEL,
-        caller=caller,
-        coro=coro,
-    )
-    ext = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(
-        mime, "png"
-    )
-    return _save_media("image", ext, raw)
-
-
-def _voice_for_gender(gender: str | None) -> str | None:
-    """Voz do TTS pelo gênero do DESTINATÁRIO; outro/None → None (voz default do cliente).
-
-    Regra de negócio (Victor): a voz é CRUZADA — destinatário homem recebe voz de mulher e
-    vice-versa. Por isso `ELEVENLABS_VOICE_MALE` guarda a voz que o HOMEM recebe (na prática um
-    voice-id feminino) e `ELEVENLABS_VOICE_FEMALE` a que a MULHER recebe (voice-id masculino). O
-    nome fica "invertido" de propósito — NÃO 'corrigir' a inversão do `.env`.
-    """
-    if not gender:
-        return None
-    g = gender.strip().upper()
-    # CRUZADA (regra do Victor): homem recebe voz FEMININA; mulher, voz MASCULINA.
-    if g == "M":
-        return settings.ELEVENLABS_VOICE_FEMALE
-    if g == "F":
-        return settings.ELEVENLABS_VOICE_MALE
-    return None
-
-
-def _minimax_voice_for_gender(gender: str | None) -> str:
-    """Voz MiniMax pelo gênero do destinatário — CRUZADA (igual ElevenLabs, regra do Victor): o
-    destinatário HOMEM recebe voz FEMININA (MINIMAX_VOICE_FEMALE=Portuguese_SereneWoman) e a MULHER
-    recebe voz MASCULINA (MINIMAX_VOICE_MALE=Portuguese_GentleTeacher). Sem gênero → feminina (padrão)."""
-    g = (gender or "").strip().upper()
-    if g == "M":
-        return settings.MINIMAX_VOICE_FEMALE
-    if g == "F":
-        return settings.MINIMAX_VOICE_MALE
-    return settings.MINIMAX_VOICE_FEMALE
-
-
-def tts(
-    text: str, *, caller: str, voice_id: str | None = None, gender: str | None = None
-) -> str:
-    """TTS: gera áudio a partir do texto. Salva em media/ai/audio/ e devolve o caminho.
-
-    Wave 4 — IA centralizada: ElevenLabs (gateway mode: ELEVENLABS_BASE_URL → OmniRoute /v1/audio/
-    speech) é o primário; em falha cai pro MiniMax-M3 direto (chave própria). Grava 1 AiCall por
-    tentativa, pelo provider REAL que serviu. Voz segue: gender → voz cross-gender (regra de marketing).
-    """
-    from .elevenlabs import ElevenLabsClient
-    from .minimax import MiniMaxClient
-
-    gateway = ElevenLabsClient()  # honra ELEVENLABS_GATEWAY_MODE (→ OmniRoute) via env
-    el_voice = voice_id or _voice_for_gender(gender)
-
-    async def gateway_call():
-        return await gateway.tts(text, voice_id=el_voice)
-
-    # fallback: MiniMax-M3 direto (sem gateway) — chave própria
-    mm = MiniMaxClient(direct=True)
-    mm_voice = voice_id or _minimax_voice_for_gender(gender)
-
-    async def direct_call():
-        return await mm.tts(text, voice_id=mm_voice)
-
-    audio = _media_chain(
-        AiCall.Operation.TTS,
-        caller,
-        [
-            ("elevenlabs", settings.ELEVENLABS_MODEL_ID, gateway_call),
-            ("minimax", settings.MINIMAX_TTS_MODEL, direct_call),
-        ],
-    )
-    return _save_media("audio", "mp3", audio)
-
-
 def transcribe(
     audio_bytes: bytes, *, caller: str, mime_type: str = "audio/mpeg"
 ) -> str:
     """Gemini STT: transcreve um áudio pra texto (pt-br). Devolve a transcrição.
 
-    Single-provider (MiniMax/ElevenLabs não recebem áudio como input hoje) — sem fallback.
+    Single-provider, sem fallback.
     """
     from .gemini import GeminiClient
 

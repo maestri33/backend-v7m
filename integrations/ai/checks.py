@@ -9,8 +9,7 @@ silenciosa sem credencial real.
 - `ai.E003` (Error): a cadeia referencia provider sem credencial no .env.
 Os E* TRAVAM o manage.py (padrão asaas: o núcleo LLM não sobe sem credencial real).
 
-As modalidades de MÍDIA são opcionais (só AVISAM, não travam): ai.W001 Gemini (visão/imagem),
-ai.W002 ElevenLabs (TTS), ai.W003 Google Vision (OCR).
+As modalidades de mídia são opcionais: Gemini (STT) e Google Vision (OCR).
 """
 
 from django.conf import settings
@@ -51,8 +50,7 @@ def check_ia_config(app_configs, **kwargs):
 
     # Modalidades de mídia — opcionais: avisam (não travam) se a key faltar.
     for key_attr, wid, nome in [
-        ("GEMINI_API_KEY", "ai.W001", "Gemini (visão/imagem)"),
-        ("ELEVENLABS_API_KEY", "ai.W002", "ElevenLabs (TTS)"),
+        ("GEMINI_API_KEY", "ai.W001", "Gemini (STT)"),
         ("GOOGLE_VISION_API_KEY", "ai.W003", "Google Vision (OCR)"),
     ]:
         if not getattr(settings, key_attr, ""):

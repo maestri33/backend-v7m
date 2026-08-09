@@ -1,38 +1,4 @@
-"""Onda 3 da auditoria: G20 (gate staff-health), G18 (CoT truncado), G12 (blood_type)."""
-
-import pytest
-
-
-# ───────────────────────── G12: blood_type ─────────────────────────
-@pytest.mark.parametrize(
-    "texto,esperado",
-    [
-        # #22: AB voltou a registrar (antes colidia com "B+" por substring)
-        ("AB+", "AB+"),
-        ("AB-", "AB-"),
-        ("meu tipo é AB+", "AB+"),
-        # forma direta comum, sem contexto necessário
-        ("A+", "A+"),
-        ("O-", "O-"),
-        ("é B+", "B+"),
-        # #6: frase com artigo "o"/"a" + adjetivo NÃO é tipo sanguíneo (era o pior: gravava errado)
-        ("o positivo é que já paguei", None),
-        ("a negativa foi a resposta", None),
-        # forma por extenso SÓ com contexto de sangue
-        ("meu tipo sanguineo é A positivo", "A+"),
-        ("sangue O negativo", "O-"),
-        # forma por extenso SEM contexto → None (motor pede no formato A+)
-        ("A positivo", None),
-        # ambíguo / vazio
-        ("tenho A+ ou B+, não sei", None),
-        ("não faço ideia", None),
-        ("", None),
-    ],
-)
-def test_g12_blood_type(texto, esperado):
-    from bot.extract import blood_type
-
-    assert blood_type(texto) == esperado
+"""Guardas de health e limpeza de CoT."""
 
 
 # ───────────────────────── G18: CoT truncado não vaza ─────────────────────────

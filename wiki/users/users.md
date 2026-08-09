@@ -28,7 +28,7 @@
 
 ## auth — endpoints DMZ (`/users/auth/…`)
 - `POST register/` `{role, phone, cpf}` → valida entry-role + formato + **CPFHub** (identidade real)
-  + **WhatsApp `check_numbers`** (número real) → transação atômica `User`+`Profile`(com `name`/
+  + validação remota do número pelo notify-server → transação atômica `User`+`Profile`(com `name`/
   `birth_date` do CPFHub)+**`Address` vazio**+**`Document`+sub-docs null**+role inicial → dispara OTP
   → `{external_id}`.
 - `POST check/` `{cpf|phone|external_id}` → acha + dispara OTP. Resposta com `found`/`external_id`,
@@ -47,7 +47,7 @@ RS256. Par de chaves PEM gerado no 1º boot em `keys/` (**gitignored**, privada 
 
 ## otp (`auth/otp/`)
 Código 6 díg, hash SHA256, TTL 300s, máx 3 tentativas, rate-limit 30s + 5/h (DB). Enviado por
-**WhatsApp via `notify`** (despachante puro; o `phone` vem do Profile). Template em `otp.md` (pt-br).
+**WhatsApp via notify-server**; o backend envia somente o evento e o destinatário.
 **Comando:** `manage.py otp_reset_ratelimit --phone|--cpf|--external-id <valor>` zera o rate-limit de
 OTP de um usuário (apoio a teste/atendimento; remove as linhas `OtpRateLimit` dele).
 
@@ -61,8 +61,7 @@ Catálogo de transições no **`.env`** (`ROLE_RULES`, §9), validado no boot (`
 `ROLE_RULES` (JSON). Defaults = porte do legado.
 
 ## Reusa (sem duplicar)
-[[wiki/integrations/tools/cpf]] (CPFHub) · [[wiki/integrations/communication/whatsapp]] (check + envio)
-· [[wiki/notify/notify]] (despacho do OTP).
+[[wiki/integrations/tools/cpf]] (CPFHub) · notify-server (validação e envio).
 
 ## Rabo pra trás (specs novas)
 - `specs/log_otp_mask.md` — o código do OTP aparece no `text_preview` do log do cliente WhatsApp.

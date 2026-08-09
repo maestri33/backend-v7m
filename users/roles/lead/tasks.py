@@ -71,11 +71,8 @@ def fetch_whatsapp_avatar(profile_pk: int) -> str:
     """Busca a URL da foto de perfil do WhatsApp e grava no Profile (funil v2).
 
     Best-effort SEM retry: foto é enfeite do pergaminho — sem foto o front usa o
-    monograma e nada quebra. Roteia igual ao `_wa_check` do auth: TEST_MODE pula,
-    NOTIFY_MODE=remote vai pelo notify-server, local fala com a Evolution direto.
+    monograma e nada quebra. TEST_MODE pula; produção usa somente o notify-server.
     Idempotente: já tem foto → no-op (não sobrescreve com um possível null)."""
-    from asgiref.sync import async_to_sync
-
     from users.profiles.models import Profile
 
     profile = Profile.objects.filter(pk=profile_pk).first()
@@ -87,18 +84,9 @@ def fetch_whatsapp_avatar(profile_pk: int) -> str:
         return "test_mode"
 
     try:
-        if getattr(settings, "NOTIFY_MODE", "local") == "remote":
-            from notify.sdk import client as notify_client
+        from notify.sdk import client as notify_client
 
-            photo = notify_client.phone_avatar(profile.phone)
-        else:
-            from integrations.communication.whatsapp.client import get_client
-
-            async def _fetch() -> str | None:
-                async with get_client() as wa:
-                    return await wa.fetch_profile_picture(profile.phone)
-
-            photo = async_to_sync(_fetch)()
+        photo = notify_client.phone_avatar(profile.phone)
     except Exception as exc:  # noqa: BLE001 — enfeite: falhou, ficou sem foto
         logger.warning(
             "lead.avatar_fetch_failed", profile=profile_pk, error=type(exc).__name__

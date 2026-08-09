@@ -579,70 +579,11 @@ def _reconcile_stale_analyses(cand: Candidate) -> None:
     if not cand.doc_type:
         return
     sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
-    if sub is None or not sub.validation_result:
+    if sub is None:
         return
-    started_raw = (sub.validation_result or {}).get("analysis_started_at")
-    if not started_raw:
-        return
-    from datetime import datetime
-
-    from django.utils import timezone
-
-    try:
-        started = datetime.fromisoformat(started_raw)
-    except (TypeError, ValueError):
-        return
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
-    if sub.validation_status == _analysis.PENDING and _analysis.is_stale(
-        _analysis.PENDING, started
-    ):
+    if _analysis.is_stale(sub.validation_status, _doc_started_at(sub)):
         sub.validation_status = _analysis.REVIEW
         sub.save(update_fields=["validation_status"])
-
-
-def _next_slot(cand: Candidate, photos: dict) -> str | None:
-    """Qual slot o front deve enviar a seguir? Lógica sequencial (plan/15 B3).
-
-    Retorna o nome do slot (ex: "rg_back") ou None se completo/aguardando.
-    O front mostra APENAS este slot — nunca frente+verso ao mesmo tempo."""
-    from users.roles import _document_ai as doc_ai
-
-    if not cand.doc_type:
-        return None
-    prefix = cand.doc_type  # "rg" ou "cnh"
-    full_slot = f"{prefix}_full"
-    front_slot = f"{prefix}_front"
-    back_slot = f"{prefix}_back"
-
-    def _status(slot: str) -> str | None:
-        return (photos.get(slot) or {}).get("status")
-
-    # full aprovada → completo
-    if _status(full_slot) == doc_ai.APPROVED:
-        return None
-    # frente+verso aprovadas → completo
-    if _status(front_slot) == doc_ai.APPROVED and _status(back_slot) == doc_ai.APPROVED:
-        return None
-    # qualquer slot pendente → aguardando análise (front não pede nada)
-    for slot in (full_slot, front_slot, back_slot):
-        if _status(slot) == doc_ai.PENDING:
-            return None
-    # qualquer slot em review → aguardando coordenador
-    for slot in (full_slot, front_slot, back_slot):
-        if _status(slot) == doc_ai.REVIEW:
-            return None
-    # full reprovada → reenviar full
-    if _status(full_slot) == doc_ai.REJECTED:
-        return full_slot
-    # frente aprovada, verso não enviada ou reprovada → pedir verso
-    if _status(front_slot) == doc_ai.APPROVED:
-        return back_slot
-    # verso aprovada, frente não enviada ou reprovada → pedir frente
-    if _status(back_slot) == doc_ai.APPROVED:
-        return front_slot
-    # nenhuma foto ou todas reprovadas → pedir frente primeiro
-    return front_slot
 
 
 def _doc_section_dict(cand: Candidate) -> dict:
@@ -677,7 +618,7 @@ def _doc_section_dict(cand: Candidate) -> dict:
     # photos por slot individual (front precisa saber qual slot enviar)
     section["photos"] = (result.get("photos") or {}) if isinstance(result, dict) else {}
     # next_slot: qual foto o front deve pedir AGORA
-    section["next_slot"] = _next_slot(cand, section["photos"])
+    section["next_slot"] = _analysis.next_document_slot(doc_type, section["photos"])
     # missing_fields: o que a IA não trouxe (extraídos vazios) E o usuário ainda não digitou
     # (sub-doc). Considera os campos que o funil exige pra avançar.
     required = _required_doc_fields(doc_type)
@@ -1161,7 +1102,7 @@ def _notify_doc_event(
 ) -> None:
     """Despachante único dos notifies do documento do candidato (plan/15 B3, refator do /python-review).
 
-    Direciona o destinatário pelo `event` (catálogo `users.roles.notifications`):
+    Direciona o destinatário pelo `event` configurado no notify-server:
       • `candidate.document_in_review` → coordenador do hub
       • `candidate.document_rejected` / `candidate.document_approved` → candidato
 
@@ -1197,35 +1138,15 @@ def _notify_doc_event(
 
 
 def _sweep_stale_reviews(hub) -> None:
-    """Resiliência (Victor 2026-06-17): worker da IA morto → análise fica PENDING calada e o
-    candidato some da fila de TODOS (só destrava com db-edit, o que o Victor não quer em prod).
-    Ao montar a fila do coordenador, PENDING que estourou o TTL VIRA `review` (documento RG/CNH +
-    selfie) — aparece pra ele decidir (hierarquia user→coord). Bulk update; idempotente."""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
     from users.documents.models import CNH, RG
     from users.roles import _analysis
-    from users.roles._selfie import SelfieStatus
 
-    # selfie: `selfie_taken_at` data o início → bulk update.
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    Candidate.objects.filter(
-        hub=hub, selfie_status=SelfieStatus.PENDING, selfie_taken_at__lt=cutoff
-    ).update(
-        selfie_status=SelfieStatus.REVIEW, selfie_description=_analysis.stale_reason()
-    )
-    # documento (RG/CNH): sem `updated_at` no model; o início vive no JSON (`analysis_started_at`),
-    # igual ao ack do candidato (`_doc_started_at`). Loop curto — sem referência → não mexe.
+    _analysis.sweep_stale_selfies(Candidate, hub)
     user_ids = list(Candidate.objects.filter(hub=hub).values_list("user_id", flat=True))
     for model in (RG, CNH):
-        for sub in model.objects.filter(
-            document__user_id__in=user_ids, validation_status=_analysis.PENDING
-        ):
-            if _analysis.is_stale(sub.validation_status, _doc_started_at(sub)):
-                sub.validation_status = _analysis.REVIEW
-                sub.save(update_fields=["validation_status"])
+        _analysis.sweep_stale_documents(
+            model.objects.filter(document__user_id__in=user_ids), _doc_started_at
+        )
 
 
 def list_document_reviews_for_hub(*, hub) -> list[dict]:
@@ -1547,43 +1468,9 @@ def _selfie_dict(cand: Candidate) -> dict:
 
 
 def age_stale_selfies() -> int:
-    """Job agendado (Django-Q): selfies `pending` cujo TTL estourou → `review` + notifica coord.
+    from users.roles import _analysis
 
-    Substitui o antigo reconcile-on-read do `GET /candidate/selfie` (violava idempotência HTTP).
-    Idempotente: só age em quem AINDA está `pending` e estourou o prazo — a transição vira o status
-    p/ `review`, então a próxima passada não o pega de novo (sem notify duplicado). Retorna quantos
-    envelheceu (métrica do log da task)."""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from users.roles import _analysis, _selfie
-
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    stale = Candidate.objects.select_related("hub", "hub__coordinator").filter(
-        selfie_status=_selfie.SelfieStatus.PENDING, selfie_taken_at__lt=cutoff
-    )
-    aged = 0
-    for cand in stale:
-        _reconcile_selfie_stale(cand)
-        aged += 1
-    return aged
-
-
-def _reconcile_selfie_stale(cand: Candidate) -> None:
-    """TTL do `pending` da selfie (proposta #2): se a análise estourou, vira `review` + avisa o
-    coordenador (mesma régua do enrollment). Chamado SÓ pelo job `age_stale_selfies` — nunca num
-    GET (idempotência HTTP). Re-checa `is_stale`, então é seguro rodar 2×."""
-    from users.roles import _analysis, _selfie
-
-    if _analysis.is_stale(cand.selfie_status, cand.selfie_taken_at):
-        cand.selfie_status = _selfie.REVIEW
-        cand.selfie_description = (
-            (cand.selfie_description or "")
-            + "\n\n[análise estourou o TTL; coordenador precisa decidir]"
-        ).strip()
-        cand.save(update_fields=["selfie_status", "selfie_description", "updated_at"])
-        _notify_selfie_review(cand)
+    return _analysis.age_stale_selfies(Candidate, _notify_selfie_review)
 
 
 def run_selfie_validation(candidate_id: int) -> None:
@@ -1835,27 +1722,6 @@ def _notify_selfie_review(cand: Candidate) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("candidate.notify_selfie_review_failed", error=str(exc))
-
-
-def _notify_awaiting_approval(cand: Candidate) -> None:
-    """Candidato concluiu a coleta → avisa o COORDENADOR que há candidato aguardando aprovação.
-
-    wave-2: send_event lê teor/canais/is_tts do Template no DB. WhatsApp-only (coordenador)."""
-    from notify.interface.events import send_event
-
-    coord = cand.hub.coordinator
-    if coord is None:
-        return
-    cp = profiles.get(coord)
-    try:
-        send_event(
-            "candidate.awaiting_approval",
-            profile=cp,
-            channels_override=("whatsapp",),
-            idempotency_key=f"candidate_awaiting_{cand.external_id}",
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("candidate.notify_awaiting_failed", error=str(exc))
 
 
 # ── aprovação do candidato → PROMOTOR (coordenador, grupo leadership) ────────

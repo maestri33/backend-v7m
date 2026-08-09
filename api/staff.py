@@ -15,7 +15,6 @@ from ninja.files import UploadedFile
 from api.auth import require_superuser
 from api.base import add_auth_refresh, build_group
 from api.schemas import MaterialIn, MaterialUpdateIn, TokenOut
-from api.staff_notify import router as notify_router
 from finance import interface as finance_iface
 from finance.interface import commissions as finance_closing
 from finance.interface import manual as finance_manual
@@ -68,7 +67,6 @@ def staff_check(request, payload: StaffCheckIn):
     return auth_iface.check_staff(
         cpf=payload.cpf, phone=payload.phone, external_id=payload.external_id
     )
-
 
 @auth_router.post("/login", response=TokenOut, auth=None)
 def staff_login(request, payload: StaffLoginIn):
@@ -519,24 +517,22 @@ def integration_detail(request, name: str):
     return data
 
 
-@api.post("/integrations/{name}/setup", tags=["staff"])
-def integration_setup(request, name: str):
-    """Roda o onboarding da integração (asaas: auto-cadastra o webhook). Idempotente."""
+@api.post("/integrations/asaas/setup", tags=["staff"])
+def integration_setup(request):
+    """Cadastra ou atualiza o webhook do Asaas. Idempotente."""
     require_superuser(request.auth)
-    data = integ_status.run_setup(name)
-    if data is None:
-        raise NotFound("Integração não encontrada.", code="INTEGRATION_NOT_FOUND")
-    return data
+    from integrations.bank.asaas import onboarding
+
+    return onboarding.setup()
 
 
-@api.post("/integrations/{name}/test", tags=["staff"])
-def integration_test(request, name: str):
-    """Teste de saúde ao vivo (carimba o ledger; asaas faz a bateria real)."""
+@api.post("/integrations/asaas/test", tags=["staff"])
+def integration_test(request):
+    """Executa e registra a bateria de saúde do Asaas."""
     require_superuser(request.auth)
-    data = integ_status.run_test(name)
-    if data is None:
-        raise NotFound("Integração não encontrada.", code="INTEGRATION_NOT_FOUND")
-    return data
+    from integrations.bank.asaas import onboarding
+
+    return onboarding.run_checks(record=True)
 
 
 # ── status do servidor (WP6) ─────────────────────────────────────────────────
@@ -574,28 +570,6 @@ def system_status(request):
         "debug": settings.DEBUG,
         "external_url": settings.EXTERNAL_URL,
     }
-
-
-# ── logs / ledgers (WP6) ─────────────────────────────────────────────────────
-@api.get("/logs/unrouted", tags=["staff"])
-def logs_unrouted(request, resolved: bool | None = None, limit: int = 100):
-    """Eventos que chegaram mas não tinham consumidor (fallback rastreável do core)."""
-    require_superuser(request.auth)
-    from core.models import UnroutedEvent
-
-    qs = UnroutedEvent.objects.order_by("-received_at")
-    if resolved is not None:
-        qs = qs.filter(resolved=resolved)
-    return [
-        {
-            "source": e.source,
-            "event": e.event,
-            "reason": e.reason,
-            "resolved": e.resolved,
-            "received_at": e.received_at.isoformat(),
-        }
-        for e in qs[:limit]
-    ]
 
 
 @api.get("/logs/ai-calls", tags=["staff"])
@@ -673,7 +647,7 @@ def set_student_platform_credentials(
     request, external_id: str, payload: PlatformCredentialsIn
 ):
     """Staff corrige login/senha (e url/notes) da plataforma de um aluno JÁ concluído. SÓ staff
-    altera depois de concluído (Victor 2026-06-23: coordenador/bot não mexem). Login é ÚNICO por
+    altera depois de concluído; coordenadores não podem fazê-lo. Login é ÚNICO por
     matrícula → 409 `PLATFORM_LOGIN_TAKEN` se repetir; aluno inexistente → 404."""
     require_superuser(request.auth)
     student = student_iface.set_platform_credentials(
@@ -715,10 +689,6 @@ def list_users(request, role: str | None = None, limit: int = 200):
     return out
 
 
-# ── gestor de notificações (envio avulso + histórico + CRUD Template/Trigger) ──
-# Sub-router dedicado (api/staff_notify.py) pra não inflar este arquivo. Montado em /notify.
-api.add_router("/notify", notify_router)
-
 # ── health check autenticado + run-tests (Wave 2) ──
 from api.health import staff_health_router  # noqa: E402
 
@@ -739,8 +709,3 @@ def set_user_phone(request, external_id: str, payload: PhoneIn):
     return auth_iface.change_phone(
         user_external_id=external_id, new_phone=payload.phone
     )
-
-
-# ── notificação avulsa / gestor ──────────────────────────────────────────────
-# Movido pra `api/staff_notify.py` (sub-router /notify): POST /notify (avulso),
-# GET /notify/history (o que foi enviado), GET/PUT /notify/templates[/...] (CRUD Template/Trigger).

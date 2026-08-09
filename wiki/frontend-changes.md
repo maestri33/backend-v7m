@@ -19,18 +19,16 @@
 - **Guia completo:** ver `wiki/frontend-integracao.md` para instruções pontuais de como os apps
   **Clientes** e **Colaboradores** (promotor + coordenador) devem conversar com a API.
 
-## 2026-06-23 — Fase "matrícula": credenciais ao virar aluno + edição staff + bot (mock)
+## 2026-06-23 — Fase "matrícula": credenciais ao virar aluno
 
 - **Notify de credenciais (NOVO):** ao concluir a matrícula (`POST /leadership/enrollments/{id}/conclude`),
   o agora-ALUNO recebe **login + senha + link** da plataforma por WhatsApp **e** e-mail (evento
   `enrollment.credentials`; link = env `INSTITUTION_LOGIN_URL`, default SIGA). Do aluno em diante é a
   única coisa que ele recebe (antes, como lead, só tinha o recibo).
 - **`PUT /staff/students/{external_id}/platform-credentials` (NOVO):** SÓ staff corrige
-  login/senha/url/notes depois de concluído (coordenador/bot não alteram). Body
+  login/senha/url/notes depois de concluído (coordenador não altera). Body
   `{platform_login, platform_password, platform_url?, platform_notes?}`. Login é **único por matrícula**
   → `409 PLATFORM_LOGIN_TAKEN`; aluno inexistente → `404`.
-- **`POST /staff/bot-matriculador` (STUB):** mock — responde `501 {code:"NOT_IMPLEMENTED"}`. O bot real
-  (futuro) é disparado por um Django signal ao entrar em `awaiting_release`; por ora o fluxo cai no coordenador.
 - **`GET /leadership/enrollments/{id}`** segue devolvendo **todos os dados coletados** (detail_for_hub) e
   **permanece `dict`** por ora — shape rico/aninhado; tipar depois, sem risco de sumir campo na tela do coordenador.
 

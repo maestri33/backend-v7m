@@ -21,16 +21,10 @@ class AiCall(models.Model):
     """
 
     class Operation(models.TextChoices):
-        TEXT = "text", "text"
         JSON = "json", "json"
-        CHAT = "chat", "chat"
         SUMMARIZE = "summarize", "summarize"
-        EXTRACT = "extract", "extract"
         GRADE = "grade", "grade"
-        # mídia (single-provider, sem cadeia de fallback): Gemini visão/imagem, ElevenLabs TTS, Vision OCR
         VISION = "vision", "vision"
-        IMAGE = "image", "image"
-        TTS = "tts", "tts"
         OCR = "ocr", "ocr"
         STT = "stt", "stt"
 

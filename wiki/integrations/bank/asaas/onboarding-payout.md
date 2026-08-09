@@ -44,9 +44,8 @@ Envia PIX (saída) pra uma chave, persistido como `Payment(kind=pixkey)`; o stat
 payment_id` (re-submit → 409, nunca duplica); falha **incerta** de rede deixa `SUBMITTING` (não marca
 `FAILED` às cegas) p/ reconciliação.
 
-> **Deferido:** fila persistente `OutboundJob` + Django-Q (retry/backoff/requeue de stale) — o envio
-> aqui é síncrono + idempotente, suficiente pro MVP. Conferir **tarifa do PIX-out** e enum de status
-> na doc oficial antes de prod.
+O envio é síncrono e idempotente. Conferir **tarifa do PIX-out** e enum de status na documentação
+oficial antes de produção.
 
 ## Provado (E2E REAL — conta de teste, dinheiro real)
 

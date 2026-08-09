@@ -225,7 +225,6 @@ def test_task_da_foto_grava_no_profile(client, default_hub, monkeypatch, setting
     profile = Profile.objects.get(phone="5511987650021")
 
     settings.TEST_MODE = False
-    settings.NOTIFY_MODE = "remote"
     url = "https://pps.whatsapp.net/v/t61/abc123.jpg"
     monkeypatch.setattr("notify.sdk.client.phone_avatar", lambda number: url)
 
@@ -251,7 +250,6 @@ def test_task_sem_foto_ou_com_erro_nao_quebra(
     profile = Profile.objects.get(phone="5511987650022")
 
     settings.TEST_MODE = False
-    settings.NOTIFY_MODE = "remote"
     monkeypatch.setattr("notify.sdk.client.phone_avatar", lambda number: None)
     assert tasks.fetch_whatsapp_avatar(profile.pk) == "no_photo"
     profile.refresh_from_db()
@@ -405,11 +403,14 @@ def test_identity_cpf_invalido_422(client, default_hub):
     assert r.json()["code"] == "CPF_INVALID"
 
 
-def test_identity_cpf_conflict_notifica_e_purga(client, default_hub):
+def test_identity_cpf_conflict_notifica_e_purga(client, default_hub, monkeypatch):
     """CPF de OUTRA conta → 409 CPF_CONFLICT sem vazar dados do titular; a conta recém-criada
     da tentativa é APAGADA (libera o telefone) e o titular é notificado (data/hora/número)."""
-    from notify.models import Notification
+    from notify.interface import send as notify_send
     from users.auth.models import User
+
+    sent = []
+    monkeypatch.setattr(notify_send, "send", lambda **kwargs: sent.append(kwargs) or str(uuid.uuid4()))
 
     cpf = _valid_cpf("111444777")
     token_dono = _enter(client, "11987650012")
@@ -430,10 +431,9 @@ def test_identity_cpf_conflict_notifica_e_purga(client, default_hub):
     # conta da tentativa purgada (cascade User → Profile/Lead/OTP) — telefone liberado
     assert not User.objects.filter(pk=attempt.pk).exists()
     # titular notificado com o número usado na tentativa
-    notif = Notification.objects.filter(caller="auth.cpf_conflict").first()
-    assert notif is not None
-    assert notif.recipient_phone == "5511987650012"
-    assert "9876-50013" in notif.text or "98765-0013" in notif.text
+    notif = next(item for item in sent if item["caller"] == "auth.cpf_conflict")
+    assert notif["phone"] == "5511987650012"
+    assert "9876-50013" in notif["text"] or "98765-0013" in notif["text"]
 
 
 def test_identity_nao_troca_cpf_ja_confirmado(client, default_hub):

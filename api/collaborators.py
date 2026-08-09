@@ -22,7 +22,14 @@ from api.base import (
     add_funnel_login,
     build_group,
 )
-from api.schemas import CheckIn, CheckOut, TokenOut
+from api.schemas import (
+    AddressCepIn,
+    AddressDataIn,
+    CheckIn,
+    CheckOut,
+    PublicAddressOut,
+    TokenOut,
+)
 from core.net import source_ip
 from users.auth import service as auth_iface
 from users.consent import PROMOTER_CONTRACT
@@ -106,20 +113,6 @@ class ProfileIn(Schema):
     nationality: str | None = None
 
 
-class AddressCepIn(Schema):
-    cep: str
-
-
-class AddressDataIn(Schema):
-    # PATCH — sobrescreve o que vier no payload (corrige valor errado); vazio/None é ignorado.
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
-
-
 class DocumentsIn(Schema):
     doc_type: str  # rg | cnh
     number: str
@@ -185,19 +178,8 @@ class CandidateProfileOut(Schema):
     locked_fields: list[str] = []
 
 
-class CandidateAddressOut(Schema):
-    """Endereço do candidato (público) com `cep`/`zipcode` e `missing_fields`."""
-
-    cep: str | None = None
-    zipcode: str | None = None
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
-    country: str | None = None
-    missing_fields: list[str] = []
+class CandidateAddressOut(PublicAddressOut):
+    pass
 
 
 class CandidateDocumentSubOut(Schema):
@@ -483,7 +465,7 @@ def check(request, payload: CheckIn):
     """**O check NORMAL: dispara OTP** por cpf/phone e **VAZA existência** (CONVENTION §5): devolve
     `found`+`roles` honestos — o front decide cadastro novo × login.
 
-    `send_otp=false` = modo sem OTP (integração do ex-/auth/check-bot): mesma função sem gastar o
+    `send_otp=false` = modo autenticado de serviço: mesma função sem gastar o
     OTP, devolvendo `token` (JWT) direto."""
     from core.webhook_auth import service_secret_ok
 

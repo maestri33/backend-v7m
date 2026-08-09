@@ -5,8 +5,7 @@ O webhook de um app de `integrations/` valida o evento, mexe só no próprio est
 engrenagem: o consumidor (ex.: `users/roles/lead`) registra um handler por NOME de evento no boot
 (AppConfig.ready()); o webhook chama `dispatch(evento, **kw)`.
 
-Regra §7.4: o que ninguém consome NÃO some em silêncio — o webhook mantém o `log_unrouted_event`
-(fallback rastreável) quando `dispatch` retorna `False` (nenhum handler consumiu).
+Quando ninguém consome, o webhook mantém o payload bruto e registra um warning estruturado.
 """
 
 from __future__ import annotations

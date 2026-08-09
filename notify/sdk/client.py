@@ -1,7 +1,6 @@
-"""Cliente HTTP fino do notify-server (Fase 2 — NOTIFY_MODE=remote).
+"""Cliente HTTP fino do notify-server.
 
-Fala com a API /v1 do notify-server: send, send-event, notifications, phone/check e as rotas
-staff de template (dual-write do painel). Zero regra de negócio — payload pronto entra, dict da
+Fala com a API /v1 do notify-server: send, send-event, notifications e phone/check. Zero regra de negócio — payload pronto entra, dict da
 resposta sai; roteamento/montagem moram em notify/interface e o retry no Django-Q (notify/sdk/push).
 
 Convenções do servidor (recon R6):
@@ -160,31 +159,3 @@ async def phone_check_async(numbers: list[str]) -> list[dict]:
     """Versão async do `phone_check` — o `_wa_check` do auth roda dentro do event loop."""
     resp = await _request_async("POST", "/v1/phone/check", json={"numbers": numbers})
     return _ok(resp, "POST", "/v1/phone/check")
-
-
-# ── staff (dual-write do painel — prefixo com a conta NOTIFY_ACCOUNT_SLUG) ──────
-
-
-def _staff_path(event: str) -> str:
-    return f"/v1/staff/templates/{settings.NOTIFY_ACCOUNT_SLUG}/{event}"
-
-
-def staff_put_template(event: str, payload: dict) -> dict:
-    """PUT /v1/staff/templates/{conta}/{event} — upsert FULL (o servidor não tem PATCH)."""
-    path = _staff_path(event)
-    resp = _request("PUT", path, json=payload)
-    return _ok(resp, "PUT", path)
-
-
-def staff_put_trigger(event: str, payload: dict) -> dict:
-    """PUT /v1/staff/templates/{conta}/{event}/trigger — upsert do Trigger."""
-    path = _staff_path(event) + "/trigger"
-    resp = _request("PUT", path, json=payload)
-    return _ok(resp, "PUT", path)
-
-
-def staff_delete_template(event: str) -> dict:
-    """DELETE /v1/staff/templates/{conta}/{event}."""
-    path = _staff_path(event)
-    resp = _request("DELETE", path)
-    return _ok(resp, "DELETE", path)

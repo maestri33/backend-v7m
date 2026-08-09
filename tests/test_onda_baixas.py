@@ -1,4 +1,4 @@
-"""Onda 'baixas' + G19 da auditoria: preview idempotente, race de OTP, índice do webhook."""
+"""Race de OTP e índice do webhook."""
 
 from unittest.mock import MagicMock
 
@@ -7,21 +7,6 @@ from django.db import IntegrityError
 from django.utils import timezone
 
 pytestmark = pytest.mark.django_db
-
-
-# ───────────── G19: preview do staff não é idempotente ─────────────
-def test_g19_preview_sem_idempotency_key():
-    """O preview (POST /templates/{event}/test) não pode passar idempotency_key — senão o 2º clique
-    retorna a notificação anterior sem enviar, e o staff para de ver o preview."""
-    import inspect
-
-    import api.staff_notify as sn
-
-    src = inspect.getsource(sn.test_template)
-    # checa a PASSAGEM do kwarg (idempotency_key=), não a menção no comentário explicativo
-    assert "idempotency_key=" not in src, (
-        "o preview ainda passa idempotency_key (não re-envia)"
-    )
 
 
 # ───────────── baixa/#33: race na 1ª emissão de OTP ─────────────

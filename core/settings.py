@@ -96,9 +96,7 @@ INSTALLED_APPS = [
     "django_q",
     # JWT da API pública (django-ninja-jwt) — RS256 reusa as chaves em keys/ (CONVENTION §10).
     "ninja_jwt",
-    # Funil web do candidato (HTMX server-rendered, sessão Django) — servido em /app/.
-    "web",
-    # app base do projeto (models base comuns — ex.: fallback logger de eventos sem destino)
+    # app base do projeto
     "core.apps.CoreConfig",
     # integrações externas
     "integrations.bank.asaas.apps.AsaasConfig",
@@ -106,8 +104,6 @@ INSTALLED_APPS = [
     "integrations.tools.cep.apps.CepConfig",
     "integrations.tools.cpf.apps.CpfConfig",
     "integrations.ai.apps.AiConfig",
-    "integrations.communication.whatsapp.apps.WhatsappConfig",
-    "integrations.communication.mail.apps.MailConfig",
     # biometria facial (face-match doc×selfie com InsightFace, CPU) — checks só AVISAM (não travam boot)
     "integrations.tools.biometric.apps.BiometricConfig",
     # apps de negócio do monólito
@@ -121,12 +117,7 @@ INSTALLED_APPS = [
     # hub = o POLO (§4 item 5). Hub→Address (FK §4); marca = catálogo no .env. Ações do
     # coordenador entram depois (grupo leadership). Consome users (coordinator/promoter).
     "hub.apps.HubConfig",
-    # todo = casca de funcionalidades a desenvolver (mocks "não implementado"). Hoje: bot
-    # matriculador (mock) + receiver do signal enrollment_ready_for_matricula. Sem models.
-    "core.todo.apps.TodoConfig",
-    # bot = atendimento por IA no WhatsApp (FASE 0 + FASE 1 MVP: FAQ por público + leitura segura
-    # do próprio usuário + escalonamento a humano; ZERO escrita). Webhook inbound (sibling dos
-    # gateways), worker Django-Q, guardrail fail-closed (injeção/PII). Consome ai/notify/users.
+    # Mantido temporariamente só para aplicar a migration que remove as tabelas do bot interno.
     "bot.apps.BotConfig",
 ]
 
@@ -169,9 +160,6 @@ TEMPLATES = [
     },
 ]
 
-# CSRF falho numa rota do funil web (/app/) responde o parcial amigável do HTMX; fora dela,
-# o Django segue com a página padrão. Ver `web.views.csrf_failure`.
-CSRF_FAILURE_VIEW = "web.views.csrf_failure"
 
 WSGI_APPLICATION = "core.wsgi.application"
 
@@ -227,25 +215,9 @@ STATIC_URL = "static/"
 # Destino do collectstatic; o WhiteNoise serve daqui (admin funciona com DEBUG=False).
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Media (arquivos servidos) — CONVENTION §6 (Django expõe /media/). Ex.: PNG do QR das cobranças.
-# Servido SEMPRE pelo Django neste host (core/urls.py, independente de DEBUG — o notify/Evolution
-# buscam mídia por URL); em prod o reverse proxy pode assumir.
+# Media (arquivos servidos) — CONVENTION §6 (Django expõe /media/).
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-# Base LAN do /media/ pra serviços da MESMA sub-rede buscarem o arquivo pelo IP interno (sem TLS/
-# DNS/egress) — padrão do legado (`_to_lan`): a Evolution busca o áudio do voice-note (TTS) por
-# aqui, não pela URL pública. Vazio => o notify cai no EXTERNAL_URL. Ex. dev: http://10.1.20.30
-MEDIA_LAN_BASE = env("MEDIA_LAN_BASE", default="")
-
-# ── notify remoto (Fase 2 do desmembramento — wiki/notify/servico-multi-tenant.md) ──
-# NOTIFY_MODE: "local" (default) = dispatcher in-process de sempre; "remote" = o send() vira
-# cliente HTTP do notify-server (VPN). O corte de produção é SÓ trocar esta flag (rollback idem).
-NOTIFY_MODE = env("NOTIFY_MODE", default="local")
-NOTIFY_SERVER_URL = env("NOTIFY_SERVER_URL", default="")  # ex.: http://10.1.30.40
-NOTIFY_API_KEY = os.environ.get("NOTIFY_API_KEY", "")  # api-key da conta supletivo
-NOTIFY_TIMEOUT = env.float(
-    "NOTIFY_TIMEOUT", default=5.0
-)  # LAN; curto pra não travar caller
 
 # Limite de upload de imagem dos documentos (users/documents) — config, não hardcoded (§10).
 MAX_UPLOAD_MB = env.int("MAX_UPLOAD_MB", default=10)
@@ -392,33 +364,13 @@ for _ia_price in env.list("IA_PRICES", default=[]):
 
 # IA — modalidades de mídia (integrations.ai), via REST httpx. São OPCIONAIS: sem a key o check só
 # AVISA (ai.W001/W002/W003), não trava como a cadeia LLM (que é o núcleo). Keys AIza/sk_ (sem "$").
-# Gemini = visão (descrever imagem) + geração de imagem; ElevenLabs = TTS; Google Vision = OCR.
+# Gemini = STT; Google Vision = OCR.
 GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
 GEMINI_BASE_URL = env(
     "GEMINI_BASE_URL", default="https://generativelanguage.googleapis.com/v1beta"
 )
-GEMINI_VISION_MODEL = env("GEMINI_VISION_MODEL", default="gemini-3-flash-preview")
-GEMINI_IMAGE_MODEL = env("GEMINI_IMAGE_MODEL", default="gemini-3.1-flash-image-preview")
-# STT (transcrição de áudio das submissões de treino). Mesmo generateContent multimodal da visão.
+# STT (transcrição de áudio das submissões de treino).
 GEMINI_STT_MODEL = env("GEMINI_STT_MODEL", default="gemini-3-flash-preview")
-
-ELEVENLABS_API_KEY = env("ELEVENLABS_API_KEY", default="")
-ELEVENLABS_BASE_URL = env("ELEVENLABS_BASE_URL", default="https://api.elevenlabs.io")
-ELEVENLABS_VOICE_ID = env("ELEVENLABS_VOICE_ID", default="JBFqnCBsd6RMkjVDRZzb")
-ELEVENLABS_MODEL_ID = env("ELEVENLABS_MODEL_ID", default="eleven_v3")
-ELEVENLABS_OUTPUT_FORMAT = env("ELEVENLABS_OUTPUT_FORMAT", default="mp3_44100_128")
-# voice_settings (0.0–1.0; speed 0.25–4.0) — defaults, sobrescrevíveis por request.
-ELEVENLABS_STABILITY = env.float("ELEVENLABS_STABILITY", default=0.5)
-ELEVENLABS_SIMILARITY_BOOST = env.float("ELEVENLABS_SIMILARITY_BOOST", default=0.75)
-ELEVENLABS_SPEED = env.float("ELEVENLABS_SPEED", default=1.0)
-ELEVENLABS_STYLE = env.float("ELEVENLABS_STYLE", default=0.0)
-ELEVENLABS_SPEAKER_BOOST = env.bool("ELEVENLABS_SPEAKER_BOOST", default=True)
-# Voz do TTS por gênero do DESTINATÁRIO — CRUZADO de propósito (regra do Victor): homem recebe voz
-# de mulher e vice-versa. Logo ELEVENLABS_VOICE_MALE = a voz que o HOMEM recebe (voice-id feminino)
-# e ELEVENLABS_VOICE_FEMALE = a que a MULHER recebe (voice-id masculino). Default = voz padrão
-# (não-quebra). NÃO "corrigir" a inversão.
-ELEVENLABS_VOICE_FEMALE = env("ELEVENLABS_VOICE_FEMALE", default="JBFqnCBsd6RMkjVDRZzb")
-ELEVENLABS_VOICE_MALE = env("ELEVENLABS_VOICE_MALE", default="JBFqnCBsd6RMkjVDRZzb")
 
 GOOGLE_VISION_API_KEY = env("GOOGLE_VISION_API_KEY", default="")
 GOOGLE_VISION_BASE_URL = env(
@@ -429,15 +381,10 @@ GOOGLE_VISION_SERVICE_ACCOUNT_JSON = env(
     "GOOGLE_VISION_SERVICE_ACCOUNT_JSON", default=""
 )
 
-# MiniMax — mídia: TTS (t2a_v2) e visão (descrever imagem com MiniMax-M3). Hoje é o PRIMÁRIO de TTS
-# (ElevenLabs vira fallback) e de visão (Gemini vira fallback) — Victor 2026-06-05. Reusa a key do
-# provider LLM (IA_MINIMAX_API_KEY) — uma só key MiniMax no .env. Vozes por gênero (mapeamento direto).
+# MiniMax — visão (descrever imagem com MiniMax-M3).
 MINIMAX_API_KEY = env("MINIMAX_API_KEY", default=env("IA_MINIMAX_API_KEY", default=""))
 MINIMAX_BASE_URL = env("MINIMAX_BASE_URL", default="https://api.minimax.io")
-MINIMAX_TTS_MODEL = env("MINIMAX_TTS_MODEL", default="speech-2.8-hd")
 MINIMAX_VISION_MODEL = env("MINIMAX_VISION_MODEL", default="MiniMax-M3")
-MINIMAX_VOICE_FEMALE = env("MINIMAX_VOICE_FEMALE", default="Portuguese_SereneWoman")
-MINIMAX_VOICE_MALE = env("MINIMAX_VOICE_MALE", default="Portuguese_GentleTeacher")
 # MiniMax DIRETO (fallback sem gateway) — o MiniMaxClient(direct=True) lê estes; sem eles o "direto"
 # desabava no MINIMAX_BASE_URL (o gateway), anulando o "zero single-point-of-failure" do .env.
 MINIMAX_DIRECT_API_KEY = env("MINIMAX_DIRECT_API_KEY", default="")
@@ -460,21 +407,7 @@ if GEMINI_API_KEY and any(_p == "gemini" for _p, _m in IA_FALLBACK_CHAIN):
     )
 
 
-# WhatsApp (integrations.communication.whatsapp) — cliente da Evolution API. Config via .env
-# (CONVENTION §8/§10). A api-key global é alfanumérica (sem "$"), então env() normal serve. Sem
-# base_url/api-key os checks whatsapp.E001/E002 travam o boot.
-WHATSAPP_API_BASE_URL = env("WHATSAPP_API_BASE_URL", default="")
-WHATSAPP_GLOBAL_API_KEY = env("WHATSAPP_GLOBAL_API_KEY", default="")
-WHATSAPP_INSTANCE_NAME = env("WHATSAPP_INSTANCE_NAME", default="default")
-
-
-# bot (app bot) — atendimento por IA no WhatsApp (FASE 0 + FASE 1 MVP). Config via .env (§8/§10).
-# Segredo do webhook inbound: a Evolution NÃO assina HMAC, então autenticamos por header-token
-# compartilhado (x-webhook-token == este valor), comparado em tempo constante. Sem ele o webhook
-# do bot dá 401 (fail-closed) e o check bot.W001 avisa no boot (não trava — padrão asaas.W001).
-WHATSAPP_WEBHOOK_SECRET = env("WHATSAPP_WEBHOOK_SECRET", default="")
-
-# Segredo de serviço p/ o login SEM OTP (bot_v2 externo chama /auth/check com send_otp=false).
+# Segredo de serviço do bot externo e das ferramentas internas.
 # Fail-closed: vazio no .env => a rota sem-OTP recusa (o segredo é a prova de identidade, não a rede).
 BOT_SERVICE_SECRET = env("BOT_SERVICE_SECRET", default="")
 BOT_SERVICE_HEADER = env("BOT_SERVICE_HEADER", default="x-bot-service-token")
@@ -495,47 +428,9 @@ MEDIA_PRIVATE_PREFIXES = env.list(
     "MEDIA_PRIVATE_PREFIXES",
     default=["documents", "selfie", "diploma", "receipt", "student", "audit"],
 )
-# Rate-limit por TELEFONE em DB (sem Redis), espelha o OTP: janela curta (1 a cada WINDOW_S) +
-# janela horária (máx HOURLY_MAX/h). Anti-abuso de custo de IA/WhatsApp; alto p/ não trancar
-# usuário legítimo. Estouro da janela curta = silêncio; da horária = FAQ estática (modo degradado).
-BOT_RATELIMIT_WINDOW_S = env.int("BOT_RATELIMIT_WINDOW_S", default=3)
-BOT_RATELIMIT_HOURLY_MAX = env.int("BOT_RATELIMIT_HOURLY_MAX", default=60)
-# Teto DIÁRIO de chamadas de IA do bot (soma AiCall caller=bot_atendimento do dia). Estourou =>
-# modo degradado (só FAQ estática, sem IA). <= 0 desliga o teto. Default conservador.
-BOT_DAILY_AI_CAP = env.int("BOT_DAILY_AI_CAP", default=2000)
-# Parâmetros do chat do bot (temperatura baixa = respostas mais previsíveis/seguras; teto de tokens
-# da resposta). max_tokens=0 => sem teto explícito (cai no default do provider/IA_MAX_TOKENS).
-BOT_AI_TEMPERATURE = env.float("BOT_AI_TEMPERATURE", default=0.3)
-BOT_AI_MAX_TOKENS = env.int("BOT_AI_MAX_TOKENS", default=500)
-# Guardrail externo OPCIONAL (aidefence HTTP): se setado, decide injeção (entrada) e PII (saída).
-# Contrato FAIL-CLOSED: configurado mas inalcançável/contrato inválido => BLOQUEIA. Vazio => o
-# detector LOCAL (regex injeção/PII em bot/guardrail.py) é o piso de segurança sempre ligado.
-BOT_GUARDRAIL_URL = env("BOT_GUARDRAIL_URL", default="")
-BOT_GUARDRAIL_TIMEOUT = env.float("BOT_GUARDRAIL_TIMEOUT", default=5.0)
-
-# Mail (integrations.communication.mail) — cliente SMTP STARTTLS:587 autenticado. Config via .env
-# (CONVENTION §8/§10). A senha do noreply tem "!"/"@" (sem "$"), mas lemos via os.environ literal
-# por segurança/simetria com a key do Asaas (read_env() já populou os.environ acima). Sem
-# host/user/senha os checks mail.E001/E002/E003 travam o boot.
-MAIL_SMTP_HOST = env("MAIL_SMTP_HOST", default="")
-MAIL_SMTP_PORT = env.int("MAIL_SMTP_PORT", default=587)
-MAIL_SMTP_USER = env("MAIL_SMTP_USER", default="")
-MAIL_SMTP_PASSWORD = os.environ.get("MAIL_SMTP_PASSWORD", "")
-MAIL_FROM_EMAIL = env("MAIL_FROM_EMAIL", default="") or MAIL_SMTP_USER
-MAIL_FROM_NAME = env("MAIL_FROM_NAME", default="Supletivo Brasil")
-MAIL_TIMEOUT = env.int("MAIL_TIMEOUT", default=30)
-
-
-# notify-server (Fase 2 — SDK HTTP em notify/sdk/): NOTIFY_MODE=remote troca o miolo local do
-# notify pelo POST ao notify-server; "local" = comportamento atual, byte a byte (rollback =
-# voltar a flag + restart). A api-key pode ter chars especiais — os.environ literal (padrão
-# MAIL_SMTP_PASSWORD acima). NOTIFY_TIMEOUT cobre os POSTs de worker/phone-check;
-# NOTIFY_SYNC_TIMEOUT cobre o run_sync inline (staff /test espera o despacho real — mais folga).
-# Checks notify.E001/E002 validam a combinação no boot.
-NOTIFY_MODE = env("NOTIFY_MODE", default="local")  # local | remote
+# notify-server é a única implementação de notificações.
 NOTIFY_SERVER_URL = env("NOTIFY_SERVER_URL", default="http://notify.v7m.org")
 NOTIFY_API_KEY = os.environ.get("NOTIFY_API_KEY", "")
-NOTIFY_ACCOUNT_SLUG = env("NOTIFY_ACCOUNT_SLUG", default="supletivo")
 NOTIFY_TIMEOUT = env.float("NOTIFY_TIMEOUT", default=10.0)
 NOTIFY_SYNC_TIMEOUT = env.float("NOTIFY_SYNC_TIMEOUT", default=60.0)
 

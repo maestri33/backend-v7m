@@ -11,8 +11,7 @@ Money-safe (CONVENTION §8):
  - **falha incerta de rede** (não se sabe se a transfer foi criada) deixa SUBMITTING p/ reconciliação,
    **não marca FAILED às cegas** (o idempotency_key resolve no retry).
 
-A fila persistente (`OutboundJob`/Django-Q) com retry/backoff fica como melhoria futura
-(«PENDÊNCIA do model OutboundJob»): aqui o envio é síncrono + idempotente, suficiente pro MVP.
+O envio é síncrono e idempotente; a fila de negócio fica em `finance.PaymentRequest`.
 """
 
 from __future__ import annotations

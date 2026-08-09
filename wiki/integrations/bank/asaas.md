@@ -1,7 +1,7 @@
 # asaas — integrations/bank/asaas
 
-> **ESTADO:** fundação (1a-i) + status/onboarding (1a-ii) + **webhook receiver, validação de saque e
-> fallback logger (1a-iii)** — feitos e testados. **1a-iii aprovado no Portão 3** (Victor 2026-05-31);
+> **ESTADO:** fundação (1a-i) + status/onboarding (1a-ii) + **webhook receiver e validação de saque
+> (1a-iii)** — feitos e testados. **1a-iii aprovado no Portão 3** (Victor 2026-05-31);
 > 1a-i/1a-ii ficaram com aprovação formal "pra depois" (palavra dele), mas estão feitos e testados.
 > + **charge (1a-iv)** — aprovado com **E2E real** (pagamento real → webhook → PAID). Falta **payout
 > + E2E de saída (1a-v)**. Doc honesto — **não é "asaas pronto".**
@@ -19,7 +19,7 @@ pelo Victor (só o token). Ver `.claude/plan/1a-iii-asaas-webhook.md §0`.
 
 ## 1a-i — fundação ✅ (testado; Portão 3 formal "depois")
 
-- **Data layer:** 6 models (`Customer`, `PixKey`, `Payment`, `WebhookEvent`, `OutboundJob`,
+- **Data layer:** 5 models (`Customer`, `PixKey`, `Payment`, `WebhookEvent`,
   `UrlVerifyNonce`) + migração aplicada.
 - **Client HTTP** (`client.py`): porte ~1:1 do legado (httpx async, API v3, `AsaasError`).
 - **Boot red-check** (`checks.py`): sem `ASAAS_API_KEY` → `asaas.E001` (Error) **trava** `manage.py`.
@@ -33,14 +33,14 @@ pelo Victor (só o token). Ver `.claude/plan/1a-iii-asaas-webhook.md §0`.
   `external_url_in_env` / `ready` + `hints`.
 - Key ok e sem token de webhook no `.env` → **gera `generated_webhook_secret` e retorna (DMZ)**.
 
-## 1a-iii — webhook receiver + validação de saque + fallback ✅ (Portão 3 aprovado)
+## 1a-iii — webhook receiver + validação de saque ✅ (Portão 3 aprovado)
 
 Tudo que o **Asaas chama de volta**. Auth = só `asaas-access-token` == `ASAAS_WEBHOOK_SECRET` no
 `.env` (**um token só** pros dois endpoints — palavra do Victor; o `.env` é a fonte de verdade).
 
 - **`POST /integrations/asaas/webhook/` (público)** — receiver de eventos (`webhooks.py`). Persiste o
   `WebhookEvent` bruto → mapeia `PAYMENT_*`/`TRANSFER_*` pra `Payment.status` (mapas portados do
-  legado) → o que não casa com nada nosso vai pro **fallback logger do core**. Responde sempre **200**
+  legado). Eventos não consumidos continuam no `WebhookEvent` bruto e geram warning. Responde **200**
   quando autenticado (Asaas re-tenta em não-200); **401** sem token.
 - **`POST /integrations/asaas/transfer-validation/` (público)** — mecanismo de validação de saque
   (`transfer_validation.py`). Asaas chama ~5s após cada saída pedindo `APPROVED`/`REFUSED`. Aprova
@@ -49,8 +49,7 @@ Tudo que o **Asaas chama de volta**. Auth = só `asaas-access-token` == `ASAAS_W
 - **`security.py`** — `check_access_token()` (comparação tempo-constante).
 - **system check `asaas.W001` (Warning):** sem `ASAAS_WEBHOOK_SECRET` os webhooks dão 401 → avisa
   recorrente no boot, **não trava** `manage.py` (diferente do E001 da api-key).
-- **Fallback logger no core:** ver [[../../../core/fallback|core/fallback]].
-- **Teste real** (curl em runserver local): 401 sem token, 200 + `UnroutedEvent` quando nada casa,
+- **Teste real** (curl em runserver local): 401 sem token, 200 com `WebhookEvent` quando nada casa,
   saque REFUSED, `/status/` ready+saldo. Print em `.claude/tests/1a-iii-asaas-webhook.md`.
 
 ### Registrar o webhook no Asaas (manual, por ora)

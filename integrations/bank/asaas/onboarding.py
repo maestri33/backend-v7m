@@ -24,7 +24,7 @@ from .client import AsaasError, get_client
 logger = structlog.get_logger()
 
 # Eventos assinados no webhook — porte da WEBHOOK_EVENTS do legado (7 TRANSFER_* + 19 PAYMENT_*).
-# Os que webhooks.py ainda não mapeia caem no fallback logger do core (não quebra — CONVENTION §7).
+# Eventos não mapeados permanecem no WebhookEvent bruto e geram warning.
 WEBHOOK_EVENTS = [
     # outbound (TRANSFER_*)
     "TRANSFER_CREATED",

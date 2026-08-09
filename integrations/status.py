@@ -27,30 +27,19 @@ _REGISTRY: dict[str, dict] = {
         "scope": "infinitepay",
         "flow": "checkout (autentica pelo handle) → webhook (order_nsu opaco) → payment_check",
     },
-    "whatsapp": {
-        "env": ["WHATSAPP_API_BASE_URL", "WHATSAPP_GLOBAL_API_KEY"],
-        "scope": "whatsapp",
-        "flow": "Evolution API (instância 'default'): health + send (texto/mídia/áudio)",
-    },
-    "mail": {
-        "env": [
-            "MAIL_SMTP_HOST",
-            "MAIL_SMTP_USER",
-            "MAIL_SMTP_PASSWORD",
-            "MAIL_FROM_EMAIL",
-        ],
-        "scope": "mail",
-        "flow": "SMTP STARTTLS:587 (login) → validação MX/RCPT → send (templates)",
+    "notify": {
+        "env": ["NOTIFY_SERVER_URL", "NOTIFY_API_KEY"],
+        "scope": "notify",
+        "flow": "notify-server: WhatsApp, e-mail, TTS, templates e histórico",
     },
     "ai": {
         "env": [
             "MINIMAX_API_KEY",
             "GEMINI_API_KEY",
-            "ELEVENLABS_API_KEY",
             "GOOGLE_VISION_API_KEY",
         ],
         "scope": "ai",
-        "flow": "LLM (M3→deepseek→gemini) + visão + TTS (MiniMax→ElevenLabs) + OCR (Google Vision)",
+        "flow": "LLM + visão + STT + OCR",
     },
     "biometric": {
         "env": ["BIOMETRIC_MODEL_NAME"],
@@ -105,33 +94,3 @@ def integration_detail(name: str) -> dict | None:
         except Exception as e:  # noqa: BLE001
             data["live"] = {"error": str(e)}
     return data
-
-
-def run_setup(name: str) -> dict | None:
-    """Ação de onboarding (asaas: auto-cadastra o webhook). Idempotente. Só asaas tem ação real."""
-    if name not in _REGISTRY:
-        return None
-    if name == "asaas":
-        from integrations.bank.asaas import onboarding
-
-        return onboarding.setup()
-    return {
-        "detail": f"'{name}' não tem ação de setup (config via .env; use /test pra checar)."
-    }
-
-
-def run_test(name: str) -> dict | None:
-    """Teste de saúde ao vivo (carimba o ledger). Asaas: run_checks real. Demais: último do ledger
-    (o teste ao vivo desses serviços roda pelos commands de health — assíncrono/pesado)."""
-    integ = _REGISTRY.get(name)
-    if integ is None:
-        return None
-    if name == "asaas":
-        from integrations.bank.asaas import onboarding
-
-        return onboarding.run_checks(record=True)
-    return {
-        "name": name,
-        "checks": latest_checks(integ["scope"]),
-        "detail": "teste ao vivo deste serviço roda pelo command de health; aqui o último do ledger.",
-    }

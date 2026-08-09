@@ -15,8 +15,7 @@ Pelo staff, o Victor:
 - vê e movimenta finanças: saldo Asaas, comissões, fila de payouts, resumo, fechamento semanal,
   pagamento avulso (PIX/boleto) a terceiro livre;
 - resolve leads travados (pagamento sem webhook) e apaga usuários de teste (purge);
-- gerencia o catálogo de notificações (templates/triggers) sem precisar de deploy;
-- acompanha a saúde das integrações (Asaas/WhatsApp/mail/IA/...) e do próprio servidor.
+- acompanha a saúde das integrações (Asaas/notify-server/IA/...) e do próprio servidor.
 
 ### Login (staff/auth)
 
@@ -150,47 +149,7 @@ no disco (paths com token aleatório, não-enumeráveis) — aceito como custo d
 |---|---|
 | `GET /enrollments?hub=&status=` | Matrículas de TODOS os polos. |
 | `GET /students?hub=&status=` | Alunos de TODOS os polos. |
-| `PUT /students/{external_id}/platform-credentials` | Staff corrige login/senha (e url/notes) da plataforma de um aluno **já concluído** — só staff mexe depois de concluído (coordenador/bot não podem). Login duplicado → 409 `PLATFORM_LOGIN_TAKEN`. |
-
-## Notificações (staff_notify — sub-router `/notify`)
-
-Fonte: `api/staff_notify.py`, montado em `/api/v1/staff/notify`. `event` é o slug do Template
-(único, estável). Fonte de verdade é o banco (`notify.Template`); `notify/seed/templates.md` é só
-o seed inicial — edições via este CRUD prevalecem.
-
-### Envio avulso e histórico
-
-| Método/Path | O que faz |
-|---|---|
-| `POST /notify` | Envia notificação avulsa (WhatsApp e/ou e-mail) a um `user_external_id` (herda phone/email do Profile) OU a destino livre (`phone`/`email` sem cadastro). `channels` opcional (default: todos com destino). Devolve `{external_id}` da notificação enfileirada. |
-| `GET /notify/history?caller=&whatsapp_status=&email_status=&tts_status=&limit=` | Notificações enviadas (`Notification`), mais recentes primeiro. `limit` máx 500. |
-
-### CRUD de Template/Trigger
-
-| Método/Path | O que faz |
-|---|---|
-| `GET /notify/templates` | Todos os Templates + Trigger. |
-| `GET /notify/templates/stats` | Dashboard: contagem por flag (`total/active/inactive/with_tts/with_storytelling/with_media`) e por canal. (Rota registrada ANTES de `/templates/{event}` pra `stats` não ser capturada como slug.) |
-| `GET /notify/templates/{event}` | Detalhe. Inexistente → 404 `TEMPLATE_NOT_FOUND`. |
-| `PUT /notify/templates/{event}` | Upsert completo (`body_md` obrigatório). Invalida o cache em memória na hora. `body_md` vazio → 422 `EMPTY_BODY`; `media_type` fora do catálogo → 422 `INVALID_MEDIA_TYPE`; canal inválido → 422 `INVALID_CHANNELS`. |
-| `PATCH /notify/templates/{event}` | Atualização parcial — só altera os campos enviados (`exclude_unset`). Mesmas validações do PUT nos campos presentes. |
-| `DELETE /notify/templates/{event}` | Apaga o Template (Trigger junto, cascade OneToOne). `send_event` volta a cair no catálogo in-memory legado. Recupera com `POST /restore-seed`. |
-| `PUT /notify/templates/{event}/trigger` | Cria/atualiza o Trigger. **`active=false` é o "interruptor" do Victor** — desliga o evento sem código (`send_event` retorna `None` sem disparar). Template inexistente → 404. |
-
-### Como o Victor liga/desliga um evento
-
-Sem mexer em código: `PUT /notify/templates/{event}/trigger` com `{"active": false}` desliga; com
-`{"active": true}` religa. O gate é conferido dentro de `send_event` — quando `active=false`, a
-função simplesmente não dispara (retorna `None`).
-
-### DX (utilidades pro front)
-
-| Método/Path | O que faz |
-|---|---|
-| `GET /notify/events` | Catálogo COMPLETO de eventos conhecidos (DB ∪ in-memory legado) — pro dropdown do form escolher `event` sem adivinhar o slug. Cada item: `{event, has_template, has_in_memory, active}`. |
-| `POST /notify/templates/{event}/preview` | Renderiza o `body_md` com um `ctx` opcional (regex render, **sem** chamar IA/LLM) — o texto exato que sairia pro destinatário. Não despacha nada de verdade. Se `storytelling=true`, `story_rendered` vem `null` (o front pode avisar "esse evento gera com IA" sem pagar a chamada). |
-| `POST /notify/templates/{event}/test` | Disparo **REAL** (síncrono) do evento pro próprio staff logado (phone/email da sessão) — sem destinatário externo, sem `body_md_override` (o staff vê exatamente o que o Template produz). **Sem** idempotency-key de propósito: cada clique em "testar" deve enviar de novo, não é evento de negócio com risco de duplicação. Evento inexistente (nem DB, nem in-memory) → 404 `EVENT_NOT_FOUND`. |
-| `POST /notify/templates/{event}/restore-seed` | Recarrega UM Template a partir de `notify/seed/templates.md`, sobrescrevendo o do banco — desfaz uma edição ruim. Evento fora do seed → 404 `EVENT_NOT_IN_SEED`. Seed ausente no servidor (erro de deploy) → 500 `SEED_FILE_MISSING`. |
+| `PUT /students/{external_id}/platform-credentials` | Staff corrige login/senha (e url/notes) da plataforma de um aluno **já concluído** — só staff mexe depois de concluído. Login duplicado → 409 `PLATFORM_LOGIN_TAKEN`. |
 
 ## Integrações (health)
 
@@ -199,19 +158,18 @@ valor do secret) + fluxo declarado + último resultado do ledger `ValidationChec
 
 | Método/Path | O que faz |
 |---|---|
-| `GET /integrations` | Lista TODAS: `{name, configured, config: {ENV_VAR: bool}, flow, checks}`. Sem rede. Integrações conhecidas: `asaas, infinitepay, whatsapp, mail, ai, biometric, cep, cpf`. |
+| `GET /integrations` | Lista TODAS: `{name, configured, config: {ENV_VAR: bool}, flow, checks}`. Sem rede. Integrações conhecidas: `asaas, infinitepay, notify, ai, biometric, cep, cpf`. |
 | `GET /integrations/{name}` | Detalhe. **Asaas** roda `run_checks` AO VIVO (saldo + webhook, bate rede) e devolve em `live`; erro de rede vira `{"error": ...}` em vez de estourar. Demais integrações: só o último do ledger (o teste ao vivo delas roda por command assíncrono, pesado demais pro request). Nome desconhecido → 404 `INTEGRATION_NOT_FOUND`. |
-| `POST /integrations/{name}/setup` | Onboarding (só Asaas tem ação real: auto-cadastra o webhook — idempotente). Demais devolvem um `detail` dizendo que não têm setup (config é via `.env`). |
-| `POST /integrations/{name}/test` | Teste de saúde ao vivo, carimba o ledger. Asaas roda de verdade; os demais devolvem o último do ledger com uma nota. |
+| `POST /integrations/asaas/setup` | Cadastra ou atualiza o webhook do Asaas — idempotente. |
+| `POST /integrations/asaas/test` | Executa e registra a bateria de saúde do Asaas. |
 
 ### Saúde do servidor e ledgers
 
 | Método/Path | O que faz |
 |---|---|
 | `GET /system` | `{db_ok, migrations_pending, qcluster_alive, qcluster_count, queued_tasks, debug, external_url}` — DB vivo, migrações pendentes, se o worker Django-Q está de pé e quantas tasks na fila. |
-| `GET /health/full` (auth JWT) | Ping ao vivo de asaas/infinitepay/omniroute/whatsapp + migrações pendentes + info de deploy. Rota separada de `/health` porque `GET /api/v1/staff/health` puro é a liveness PÚBLICA (`build_group`) — registrar aqui a versão autenticada seria sombreada por ela. |
+| `GET /health/full` (auth JWT) | Ping ao vivo de asaas/infinitepay/omniroute/notify-server + migrações pendentes + info de deploy. Rota separada de `/health` porque `GET /api/v1/staff/health` puro é a liveness PÚBLICA (`build_group`) — registrar aqui a versão autenticada seria sombreada por ela. |
 | `POST /health/run-tests` (auth JWT) | Dispara a Actions workflow `ci.yml` no GitHub (via `GH_PAT`/`GITHUB_TOKEN`) para rodar a suíte de testes. Sem token configurado → `{"ok": false, "error": "..."}`. |
-| `GET /logs/unrouted?resolved=&limit=` | Eventos que chegaram sem consumidor (fallback rastreável do core). |
 | `GET /logs/ai-calls?status=&limit=` | Ledger de chamadas de IA: provider/modelo/operação/custo/latência/erro. |
 | `GET /logs/checks?scope=&limit=` | Histórico do ledger de validação (`ValidationCheck`). |
 
@@ -234,9 +192,6 @@ valor do secret) + fluxo declarado + último resultado do ledger `ValidationChec
 | `PAYMENT_INVALID_AMOUNT` / `PAYMENT_AMOUNT_MUST_BE_POSITIVE` / `PAYMENT_PIX_KEY_REQUIRED` / `PAYMENT_LINE_CODE_REQUIRED` / `PAYMENT_INVALID_KIND` | 422 | pagamento avulso |
 | `PLATFORM_LOGIN_TAKEN` | 409 | credenciais de plataforma do aluno |
 | `PHONE_INVALID` / `PHONE_NOT_ON_WHATSAPP` / `PHONE_EXISTS` | 422/422/409 | troca de telefone |
-| `TEMPLATE_NOT_FOUND` / `EMPTY_BODY` / `INVALID_MEDIA_TYPE` / `INVALID_CHANNELS` | 404/422/422/422 | templates |
-| `EVENT_NOT_FOUND` | 404 | test-send |
-| `EVENT_NOT_IN_SEED` / `SEED_FILE_MISSING` | 404 / 500 | restore-seed |
 | `INTEGRATION_NOT_FOUND` | 404 | integrações |
 
 ## O que o backend ESPERA do frontend
@@ -246,19 +201,13 @@ valor do secret) + fluxo declarado + último resultado do ledger `ValidationChec
   é o que impede um 2º PIX real de sair. Sem o header, o backend recusa de cara (422), então não
   tem como "esquecer" silenciosamente — mas o front deve garantir que a key é estável durante o
   retry e nova a cada novo pagamento.
-- [ ] **Confirmação explícita em ações destrutivas/irreversíveis**: `DELETE /funnel-user` (apaga
-  cascade, sem undo) e `DELETE /notify/templates/{event}` (perde o teor customizado — só recupera
-  se existir no seed). Modal de "tem certeza?" antes de disparar.
+- [ ] **Confirmação explícita em ações destrutivas/irreversíveis**: `DELETE /funnel-user` apaga em
+  cascade, sem undo. Mostrar confirmação antes de disparar.
 - [ ] **Tratar `USER_NOT_PURGEABLE` com o `reason`** (`hub_coordinator`/`promoter`/
   `has_finance_records`) para explicar ao Victor por que não dá pra apagar aquele usuário, em vez
   de só mostrar erro genérico.
 - [ ] **`mark-paid` é uma correção manual**, não o fluxo normal — usar como ação explícita de
   "resgate", não expor como botão de primeira linha na lista de leads.
-- [ ] **Preview antes de salvar template**: usar `POST /notify/templates/{event}/preview` para
-  mostrar o texto renderizado antes de persistir via PUT/PATCH — evita salvar Markdown quebrado
-  sem ver o resultado.
-- [ ] **`test-send` dispara de verdade** para o próprio staff (WhatsApp/e-mail real) — avisar que
-  vai chegar uma mensagem, não é só simulação (diferente do `preview`).
 - [ ] **`run_closing` é idempotente** — pode expor um botão "adiantar fechamento" sem medo de
   re-cobrar quem já foi fechado; mas ainda é uma ação real (gera `PaymentRequest`), não repetir sem
   necessidade.

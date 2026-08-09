@@ -1,8 +1,7 @@
 """Receiver de eventos da InfinitePay (webhook de pagamento aprovado).
 
 Fluxo (CONVENTION §7): persiste o evento bruto → acha o Checkout por order_nsu → RECONFIRMA via
-payment_check (a trava real: nunca confia só no corpo do webhook) → marca PAID → roteia pro fallback
-do core (consumidores reais — lead/enrollment — ainda não existem). A doc oficial da InfinitePay não
+payment_check (a trava real: nunca confia só no corpo do webhook) → marca PAID. A doc oficial da InfinitePay não
 tem HMAC/secret; o `order_nsu` (UUID opaco) liga o webhook ao checkout e o `payment_check` confirma
 o pagamento direto na API antes de mudar qualquer estado.
 """
@@ -14,7 +13,6 @@ from django.conf import settings
 from django.utils import timezone
 
 from core import hooks as core_hooks
-from core.fallback import log_unrouted_event
 
 from .client import InfinitePayError, get_client
 from .models import Checkout, WebhookEvent
@@ -63,21 +61,19 @@ def handle_event(order_nsu, payload, *, source_ip=None, user_agent=None):
         row.forwarded_ok = True
         row.forwarded_at = timezone.now()
         row.save(update_fields=["forwarded_ok", "forwarded_at"])
-        # ninguém consumiu -> fallback rastreável (§7.4), não perde o evento.
         if not consumed:
-            log_unrouted_event(
-                "infinitepay",
-                "checkout_paid",
-                f"applied_no_consumer: {reason}",
-                payload if isinstance(payload, dict) else {},
+            logger.warning(
+                "webhook_unconsumed",
+                provider="infinitepay",
+                provider_event="checkout_paid",
+                reason=f"applied_no_consumer: {reason}",
             )
     else:
-        # nada nosso consumiu o evento -> fallback rastreável (não descarta em silêncio)
-        log_unrouted_event(
-            "infinitepay",
-            "webhook",
-            reason,
-            payload if isinstance(payload, dict) else {},
+        logger.warning(
+            "webhook_unconsumed",
+            provider="infinitepay",
+            provider_event="webhook",
+            reason=reason,
         )
     return row, result
 

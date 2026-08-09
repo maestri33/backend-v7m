@@ -150,40 +150,9 @@ def _reconcile_stale_analyses(enr: Enrollment) -> None:
 
 
 def age_stale_selfies() -> int:
-    """Job agendado (Django-Q): selfies `pending` cujo TTL estourou → `review` + notifica coord.
+    from users.roles import _analysis
 
-    Substitui o antigo reconcile-on-read do `GET /enrollment/selfie` (violava idempotência HTTP).
-    Idempotente: só age em quem AINDA está `pending` e estourou o prazo — a transição vira o status
-    p/ `review`, então a próxima passada não o pega de novo (sem notify duplicado)."""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
-    from users.roles import _analysis, _selfie
-
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    stale = Enrollment.objects.select_related("hub", "hub__coordinator").filter(
-        selfie_status=_selfie.SelfieStatus.PENDING, selfie_taken_at__lt=cutoff
-    )
-    aged = 0
-    for enr in stale:
-        _reconcile_selfie_stale(enr)
-        aged += 1
-    return aged
-
-
-def _reconcile_selfie_stale(enr: Enrollment) -> None:
-    """TTL do `pending` da selfie: estourou → `review` + avisa coordenador. Chamado SÓ pelo job
-    `age_stale_selfies` — nunca num GET. Re-checa `is_stale`, então é seguro rodar 2×."""
-    from users.roles import _analysis, _selfie
-
-    if _analysis.is_stale(enr.selfie_status, enr.selfie_taken_at):
-        enr.selfie_status = _selfie.REVIEW
-        enr.selfie_description = (
-            enr.selfie_description or ""
-        ).strip() or _analysis.stale_reason()
-        enr.save(update_fields=["selfie_status", "selfie_description", "updated_at"])
-        _notify_selfie_review(enr)
+    return _analysis.age_stale_selfies(Enrollment, _notify_selfie_review)
 
 
 def public_status(enr: Enrollment) -> str:
@@ -482,49 +451,6 @@ _RG_PROFILE_FIELDS = (
 )
 
 
-def _next_slot_rg(rg) -> str | None:
-    """Qual slot o front deve enviar a seguir? (enrollment = RG only).
-
-    Retorna o nome do slot (ex: "rg_back") ou None se completo/aguardando.
-    O front mostra APENAS este slot — nunca frente+verso ao mesmo tempo."""
-    from users.roles import _document_ai as doc_ai
-
-    if rg is None:
-        return "rg_front"  # nenhum doc ainda → pedir frente
-
-    result = (rg.validation_result or {}) if hasattr(rg, "validation_result") else {}
-    photos = result.get("photos") or {}
-
-    def _status(slot: str) -> str | None:
-        return (photos.get(slot) or {}).get("status")
-
-    # full aprovada → completo
-    if _status("rg_full") == doc_ai.APPROVED:
-        return None
-    # frente+verso aprovadas → completo
-    if _status("rg_front") == doc_ai.APPROVED and _status("rg_back") == doc_ai.APPROVED:
-        return None
-    # qualquer slot pendente → aguardando
-    for slot in ("rg_full", "rg_front", "rg_back"):
-        if _status(slot) == doc_ai.PENDING:
-            return None
-    # qualquer slot em review → aguardando coordenador
-    for slot in ("rg_full", "rg_front", "rg_back"):
-        if _status(slot) == doc_ai.REVIEW:
-            return None
-    # full reprovada → reenviar full
-    if _status("rg_full") == doc_ai.REJECTED:
-        return "rg_full"
-    # frente aprovada → pedir verso
-    if _status("rg_front") == doc_ai.APPROVED:
-        return "rg_back"
-    # verso aprovada → pedir frente
-    if _status("rg_back") == doc_ai.APPROVED:
-        return "rg_front"
-    # nenhuma ou todas reprovadas → frente primeiro
-    return "rg_front"
-
-
 def _public_rg_reason(status: str | None) -> str | None:
     """O que o ALUNO lê. O motivo real (lado trocado, nome divergente, rasura suspeita) fica no
     `validation_result` e só o hub/staff enxerga — regra do Victor (2026-07-28).
@@ -545,6 +471,8 @@ def _public_rg_reason(status: str | None) -> str | None:
 
 
 def _rg_section_dict(enr: Enrollment) -> dict:
+    from users.roles import _analysis
+
     user_ext = str(enr.user.external_id)
     rg = documents_iface.get_rg(user_ext)
     p = profiles.get(enr.user)
@@ -592,7 +520,7 @@ def _rg_section_dict(enr: Enrollment) -> dict:
             k for k in (*_RG_DOC_FIELDS, *_RG_PROFILE_FIELDS) if not fields[k]
         ],
         # next_slot: qual foto o front deve pedir AGORA (sequencial: frente→verso)
-        "next_slot": _next_slot_rg(rg),
+        "next_slot": _analysis.next_document_slot("rg", photos),
         # photos por slot individual (front precisa saber o status de cada foto)
         # Por slot, o cliente recebe SÓ o status — o `reason` de cada foto é o critério cru da
         # visão ("mostra os dois lados", "lado trocado") e vaza a régua do mesmo jeito que o
@@ -1097,144 +1025,20 @@ def _resume_link() -> str:
     return base + getattr(settings, "ENROLLMENT_RESUME_PATH", "/matricula")
 
 
-_SELFIE_STORY_PROMPT = (
-    "Você é um redator de mensagens que EMOCIONAM. Escreve para uma pessoa que acabou de assinar, com o "
-    "próprio rosto, a matrícula num supletivo (EJA) — ela voltou a estudar. Já pagou, já enviou tudo: a "
-    "matrícula está confirmada. Esta mensagem é pra marcar essa decisão na vida dela.\n\n"
-    "Escreva uma mensagem curta (8 a 12 linhas) que:\n"
-    "- Fale com a PESSOA, não sobre o produto. O herói da mensagem é a coragem dela de voltar a estudar.\n"
-    "- EMOCIONE de verdade: toque no peso de recomeçar depois de anos, no que essa decisão significa, em "
-    "quem ela honra ao dar esse passo. Pode ser forte, pode dar um nó na garganta — desde que seja "
-    "VERDADEIRO, nunca água com açúcar.\n"
-    "- Reconheça que dar esse passo JÁ é uma vitória, independente do que venha depois.\n"
-    "- Fuja de clichê vazio e bajulação genérica ('você é incrível', 'extraordinário', 'você consegue'): "
-    "emoção se constrói com verdade concreta, não com elogio solto.\n"
-    "- NÃO mande a pessoa aguardar, esperar ser chamada, nem explique trâmite burocrático ('a secretaria "
-    "vai analisar', 'você será chamada em breve'). Isso esfria tudo. Encerre olhando pra FRENTE — o que "
-    "se abre a partir daqui — não pra fila de espera.\n"
-    "- NÃO invente detalhes sobre a vida, dificuldades ou histórico da pessoa além do fornecido.\n"
-    "- NÃO venda nada nem peça indicações.\n"
-    "- Trate pelo nome (use mais de uma vez) e ajuste querida/querido/neutro conforme o sexo, sem soar "
-    "forçado.\n\n"
-    "Adapte pela idade: jovem (até ~20), o futuro que se abre, a vida inteira pela frente; adulto, o "
-    "mérito raro de voltar a estudar no meio do trabalho, da família, da correria.\n\n"
-    "A aparência física abaixo é REAL (extraída da foto) e serve SÓ pra você calibrar o tom (cansaço, "
-    "horário, ambiente). NUNCA descreva nem comente o rosto, o corpo ou a aparência da pessoa na "
-    "mensagem — isso constrange.\n\n"
-    "Dados do aluno:\n"
-    "- Nome: {name}\n"
-    "- Idade: {idade}\n"
-    "- Sexo: {sexo}\n"
-    "- Aparência física (foto): {aparencia}\n"
-    "- Observação: (não informada)\n\n"
-    "Escreva a mensagem final, pronta para envio, sem comentários extras antes ou depois do texto."
-)
-
-
-def _selfie_story(enr: Enrollment, p, first: str) -> str | None:
-    """Storytelling RICO da matrícula assinada (Victor 2026-06-21): a visão (MiniMax) descreve a selfie
-    só pra CALIBRAR o tom; o Opus 4.8 escreve um pequeno discurso motivacional (fallback DeepSeek →
-    MiniMax). Dados REAIS (idade/sexo). Best-effort: qualquer falha devolve None e o caller cai no teor
-    fixo. Roda async (qcluster), então a latência da visão+LLM não trava ninguém."""
-    from pathlib import Path
-
-    from integrations.ai import service as ai
-    from users.roles import notifications as msgs
-
-    try:
-        desc = ""
-        try:
-            if enr.selfie_image:
-                fp = Path(settings.MEDIA_ROOT) / enr.selfie_image
-                if fp.exists():
-                    desc = ai.describe_image(
-                        fp.read_bytes(),
-                        caller="story.selfie.vision",
-                        prompt=(
-                            "Descreva objetivamente a aparencia da pessoa nesta selfie em 4-6 linhas "
-                            "(idade aparente, expressao, vestimenta, ambiente, iluminacao, mood/horario). "
-                            "Nao identifique quem e."
-                        ),
-                    )
-        except Exception:  # noqa: BLE001 — visão é apoio; sem ela o tom é genérico
-            desc = ""
-
-        idade = msgs.age_from(getattr(p, "birth_date", None))
-        sexo = {"M": "Masculino", "F": "Feminino"}.get(
-            (getattr(p, "gender", None) or "").upper(), "não informado"
-        )
-        instruction = _SELFIE_STORY_PROMPT.format(
-            name=first,
-            idade=f"{idade} anos" if idade else "não informada",
-            sexo=sexo,
-            aparencia=desc or "não disponível",
-        )
-        for mdl in ("claude-opus-4-8", "deepseek-v4-pro", "MiniMax-M3"):
-            try:
-                out = ai.generate_text(
-                    f"Escreva a mensagem para {first}.",
-                    caller=f"story.selfie.{mdl}",
-                    instruction=instruction,
-                    temperature=0.7,
-                    max_tokens=900,
-                    model=mdl,
-                )
-                out = (out or "").strip().replace("**", "")
-                if len(out) >= 60 and first.lower() in out.lower():
-                    return out
-            except Exception:  # noqa: BLE001 — falhou esse modelo, tenta o próximo
-                continue
-        return None
-    except Exception as exc:  # noqa: BLE001 — jamais quebra o notify
-        logger.warning("enrollment.selfie_story_failed", error=str(exc))
-        return None
-
-
 def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
-    """Notify de RESOLUÇÃO de análise pro ALUNO (aprovado/reprovado — automático OU decisão do
-    coordenador): **multicanal** (WhatsApp + e-mail) com **deep-link** de volta pro wizard
-    (proposta #11) — o aluno não precisa segurar a tela pollando. Best-effort, nunca quebra o fluxo.
-
-    wave-2: usa `body_md_override` no `send_event` pra preservar o storytelling RICO da selfie
-    (Opus 4.8 + visão da foto) e o link de "continuar matrícula" concatenado. O `Trigger.active`
-    gate é mantido (desativar o evento no DB desliga tudo)."""
+    """Entrega ao notify-server o evento e os dados necessários para renderização."""
     from notify.interface.events import send_event
-    from users.roles import notifications as msgs
 
     p = profiles.get(enr.user)
-    name = msgs.first_name(p.name if p else None)
-    fallback = msgs.text(event_key, name=name, **placeholders)
-    if event_key == "enrollment.selfie_approved":
-        # assinatura da matrícula = pequeno discurso motivacional RICO (visão da selfie → Opus 4.8,
-        # fallback DeepSeek → MiniMax). Cai no story_text simples e, por fim, no teor fixo.
-        text = _selfie_story(enr, p, name) or msgs.story_text(
-            event_key,
-            name=name,
-            fallback=fallback,
-            age=msgs.age_from(getattr(p, "birth_date", None)),
-        )
-    else:
-        text = msgs.story_text(
-            event_key,
-            name=name,
-            fallback=fallback,
-            age=msgs.age_from(getattr(p, "birth_date", None)),
-        )
-    # O link de "continuar" só faz sentido quando o aluno PRECISA voltar ao wizard. Em marcos de
-    # conclusão/assinatura (a mensagem manda AGUARDAR) o link se contradiz — por isso o guard.
-    link = _resume_link()
-    if link and event_key not in {"enrollment.selfie_approved"}:
-        text += f"\n\nContinue sua matrícula por aqui: {link}"
-    tts = msgs.is_tts(event_key)
+    ctx = dict(placeholders)
+    if event_key != "enrollment.selfie_approved" and (link := _resume_link()):
+        ctx["link"] = link
     try:
-        # wave-2: body_md_override preserva o texto composto (selfie_story + link); is_tts_override
-        # honra o catálogo in-memory (msgs.is_tts). Os demais defaults vêm do DB (se houver Template).
         send_event(
             event_key,
             profile=p,
+            ctx=ctx,
             subject="Sua matrícula — atualização",
-            body_md_override=text,
-            is_tts_override=tts,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -1556,9 +1360,6 @@ def _advance_to_release(enr: Enrollment) -> None:
     if enr.status != _S.SELFIE:
         return
     _set_status(enr, _S.AWAITING_RELEASE)
-    from users.roles.enrollment.signals import enrollment_ready_for_matricula
-
-    enrollment_ready_for_matricula.send(sender=Enrollment, enrollment=enr)
     _notify_coordinator_awaiting(enr)
 
 
@@ -2163,41 +1964,16 @@ def coordinator_correct_identity(
 
 
 def _sweep_stale_reviews(hub) -> None:
-    """Resiliência (Victor 2026-06-17): se o worker da IA morreu/reiniciou (OOM), a análise fica
-    PENDING calada — o TTL só vira `review` quando o PRÓPRIO aluno relê o /me. Se ele abandona, a
-    análise some da vista de todos e só um db-edit destrava (= o que o Victor não quer em prod).
-
-    Aqui, ao montar a fila do coordenador, todo PENDING que estourou o TTL VIRA `review` — assim
-    aparece pra ele decidir (hierarquia user→coord, sem dev/flash de DB). Bulk update barato; uma
-    vez em `review` não casa mais o filtro `=PENDING`."""
-    from datetime import timedelta
-
-    from django.utils import timezone
-
     from users.documents.models import RG
-    from users.roles import _analysis, _selfie
+    from users.roles import _analysis
 
-    # selfie: o campo `selfie_taken_at` data o início → bulk update direto.
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    Enrollment.objects.filter(
-        hub=hub,
-        selfie_status=_selfie.SelfieStatus.PENDING,
-        selfie_taken_at__lt=cutoff,
-    ).update(
-        selfie_status=_selfie.SelfieStatus.REVIEW,
-        selfie_description=_analysis.stale_reason(),
-    )
-    # RG: o model não tem `updated_at`; o início vive no JSON (`analysis_started_at`), igual ao flip
-    # do /me do aluno (`_rg_started_at`). Loop curto (só os PENDING do polo) — sem referência → não mexe.
+    _analysis.sweep_stale_selfies(Enrollment, hub)
     user_ids = list(
         Enrollment.objects.filter(hub=hub).values_list("user_id", flat=True)
     )
-    for rg in RG.objects.filter(
-        document__user_id__in=user_ids, validation_status=_analysis.PENDING
-    ):
-        if _analysis.is_stale(rg.validation_status, _rg_started_at(rg)):
-            rg.validation_status = _analysis.REVIEW
-            rg.save(update_fields=["validation_status"])
+    _analysis.sweep_stale_documents(
+        RG.objects.filter(document__user_id__in=user_ids), _rg_started_at
+    )
 
 
 def list_reviews_for_hub(*, hub) -> dict:
