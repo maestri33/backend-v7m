@@ -19,17 +19,13 @@ local fica coeso, então rollback de modo é seguro e preview/GET/storytelling s
 
 from __future__ import annotations
 
-import structlog
-from django.conf import settings
-from django.db import transaction
 from ninja import Router, Schema
 
 from api.auth import require_superuser
-from notify.interface import templates as _db_cache
+from notify.interface import remote
+from notify.interface import staff as notify_staff
 from notify.models import Notification, Template, Trigger
-from users.exceptions import DomainError, IntegrationError, NotFound, ValidationError
-
-logger = structlog.get_logger()
+from users.exceptions import NotFound
 
 router = Router(tags=["notify"])
 
@@ -87,80 +83,10 @@ class NotificationOut(Schema):
     created_at: str
 
 
-# ── Fase 2 (NOTIFY_MODE=remote): proxy do history + dual-write das mutações ────
-def _remote() -> bool:
-    """Lê a flag a cada chamada (rollback = trocar NOTIFY_MODE + restart, sem redeploy)."""
-    return settings.NOTIFY_MODE == "remote"
-
-
-def _server_call(fn):
-    """Chama o notify-server; falha (HTTP >=400 ou rede) vira 502 `NOTIFY_SERVER_DOWN` no
-    envelope padrão. Dentro do `transaction.atomic`, a exceção desfaz a escrita local."""
-    import httpx
-
-    from notify.sdk import client
-
-    try:
-        return fn()
-    except (client.NotifyServerError, httpx.HTTPError) as exc:
-        raise IntegrationError(
-            "notify-server indisponível — tente novamente.",
-            code="NOTIFY_SERVER_DOWN",
-        ) from exc
-
-
-def _server_template_payload(t: Template) -> dict:
-    """Estado FULL do Template local no shape TemplateUpsertIn do servidor (que não tem PATCH)."""
-    return dict(
-        title=t.title,
-        subject=t.subject,
-        body_md=t.body_md,
-        is_tts=t.is_tts,
-        storytelling=t.storytelling,
-        story_prompt=t.story_prompt,
-        channels=t.channels,
-        media_url=t.media_url,
-        media_type=t.media_type,
-        mail_template=t.mail_template,
-        notes=t.notes,
-    )
-
-
-def _push_template_remote(event: str, t: Template) -> None:
-    """PUT full do Template resultante no servidor (dual-write)."""
-    from notify.sdk import client
-
-    _server_call(lambda: client.staff_put_template(event, _server_template_payload(t)))
-
-
-def _push_trigger_remote(event: str, tr: Trigger) -> None:
-    """PUT do Trigger resultante no servidor (dual-write)."""
-    from notify.sdk import client
-
-    payload = dict(
-        fires_on=tr.fires_on or "",
-        source=tr.source,
-        delay_minutes=tr.delay_minutes,
-        active=tr.active,
-    )
-    _server_call(lambda: client.staff_put_trigger(event, payload))
-
-
-def _push_delete_remote(event: str) -> None:
-    """DELETE no servidor. 404 lá = já não existia — delete é idempotente, espelho segue coeso."""
-    from notify.sdk import client
-
-    def _delete():
-        try:
-            client.staff_delete_template(event)
-        except client.NotifyServerError as exc:
-            if exc.status_code == 404:
-                # kwarg não pode se chamar `event` (posicional do structlog)
-                logger.info("staff_notify.remote_delete_absent", event_slug=event)
-                return
-            raise
-
-    _server_call(_delete)
+# ── Fase 2 (NOTIFY_MODE=remote) ────────────────────────────────────────────────
+# A flag + o wrapper de chamada ao servidor moram em `notify.interface.remote` (compartilhados com
+# as mutações). O dual-write de Template/Trigger virou o módulo `notify.interface.staff` (importado
+# como `notify_staff`) — o router aqui é adapter fino.
 
 
 @router.get("/history", response=list[NotificationOut])
@@ -177,10 +103,10 @@ def notify_history(
     skipped). `limit` máx 500. Modo remote: proxy do notify-server (a verdade dos envios mora lá)."""
     require_superuser(request.auth)
     limit = max(1, min(int(limit), 500))
-    if _remote():
+    if remote.is_remote():
         from notify.sdk import client
 
-        rows = _server_call(
+        rows = remote.server_call(
             lambda: client.get_notifications(
                 caller=caller,
                 whatsapp_status=whatsapp_status,
@@ -293,21 +219,6 @@ class TriggerUpsertIn(Schema):
     active: bool = True
 
 
-_VALID_CHANNELS = {"whatsapp", "email", "tts"}
-_VALID_MEDIA = {"image", "video", "audio", "document"}
-
-
-def _validate_channels(raw: str) -> str:
-    parts = [p.strip() for p in (raw or "").split(",") if p.strip()]
-    bad = [p for p in parts if p not in _VALID_CHANNELS]
-    if bad:
-        raise ValidationError(
-            f"canais inválidos: {bad} (válido: {sorted(_VALID_CHANNELS)})",
-            code="INVALID_CHANNELS",
-        )
-    return ",".join(parts) if parts else "whatsapp,email"
-
-
 def _trigger_out(t: Trigger | None) -> TriggerOut | None:
     if t is None:
         return None
@@ -400,40 +311,7 @@ def upsert_template(request, event: str, payload: TemplateUpsertIn):
     invalida o cache em memória → próxima chamada lê o teor novo. Não deleta: pra desligar um evento,
     use o Trigger (`PUT .../trigger` com `active=false`)."""
     require_superuser(request.auth)
-    if not payload.body_md.strip():
-        raise ValidationError("body_md não pode ser vazio.", code="EMPTY_BODY")
-    if payload.media_type and payload.media_type not in _VALID_MEDIA:
-        raise ValidationError(
-            f"media_type inválido (válido: {sorted(_VALID_MEDIA)})",
-            code="INVALID_MEDIA_TYPE",
-        )
-    channels = _validate_channels(payload.channels)
-    defaults = dict(
-        title=payload.title,
-        subject=payload.subject,
-        body_md=payload.body_md,
-        is_tts=payload.is_tts,
-        storytelling=payload.storytelling,
-        story_prompt=payload.story_prompt,
-        channels=channels,
-        media_url=payload.media_url,
-        media_type=payload.media_type,
-        mail_template=payload.mail_template or "default",
-        notes=payload.notes,
-    )
-
-    def _write() -> Template:
-        t, _ = Template.objects.update_or_create(event=event, defaults=defaults)
-        _db_cache.invalidate(event)  # cache em memória reflete a edição na hora
-        return t
-
-    if _remote():
-        # Dual-write: falha do push desfaz a escrita local (espelho fica coeso).
-        with transaction.atomic():
-            t = _write()
-            _push_template_remote(event, t)
-    else:
-        t = _write()
+    t = notify_staff.upsert_template(event, **payload.model_dump())
     return _template_out(t)
 
 
@@ -442,27 +320,7 @@ def upsert_trigger(request, event: str, payload: TriggerUpsertIn):
     """Cria ou atualiza o Trigger do Template `event`. `active=false` DESLIGA o evento (send_event
     retorna None sem disparar) — o "interruptor" do Victor sem código. Template inexistente → 404."""
     require_superuser(request.auth)
-    t = Template.objects.filter(event=event).first()
-    if t is None:
-        raise NotFound("Template não encontrado.", code="TEMPLATE_NOT_FOUND")
-    defaults = dict(
-        fires_on=payload.fires_on,
-        source=payload.source,
-        delay_minutes=max(0, int(payload.delay_minutes)),
-        active=payload.active,
-    )
-
-    def _write() -> Trigger:
-        tr, _ = Trigger.objects.update_or_create(template=t, defaults=defaults)
-        _db_cache.invalidate(event)
-        return tr
-
-    if _remote():
-        with transaction.atomic():
-            tr = _write()
-            _push_trigger_remote(event, tr)
-    else:
-        tr = _write()
+    tr = notify_staff.upsert_trigger(event, **payload.model_dump())
     return _trigger_out(tr)
 
 
@@ -488,43 +346,7 @@ class TemplatePatchIn(Schema):
 def patch_template(request, event: str, payload: TemplatePatchIn):
     """Atualização PARCIAL do Template. Só altera os campos enviados no payload. body_md vazio → 422."""
     require_superuser(request.auth)
-    t = Template.objects.filter(event=event).first()
-    if t is None:
-        raise NotFound("Template não encontrado.", code="TEMPLATE_NOT_FOUND")
-    if payload.body_md is not None and not payload.body_md.strip():
-        raise ValidationError("body_md não pode ser vazio.", code="EMPTY_BODY")
-    if payload.media_type is not None and payload.media_type not in _VALID_MEDIA:
-        raise ValidationError(
-            f"media_type inválido (válido: {sorted(_VALID_MEDIA)})",
-            code="INVALID_MEDIA_TYPE",
-        )
-    if payload.channels is not None:
-        channels = _validate_channels(payload.channels)
-    else:
-        channels = None
-
-    def _write() -> None:
-        changed = False
-        data = payload.model_dump(exclude_unset=True)
-        for k, v in data.items():
-            if k == "channels":
-                if t.channels != channels:
-                    t.channels = channels
-                    changed = True
-            elif getattr(t, k) != v:
-                setattr(t, k, v)
-                changed = True
-        if changed:
-            t.save()
-            _db_cache.invalidate(event)
-
-    if _remote():
-        # O servidor não tem PATCH: aplica o parcial local e faz PUT FULL do estado resultante.
-        with transaction.atomic():
-            _write()
-            _push_template_remote(event, t)
-    else:
-        _write()
+    t = notify_staff.patch_template(event, payload.model_dump(exclude_unset=True))
     return _template_out(t)
 
 
@@ -542,20 +364,7 @@ def delete_template(request, event: str):
     já quebrado por um bug pré-existente não relacionado — extra= inválido em
     `student/signals.py`). Confirme os 2 lados (local + notify-server) antes de apagar em prod."""
     require_superuser(request.auth)
-    t = Template.objects.filter(event=event).first()
-    if t is None:
-        raise NotFound("Template não encontrado.", code="TEMPLATE_NOT_FOUND")
-
-    def _write() -> None:
-        t.delete()
-        _db_cache.invalidate(event)
-
-    if _remote():
-        with transaction.atomic():
-            _write()
-            _push_delete_remote(event)
-    else:
-        _write()
+    notify_staff.delete_template(event)
     return {"deleted": event}
 
 
@@ -703,45 +512,5 @@ def restore_from_seed(request, event: str):
     """Recarrega UM Template do `notify/seed/templates.md` (sobrescreve o do DB). Útil quando o staff
     editou errado e quer voltar ao teor original. Se o evento não está no seed → 404."""
     require_superuser(request.auth)
-    from pathlib import Path
-
-    from notify.seed import io as seed_io
-
-    path = Path(__file__).resolve().parents[1] / "notify" / "seed" / "templates.md"
-    if not path.exists():
-        # erro de deploy (seed ausente no servidor), não do cliente → 500 com code próprio.
-        err = DomainError(f"seed .md ausente: {path}", code="SEED_FILE_MISSING")
-        err.status = 500
-        raise err
-    specs = {s.event: s for s in seed_io.parse(path.read_text(encoding="utf-8"))}
-    spec = specs.get(event)
-    if spec is None:
-        raise NotFound(
-            f"evento '{event}' não está no seed .md", code="EVENT_NOT_IN_SEED"
-        )
-    fields = dict(
-        body_md=spec.body_md,
-        is_tts=spec.is_tts,
-        storytelling=spec.storytelling,
-        channels=spec.channels,
-        title=spec.title,
-        subject=spec.subject,
-        media_url=spec.media_url,
-        media_type=spec.media_type,
-        mail_template=spec.mail_template,
-        story_prompt=spec.story_prompt,
-    )
-
-    def _write() -> Template:
-        t, _ = Template.objects.update_or_create(event=event, defaults=fields)
-        _db_cache.invalidate(event)
-        return t
-
-    if _remote():
-        # restore-seed também é mutação → PUT full do teor restaurado no servidor.
-        with transaction.atomic():
-            t = _write()
-            _push_template_remote(event, t)
-    else:
-        t = _write()
+    t = notify_staff.restore_seed(event)
     return _template_out(t)
