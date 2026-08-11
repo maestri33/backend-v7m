@@ -57,3 +57,12 @@ def age_stale_selfies() -> None:
     idempotência HTTP). Registrado por `manage.py selfie_schedules`. Idempotente."""
     aged = service.age_stale_selfies()
     logger.info("candidate.task_selfies_aged", aged=aged)
+
+
+def age_stale_docs() -> None:
+    """Schedule (Django-Q): docs (RG/CNH) `pending` com TTL estourado → `review`.
+
+    Antes rodava DENTRO do `GET /candidate/document` (mutava numa leitura — viola a idempotência
+    HTTP). Registrado por `manage.py selfie_schedules`. Idempotente."""
+    aged = service.age_stale_docs()
+    logger.info("candidate.task_docs_aged", aged=aged)

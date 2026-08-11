@@ -31,6 +31,11 @@ _SCHEDULES = (
         "users.age_stale_enrollment_rg",
         "users.roles.enrollment.tasks.age_stale_rg",
     ),
+    # Docs (RG/CNH) do candidate: idem — saiu do `GET /candidate/document`.
+    (
+        "users.age_stale_candidate_docs",
+        "users.roles.candidate.tasks.age_stale_docs",
+    ),
 )
 
 

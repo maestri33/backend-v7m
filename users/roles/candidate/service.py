@@ -268,7 +268,7 @@ def get_document_section(*, user_external_id) -> dict:
     extraídos (ou digitados) + `missing_fields` (o que ainda precisa completar). Espelha o
     `enrollment.get_rg_section` (plan/13). Tipo do documento = `cand.doc_type`."""
     cand = _require(user_external_id)
-    _reconcile_stale_analyses(cand)
+    # Leitura PURA (idempotência HTTP): o flip do doc estourado mora no job `age_stale_docs`.
     return _doc_section_dict(cand)
 
 
@@ -449,34 +449,43 @@ def _doc_started_at(sub):
     return _analysis.started_at_from(raw, coerce_tz=True)
 
 
-def _reconcile_stale_analyses(cand: Candidate) -> None:
-    """TTL guard (proposta #2): `pending` estourado → `review` na próxima leitura (espelha o
-    enrollment; só aplica se o doc já tem uma análise rolando)."""
+def _reconcile_stale_analyses(cand: Candidate) -> bool:
+    """TTL guard (proposta #2): doc (`rg`/`cnh`) `pending` estourado → `review`. Devolve True se flipou.
+
+    Roda SÓ no job `age_stale_docs` (Django-Q), NUNCA numa leitura — um GET não pode mutar
+    (idempotência HTTP), espelhando a selfie (`age_stale_selfies`) e o enrollment. Re-checa is_stale."""
     from users.roles import _analysis
 
     if not cand.doc_type:
-        return
+        return False
     sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
     if sub is None or not sub.validation_result:
-        return
-    started_raw = (sub.validation_result or {}).get("analysis_started_at")
-    if not started_raw:
-        return
-    from datetime import datetime
-
-    from django.utils import timezone
-
-    try:
-        started = datetime.fromisoformat(started_raw)
-    except (TypeError, ValueError):
-        return
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
+        return False
+    started = _analysis.started_at_from(
+        (sub.validation_result or {}).get("analysis_started_at")
+    )
     if sub.validation_status == _analysis.PENDING and _analysis.is_stale(
         _analysis.PENDING, started
     ):
         sub.validation_status = _analysis.REVIEW
         sub.save(update_fields=["validation_status"])
+        return True
+    return False
+
+
+def age_stale_docs() -> int:
+    """Job agendado (Django-Q): docs (RG/CNH) `pending` cujo TTL estourou → `review`.
+
+    Tira o reconcile-on-read do `GET /candidate/document` (violava idempotência HTTP), espelhando
+    `age_stale_selfies`. Idempotente: `_reconcile_stale_analyses` re-checa is_stale e o flip tira o
+    doc do estado `pending`. Retorna quantos envelheceu."""
+    aged = 0
+    for cand in Candidate.objects.select_related("user").exclude(
+        doc_type__in=[None, ""]
+    ):
+        if _reconcile_stale_analyses(cand):
+            aged += 1
+    return aged
 
 
 def _next_slot(cand: Candidate, photos: dict) -> str | None:
