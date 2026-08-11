@@ -25,6 +25,17 @@ _SCHEDULES = (
         "users.age_stale_enrollment_selfies",
         "users.roles.enrollment.tasks.age_stale_selfies",
     ),
+    # RG do enrollment: mesmo motivo da selfie — o flip pending→review saiu dos GETs
+    # (`me_dict`, `get_rg_section`) e virou este job (idempotência HTTP).
+    (
+        "users.age_stale_enrollment_rg",
+        "users.roles.enrollment.tasks.age_stale_rg",
+    ),
+    # Docs (RG/CNH) do candidate: idem — saiu do `GET /candidate/document`.
+    (
+        "users.age_stale_candidate_docs",
+        "users.roles.candidate.tasks.age_stale_docs",
+    ),
 )
 
 

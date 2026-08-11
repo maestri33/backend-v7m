@@ -57,3 +57,12 @@ def age_stale_selfies() -> None:
     idempotência HTTP). Registrado por `manage.py selfie_schedules`. Idempotente."""
     aged = service.age_stale_selfies()
     logger.info("enrollment.task_selfies_aged", aged=aged)
+
+
+def age_stale_rg() -> None:
+    """Schedule (Django-Q): RGs `pending` com TTL estourado → `review` + notifica coord.
+
+    Antes rodava DENTRO dos GETs (`me_dict`, `get_rg_section`) — mutava/notificava numa leitura
+    (viola a idempotência HTTP). Registrado por `manage.py selfie_schedules`. Idempotente."""
+    aged = service.age_stale_rg()
+    logger.info("enrollment.task_rg_aged", aged=aged)

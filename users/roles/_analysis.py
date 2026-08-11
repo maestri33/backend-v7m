@@ -16,7 +16,7 @@ Helpers PUROS (sem efeito no banco) — quem persiste o flip é o service do fun
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
 from django.utils import timezone
@@ -47,7 +47,9 @@ def started_at_from(raw, *, coerce_tz: bool = True) -> datetime | None:
         except (TypeError, ValueError):
             return None
     if coerce_tz and dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        # `django.utils.timezone.utc` foi REMOVIDO no Django 5.0 → usa o do stdlib (senão AttributeError
+        # ao coagir um naive; só não estourava porque em operação normal o started_at já vem aware).
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
