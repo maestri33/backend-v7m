@@ -266,29 +266,15 @@ def _document_analysis_reason(doc: StudentDocument) -> str | None:
 
 def _document_expires_at(doc: StudentDocument) -> str | None:
     """TTL do pending: até quando o status `pending` vale."""
-    from datetime import datetime
-
-    from django.utils import timezone
     from users.roles import _analysis
 
     if doc.validation_status != StudentDocument.Validation.PENDING:
         return None
-    started_raw = (doc.validation_result or {}).get("analysis_started_at")
-    if not started_raw:
-        return None
-    if isinstance(started_raw, datetime):
-        started = (
-            started_raw
-            if started_raw.tzinfo
-            else started_raw.replace(tzinfo=timezone.utc)
-        )
-    else:
-        try:
-            started = datetime.fromisoformat(started_raw)
-        except (TypeError, ValueError):
-            return None
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
+    # Antes reimplementava o parse do `analysis_started_at` inline (com o `timezone.utc` do Django,
+    # removido no 5.0) — agora usa o helper canônico e testado (started_at_from coage naive → UTC).
+    started = _analysis.started_at_from(
+        (doc.validation_result or {}).get("analysis_started_at")
+    )
     exp = _analysis.expires_at(started)
     return exp.isoformat() if exp else None
 
