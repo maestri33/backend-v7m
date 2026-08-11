@@ -92,14 +92,12 @@ def _push_delete(event: str) -> None:
 
 
 def _apply(event, write, push):
-    """Grava local e, em modo remote, espelha no servidor ATOMICAMENTE — falha do push desfaz a
-    escrita local (espelho coeso). `push` recebe o resultado do `write`."""
-    if remote.is_remote():
-        with transaction.atomic():
-            result = write()
-            push(result)
-            return result
-    return write()
+    """Grava local e espelha no servidor ATOMICAMENTE — falha do push desfaz a escrita local
+    (espelho coeso). `push` recebe o resultado do `write`."""
+    with transaction.atomic():
+        result = write()
+        push(result)
+        return result
 
 
 # ── operações públicas (o router `api/staff_notify` chama estas) ───────────────

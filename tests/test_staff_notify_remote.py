@@ -145,13 +145,6 @@ def test_history_remote_servidor_fora_vira_502(client, staff_headers, remote, ht
     assert resp.json()["code"] == "NOTIFY_SERVER_DOWN"
 
 
-def test_history_local_intocado(client, staff_headers, no_http):
-    """NOTIFY_MODE default (local): ORM local, zero HTTP."""
-    resp = client.get("/api/v1/staff/notify/history", **staff_headers)
-    assert resp.status_code == 200
-    assert resp.json() == []
-
-
 # ── PUT /templates/{event} (dual-write) ──────────────────────────────────────
 
 _BODY = {"body_md": "Oi {nome}, chegou!", "is_tts": True, "channels": "whatsapp"}
@@ -211,14 +204,6 @@ def test_put_template_remote_push_falha_rollback(client, staff_headers, remote, 
     assert resp.status_code == 502
     assert resp.json()["code"] == "NOTIFY_SERVER_DOWN"
     assert not Template.objects.filter(event="ev.x").exists()
-
-
-def test_put_template_local_sem_http(client, staff_headers, no_http):
-    from notify.models import Template
-
-    resp = _put(client, "/api/v1/staff/notify/templates/ev.x", _BODY, staff_headers)
-    assert resp.status_code == 200
-    assert Template.objects.filter(event="ev.x").exists()
 
 
 # ── PATCH (parcial local → PUT full no servidor) ─────────────────────────────

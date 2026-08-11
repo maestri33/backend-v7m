@@ -13,11 +13,9 @@ status de cada canal. Sem flag de canal explícita, liga o whatsapp por default.
 
 import json
 
-from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from notify.interface.send import send
-from notify.models import Notification
 
 
 class Command(BaseCommand):
@@ -84,47 +82,17 @@ class Command(BaseCommand):
             run_sync=True,
         )
 
-        # modo remote (Fase 2): run_sync=True já despachou no notify-server — a row vive lá,
-        # não no ORM local (achado do review adversarial: Notification.objects.get quebrava
-        # com DoesNotExist). Consulta pelo SDK em vez do ORM.
-        if settings.NOTIFY_MODE == "remote":
-            from notify.sdk import client as sdk
+        # run_sync=True já despachou no notify-server — a row vive LÁ, não no ORM local. Consulta o SDK.
+        from notify.sdk import client as sdk
 
-            remote = sdk.get_notification(external_id)
-            if remote is None:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"Notification {external_id}: despachada, mas o notify-server "
-                        "ainda não a encontra (tente de novo em instantes)."
-                    )
-                )
-                return
+        remote = sdk.get_notification(external_id)
+        if remote is None:
             self.stdout.write(
-                self.style.SUCCESS(f"Notification {external_id} (remote):")
+                self.style.WARNING(
+                    f"Notification {external_id}: despachada, mas o notify-server "
+                    "ainda não a encontra (tente de novo em instantes)."
+                )
             )
-            self.stdout.write(json.dumps(remote, ensure_ascii=False, indent=2))
             return
-
-        notif = Notification.objects.get(external_id=external_id)
-        self.stdout.write(self.style.SUCCESS(f"Notification {external_id}:"))
-        self.stdout.write(
-            json.dumps(
-                {
-                    "external_id": str(notif.external_id),
-                    "caller": notif.caller,
-                    "media_url": notif.media_url,
-                    "media_type": notif.media_type,
-                    "gender": notif.gender,
-                    "whatsapp_status": notif.whatsapp_status,
-                    "email_status": notif.email_status,
-                    "tts_status": notif.tts_status,
-                    "whatsapp_error": notif.whatsapp_error,
-                    "email_error": notif.email_error,
-                    "tts_error": notif.tts_error,
-                    "tts_audio_path": notif.tts_audio_path,
-                    "attempts": notif.attempts,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        self.stdout.write(self.style.SUCCESS(f"Notification {external_id} (remote):"))
+        self.stdout.write(json.dumps(remote, ensure_ascii=False, indent=2))

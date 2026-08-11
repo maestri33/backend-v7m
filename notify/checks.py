@@ -34,25 +34,18 @@ def check_notify_env(app_configs, **kwargs):
 
 # registrado via decorator: `apps.ready` importa este módulo, o que basta pro registro rodar.
 @register
-def check_notify_mode(app_configs, **kwargs):
+def check_notify_config(app_configs, **kwargs):
+    # O notify fala SÓ com o notify-server (o adapter local foi aposentado): URL + api-key
+    # são obrigatórias.
     errors = []
-    mode = getattr(settings, "NOTIFY_MODE", "local")
-    if mode not in ("local", "remote"):
-        errors.append(
-            DjangoError(
-                f"NOTIFY_MODE inválido: {mode!r} (esperado 'local' ou 'remote').",
-                hint="Ajuste NOTIFY_MODE em backend/.env.",
-                id="notify.E001",
-            )
-        )
-    elif mode == "remote" and not (
+    if not (
         getattr(settings, "NOTIFY_SERVER_URL", "")
         and getattr(settings, "NOTIFY_API_KEY", "")
     ):
         errors.append(
             DjangoError(
-                "NOTIFY_MODE=remote exige NOTIFY_SERVER_URL e NOTIFY_API_KEY não-vazios.",
-                hint="Defina ambos em backend/.env (ou volte NOTIFY_MODE=local).",
+                "notify exige NOTIFY_SERVER_URL e NOTIFY_API_KEY não-vazios.",
+                hint="Defina ambos em backend/.env.",
                 id="notify.E002",
             )
         )

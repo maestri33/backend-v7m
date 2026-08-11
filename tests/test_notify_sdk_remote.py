@@ -481,40 +481,6 @@ def test_story_or_none_gera_texto_quando_ligado(monkeypatch):
 
 
 @pytest.mark.django_db
-def test_local_replay_da_idempotency_key_ainda_honra_trigger_active():
-    """local_idempotent_hit só pode rodar no ramo remote de send_event — em modo LOCAL,
-    Trigger.active precisa ser reavaliado a CADA chamada, inclusive numa chave repetida
-    (o kill-switch "sem código" tem que valer também pra replay). Achado do review: uma
-    versão anterior do fix rodava o pré-check antes da checagem de Trigger em qualquer modo,
-    devolvendo o external_id antigo em vez de None quando o staff desligava o evento depois."""
-    from notify.interface.events import send_event
-    from notify.models import Notification, Template, Trigger
-
-    template = Template.objects.create(
-        event="test.trigger_replay", body_md="oi {nome}", channels="whatsapp"
-    )
-    trigger = Trigger.objects.create(template=template, active=True)
-
-    key = "replay-key-trigger-active"
-    first = send_event(
-        "test.trigger_replay", phone="5511999990000", idempotency_key=key, run_sync=True
-    )
-    assert first is not None
-    assert Notification.objects.filter(idempotency_key=key).count() == 1
-
-    trigger.active = False
-    trigger.save(update_fields=["active"])
-
-    second = send_event(
-        "test.trigger_replay", phone="5511999990000", idempotency_key=key, run_sync=True
-    )
-    assert second is None  # Trigger inativo vence, mesmo com a chave já usada antes
-    assert (
-        Notification.objects.filter(idempotency_key=key).count() == 1
-    )  # nada novo criado
-
-
-@pytest.mark.django_db
 def test_notify_send_command_modo_remote_consulta_o_sdk(remote, http_capture):
     """CLI notify_send em modo remote: não existe row local (achado do review — o comando
     quebrava com Notification.DoesNotExist). Consulta GET /v1/notifications/{id} pelo SDK.
