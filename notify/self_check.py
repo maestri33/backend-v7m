@@ -1,4 +1,4 @@
-"""CLI one-shot: valida que o módulo notify está saudável (models, cache, dispatch, sanitize).
+"""CLI one-shot: valida que o módulo notify está saudável (models, cache/render, send/events).
 Uso: python -m notify.self_check  ·  exit 0 = OK, exit 1 = falha."""
 
 from __future__ import annotations
@@ -42,18 +42,7 @@ def run() -> dict:
         results["parse_channels"] = False
         results["parse_channels_error"] = str(e)
 
-    # 3. sanitize (pure, no DB)
-    try:
-        from notify.sanitize import for_whatsapp, for_tts
-
-        assert for_whatsapp("**bold**") == "*bold*"
-        assert "o link" in for_tts("veja https://x.com")
-        results["sanitize"] = True
-    except Exception as e:
-        results["sanitize"] = False
-        results["sanitize_error"] = str(e)
-
-    # 4. render (pure, no DB)
+    # 3. render (pure, no DB)
     try:
         from notify.interface.templates import render
 
@@ -78,17 +67,7 @@ def run() -> dict:
         results["template_cache"] = False
         results["template_cache_error"] = str(e)
 
-    # 6. dispatch importável
-    try:
-        from notify.dispatch import _subject_from_body
-
-        assert _subject_from_body("Primeira frase. Mais texto.") == "Primeira frase"
-        results["dispatch"] = True
-    except Exception as e:
-        results["dispatch"] = False
-        results["dispatch_error"] = str(e)
-
-    # 7. interface.send importável
+    # 6. interface.send importável
     try:
         results["interface_send"] = True
     except Exception as e:

@@ -56,18 +56,6 @@ def test_otp_grava_string_devolvida_pelo_send(monkeypatch):
     assert str(otp.notification_external_id) == sentinel
 
 
-def test_otp_fluxo_real_aponta_pra_notification_local():
-    """Modo local de verdade: a string gravada resolve a Notification criada pelo send()."""
-    from notify.models import Notification
-
-    otp = otp_service.generate_and_send(_user_com_phone("11999990012"))
-
-    assert otp.notification_external_id
-    notif = Notification.objects.get(external_id=otp.notification_external_id)
-    assert notif.caller == "users.auth.otp"
-    assert str(otp.notification_external_id) == str(notif.external_id)
-
-
 @pytest.mark.django_db(transaction=True)
 def test_migracao_0033_copia_fk_para_string():
     """Aplica só a 0033 (AddField + RunPython copy) sobre uma row com FK preenchida.

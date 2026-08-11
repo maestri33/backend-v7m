@@ -23,7 +23,6 @@ from django.db import IntegrityError, transaction
 from integrations.communication.whatsapp.client import (
     WhatsAppError,
     _br_phone_variants,
-    get_client,
 )
 from notify.sdk import client as notify_client
 from notify.sdk.client import NotifyServerError
@@ -140,13 +139,8 @@ async def _wa_check(phone: str) -> tuple[bool, str]:
             True,
             phone,
         )  # TEST_MODE=1: número "existe" no zap sem chamar a Evolution API.
-    if getattr(settings, "NOTIFY_MODE", "local") == "remote":
-        return await _wa_check_remote(phone)
-    async with get_client() as wa:
-        resolved = await wa.resolve_br_number(phone)
-        result = await wa.check_numbers([resolved])
-    exists = bool(result and result[0].get("exists"))
-    return exists, resolved
+    # phone-check via notify-server (o WhatsApp direto saiu junto com o adapter local do notify).
+    return await _wa_check_remote(phone)
 
 
 def _check_phone_whatsapp(phone: str) -> tuple[bool, str]:

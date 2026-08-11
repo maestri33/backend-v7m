@@ -43,56 +43,6 @@ def test_tts_voice_fallback_feminina():
     assert _minimax_voice_for_gender(None) == _minimax_voice_for_gender("M")
 
 
-def test_idempotency_key_unica():
-    """2x send com mesma idempotency_key devolve a mesma Notification."""
-    from notify.interface.send import send
-    from notify.models import Notification
-    from django.conf import settings
-
-    settings.TEST_MODE = True
-
-    key = "test_idem_001"
-    n1 = send(
-        text="oi",
-        caller="test",
-        phone="551199990001",
-        idempotency_key=key,
-        run_sync=False,
-    )
-    n2 = send(
-        text="oi",
-        caller="test",
-        phone="551199990001",
-        idempotency_key=key,
-        run_sync=False,
-    )
-    assert n1 == n2
-    assert Notification.objects.filter(idempotency_key=key).count() == 1
-
-
-def test_dispatch_dry_run_nao_chama_rede():
-    """TEST_MODE=True: canais marcados SENT, nada de rede."""
-    from notify.interface.send import send
-    from notify.models import Notification
-    from django.conf import settings
-
-    settings.TEST_MODE = True
-
-    nid = send(
-        text="teste dry run",
-        caller="test",
-        phone="551199990002",
-        email="a@b.com",
-        whatsapp=True,
-        email_channel=True,
-        run_sync=True,
-    )
-    n = Notification.objects.get(external_id=nid)
-    assert n.whatsapp_status == "sent"
-    assert n.email_status == "sent"
-    assert n.attempts == 1
-
-
 def test_minimax_client_direct_mode():
     """MiniMaxClient(direct=True) usa MINIMAX_DIRECT_* em vez de MINIMAX_*."""
     from integrations.ai.minimax import MiniMaxClient

@@ -12,9 +12,8 @@ Tudo exige SUPERUSER (`require_superuser`). `event` é o slug do Template (únic
 A fonte de verdade é o DB (`notify.Template`); o `notify/seed/templates.md` é só o seed inicial
 (default: cria o que falta; `--force` sobrescreve). Edições via este CRUD prevalecem sobre o seed.
 
-Fase 2 (`NOTIFY_MODE=remote`): `/history` vira proxy do GET /v1/notifications do notify-server e
-as MUTAÇÕES de Template/Trigger fazem dual-write (local + push pro servidor, atômico) — o espelho
-local fica coeso, então rollback de modo é seguro e preview/GET/storytelling seguem locais.
+`/history` é proxy do GET /v1/notifications do notify-server; as MUTAÇÕES de Template/Trigger fazem
+dual-write (espelho local + push pro servidor, atômico) — preview/GET/storytelling seguem locais.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from ninja import Router, Schema
 from api.auth import require_superuser
 from notify.interface import remote
 from notify.interface import staff as notify_staff
-from notify.models import Notification, Template, Trigger
+from notify.models import Template, Trigger
 from users.exceptions import NotFound
 
 router = Router(tags=["notify"])
@@ -83,10 +82,9 @@ class NotificationOut(Schema):
     created_at: str
 
 
-# ── Fase 2 (NOTIFY_MODE=remote) ────────────────────────────────────────────────
-# A flag + o wrapper de chamada ao servidor moram em `notify.interface.remote` (compartilhados com
-# as mutações). O dual-write de Template/Trigger virou o módulo `notify.interface.staff` (importado
-# como `notify_staff`) — o router aqui é adapter fino.
+# ── notify-server ───────────────────────────────────────────────────────────────
+# O wrapper de chamada ao servidor mora em `notify.interface.remote`; o dual-write de Template/Trigger
+# virou o módulo `notify.interface.staff` (importado como `notify_staff`) — o router aqui é adapter fino.
 
 
 @router.get("/history", response=list[NotificationOut])
@@ -103,72 +101,41 @@ def notify_history(
     skipped). `limit` máx 500. Modo remote: proxy do notify-server (a verdade dos envios mora lá)."""
     require_superuser(request.auth)
     limit = max(1, min(int(limit), 500))
-    if remote.is_remote():
-        from notify.sdk import client
+    from notify.sdk import client
 
-        rows = remote.server_call(
-            lambda: client.get_notifications(
-                caller=caller,
-                whatsapp_status=whatsapp_status,
-                email_status=email_status,
-                tts_status=tts_status,
-                limit=limit,
-            )
+    # A verdade dos envios mora no notify-server (a tabela local de Notification foi aposentada
+    # junto com o adapter local). O /history é sempre proxy do GET /v1/notifications.
+    rows = remote.server_call(
+        lambda: client.get_notifications(
+            caller=caller,
+            whatsapp_status=whatsapp_status,
+            email_status=email_status,
+            tts_status=tts_status,
+            limit=limit,
         )
-        return [
-            NotificationOut(
-                external_id=str(r.get("external_id") or ""),
-                caller=r.get("caller"),
-                recipient_phone=r.get("recipient_phone"),
-                recipient_email=r.get("recipient_email"),
-                title=r.get("title"),
-                subject=r.get("subject"),
-                text=r.get("text") or "",
-                want_whatsapp=bool(r.get("want_whatsapp")),
-                want_email=bool(r.get("want_email")),
-                want_tts=bool(r.get("want_tts")),
-                whatsapp_status=r.get("whatsapp_status"),
-                email_status=r.get("email_status"),
-                tts_status=r.get("tts_status"),
-                whatsapp_error=r.get("whatsapp_error"),
-                email_error=r.get("email_error"),
-                tts_error=r.get("tts_error"),
-                attempts=int(r.get("attempts") or 0),
-                created_at=r.get("created_at") or "",
-            )
-            for r in rows
-        ]
-    qs = Notification.objects.order_by("-created_at")
-    if caller:
-        qs = qs.filter(caller=caller)
-    if whatsapp_status:
-        qs = qs.filter(whatsapp_status=whatsapp_status)
-    if email_status:
-        qs = qs.filter(email_status=email_status)
-    if tts_status:
-        qs = qs.filter(tts_status=tts_status)
+    )
     return [
         NotificationOut(
-            external_id=str(n.external_id),
-            caller=n.caller,
-            recipient_phone=n.recipient_phone,
-            recipient_email=n.recipient_email,
-            title=n.title,
-            subject=n.subject,
-            text=n.text,
-            want_whatsapp=n.want_whatsapp,
-            want_email=n.want_email,
-            want_tts=n.want_tts,
-            whatsapp_status=n.whatsapp_status,
-            email_status=n.email_status,
-            tts_status=n.tts_status,
-            whatsapp_error=n.whatsapp_error,
-            email_error=n.email_error,
-            tts_error=n.tts_error,
-            attempts=n.attempts,
-            created_at=n.created_at.isoformat(),
+            external_id=str(r.get("external_id") or ""),
+            caller=r.get("caller"),
+            recipient_phone=r.get("recipient_phone"),
+            recipient_email=r.get("recipient_email"),
+            title=r.get("title"),
+            subject=r.get("subject"),
+            text=r.get("text") or "",
+            want_whatsapp=bool(r.get("want_whatsapp")),
+            want_email=bool(r.get("want_email")),
+            want_tts=bool(r.get("want_tts")),
+            whatsapp_status=r.get("whatsapp_status"),
+            email_status=r.get("email_status"),
+            tts_status=r.get("tts_status"),
+            whatsapp_error=r.get("whatsapp_error"),
+            email_error=r.get("email_error"),
+            tts_error=r.get("tts_error"),
+            attempts=int(r.get("attempts") or 0),
+            created_at=r.get("created_at") or "",
         )
-        for n in qs[:limit]
+        for r in rows
     ]
 
 
