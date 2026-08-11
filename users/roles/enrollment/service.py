@@ -124,13 +124,13 @@ def _rg_started_at(rg):
     return _analysis.started_at_from(raw, coerce_tz=False)
 
 
-def _reconcile_stale_analyses(enr: Enrollment) -> None:
+def _reconcile_stale_analyses(enr: Enrollment) -> bool:
     """TTL guard do RG (proposta #2): `pending` do DOCUMENTO que estourou o prazo vira `review` — o
-    aluno nunca fica preso em "analisando…" se a task da IA morreu. Idempotente; roda nas LEITURAS.
+    aluno nunca fica preso em "analisando…" se a task da IA morreu. Idempotente (re-checa is_stale).
+    Devolve True se flipou.
 
-    A selfie SAIU daqui: seu envelhecimento (pending→review+notify) roda no job agendado
-    `tasks.age_stale_selfies` (Django-Q), nunca numa leitura — um GET não pode mutar/notificar
-    (idempotência HTTP)."""
+    Roda SÓ no job agendado `age_stale_rg` (Django-Q), NUNCA numa leitura — um GET não pode
+    mutar/notificar (idempotência HTTP), espelhando a selfie (`age_stale_selfies`)."""
     from users.roles import _analysis
 
     rg = documents_iface.get_rg(str(enr.user.external_id))
@@ -147,6 +147,22 @@ def _reconcile_stale_analyses(enr: Enrollment) -> None:
             _analysis.stale_reason(),
             rg.validation_result or {},
         )
+        return True
+    return False
+
+
+def age_stale_rg() -> int:
+    """Job agendado (Django-Q): RGs `pending` cujo TTL estourou → `review` + notifica coord.
+
+    Tirou o reconcile-on-read do RG dos GETs (`me_dict`, `get_rg_section`): um GET não pode
+    mutar/notificar (idempotência HTTP), igual à selfie. Idempotente: `_reconcile_stale_analyses`
+    re-checa is_stale e o flip tira o RG do filtro `pending`, então rodar 2× não duplica o notify."""
+    from users.documents.models import RG
+
+    stale = Enrollment.objects.select_related("user").filter(
+        user__document__rg__validation_status=RG.Validation.PENDING
+    )
+    return sum(_reconcile_stale_analyses(enr) for enr in stale)
 
 
 def age_stale_selfies() -> int:
@@ -212,9 +228,8 @@ def me_dict(enr: Enrollment) -> dict:
     numa chamada só. Bloco `None` = seção ainda não preenchida; `address_complete` = endereço pronto."""
     from users.roles import _address_proof
 
-    _reconcile_stale_analyses(
-        enr
-    )  # TTL guard (proposta #2): pending estourado → review, aqui também
+    # Leitura PURA: o envelhecimento do RG (pending estourado → review + notify) roda no job
+    # `age_stale_rg` (Django-Q), nunca aqui — um GET não pode mutar/notificar (idempotência HTTP).
     user_ext = str(enr.user.external_id)
     p = profiles.get(enr.user)
 
@@ -548,7 +563,7 @@ def get_rg_section(*, user_external_id: str) -> dict:
     """GET da seção documento (plan/13): fotos + validação + TODOS os campos (extraídos pela IA
     ou digitados) + `missing_fields` (o que o aluno ainda precisa completar)."""
     enr = _require(user_external_id)
-    _reconcile_stale_analyses(enr)  # TTL guard (proposta #2)
+    # Leitura PURA (idempotência HTTP): o flip do RG estourado mora no job `age_stale_rg`.
     return _rg_section_dict(enr)
 
 
