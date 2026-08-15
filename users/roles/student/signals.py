@@ -19,7 +19,7 @@ def on_student_created(sender, instance, created: bool, **kwargs) -> None:
         return
     promoter = lead.promoter
     try:
-        from notify.interface.events import send_event
+        from notifications import send_event
 
         send_event(
             "enrollment.concluded_referral",

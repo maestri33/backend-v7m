@@ -1027,7 +1027,7 @@ def _resume_link() -> str:
 
 def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
     """Entrega ao notify-server o evento e os dados necessários para renderização."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     p = profiles.get(enr.user)
     ctx = dict(placeholders)
@@ -1038,7 +1038,6 @@ def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
             event_key,
             profile=p,
             ctx=ctx,
-            subject="Sua matrícula — atualização",
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -1052,7 +1051,7 @@ def _notify_rg_rejected(enr: Enrollment, reason: str | None) -> None:
 
 def _notify_rg_review(enr: Enrollment, reason: str | None) -> None:
     # wave-2: send_event lê teor/canais/is_tts do Template no DB. WhatsApp-only (coordenador).
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     coord = enr.hub.coordinator
     if coord is None:
@@ -1063,7 +1062,6 @@ def _notify_rg_review(enr: Enrollment, reason: str | None) -> None:
             "enrollment.rg_in_review",
             profile=cp,
             ctx={"detail": (reason or "").strip()},
-            channels_override=("whatsapp",),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("enrollment.notify_rg_review_failed", error=str(exc))
@@ -1414,7 +1412,7 @@ def _notify_selfie_approved(enr: Enrollment) -> None:
 
 def _notify_selfie_review(enr: Enrollment) -> None:
     # wave-2: send_event lê teor/canais/is_tts do Template no DB. WhatsApp-only (coordenador).
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     coord = enr.hub.coordinator
     if coord is None:
@@ -1424,7 +1422,6 @@ def _notify_selfie_review(enr: Enrollment) -> None:
         send_event(
             "enrollment.selfie_in_review",
             profile=cp,
-            channels_override=("whatsapp",),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("enrollment.notify_selfie_review_failed", error=str(exc))
@@ -1496,7 +1493,7 @@ def _save_selfie(enr: Enrollment, image_bytes: bytes, content_type: str) -> str:
 
 def _notify_coordinator_awaiting(enr: Enrollment) -> None:
     # wave-2: send_event lê teor/canais/is_tts do Template no DB. WhatsApp-only (coordenador).
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     coord = enr.hub.coordinator
     if coord is None:
@@ -1506,7 +1503,6 @@ def _notify_coordinator_awaiting(enr: Enrollment) -> None:
         send_event(
             "enrollment.awaiting_release",
             profile=cp,
-            channels_override=("whatsapp",),
             idempotency_key=f"enr_awaiting_{enr.external_id}",
         )
     except Exception as exc:  # noqa: BLE001
@@ -1827,7 +1823,7 @@ def _notify_fee_event(
 
     wave-2: send_event lê teor/canais/is_tts do Template no DB. injeção de placeholders via ctx
     (student_name, amount, etc.)."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     coord = enr.hub.coordinator
     if coord is None:
@@ -2009,7 +2005,7 @@ def list_reviews_for_hub(*, hub) -> dict:
 
 def _notify_released(enr: Enrollment) -> None:
     # wave-2: send_event lê teor/canais/is_tts do Template no DB.
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     p = profiles.get(enr.user)
     try:
@@ -2027,7 +2023,7 @@ def _notify_credentials(enr: Enrollment, *, login: str, password: str) -> None:
     senha em voz). Link = INSTITUTION_LOGIN_URL. Best-effort (§12); idempotente por chave.
 
     wave-2: send_event com ctx={login,password,link} — o body_md do Template contém {login}/{password}/{link}."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     p = profiles.get(enr.user)
     link = getattr(settings, "INSTITUTION_LOGIN_URL", "") or ""

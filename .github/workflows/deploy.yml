@@ -38,8 +38,8 @@ jobs:
           # mostra quais migrations vão rodar (capturado no log pra auditoria)
           .venv/bin/python manage.py showmigrations --plan | tail -20
           .venv/bin/python manage.py migrate --noinput
-          # seed templates de notificação (idempotente: default cria só o que falta no DB)
-          .venv/bin/python manage.py notify_seed_templates || true
+          # catálogo fixo: cria ausentes, atualiza defaults e preserva edições feitas no admin
+          .venv/bin/python manage.py seed_notification_templates
           # pré-baixa/carrega o modelo InsightFace (~326MB) AQUI — nunca dentro de um request/task
           # (fix Marilu 2026-07-05: 1º upload de documento pendurava o worker baixando o modelo).
           # best-effort: egress bloqueado não derruba o deploy (biometria degrada pra `review`).

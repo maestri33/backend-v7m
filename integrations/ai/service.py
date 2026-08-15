@@ -172,6 +172,32 @@ def _run(
 # ---------------------------------------------------------------------------
 
 
+def generate_text(
+    prompt: str,
+    *,
+    caller: str,
+    instruction: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    model: str | None = None,
+) -> str:
+    """Gera texto natural auditado e devolve somente o conteúdo útil."""
+
+    async def attempt(client, m):
+        return await client.text(
+            prompt,
+            model=m,
+            instruction=instruction,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    result, _p, _m, _c = _run(
+        AiCall.Operation.TEXT, caller, attempt, providers.fallback_chain(model)
+    )
+    return _strip_think(result.content).strip('"')
+
+
 def generate_json(
     prompt: str,
     *,
@@ -381,6 +407,17 @@ def describe_image(
     por tentativa, pelo provider REAL que serviu.
     """
     import base64
+
+    if settings.TEST_EXTERNAL_ADAPTERS:
+        from core.test_adapters import kyc_result
+
+        outcome, reason = kyc_result()
+        verdict = {
+            "approved": "APROVADO",
+            "rejected": "REPROVADO",
+            "review": "REVISÃO",
+        }[outcome]
+        return f"{verdict}. {reason}"
 
     from .minimax import MiniMaxClient
 

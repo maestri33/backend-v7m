@@ -21,6 +21,7 @@ class AiCall(models.Model):
     """
 
     class Operation(models.TextChoices):
+        TEXT = "text", "text"
         JSON = "json", "json"
         SUMMARIZE = "summarize", "summarize"
         GRADE = "grade", "grade"

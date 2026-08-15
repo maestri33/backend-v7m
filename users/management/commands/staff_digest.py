@@ -48,7 +48,7 @@ class Command(BaseCommand):
         to = o["to"]
         if not to:
             raise CommandError("--commit exige --to <external_id|telefone> do staff.")
-        from notify.interface.send import send_adhoc
+        from notifications import send_adhoc
 
         # heurística simples: só dígitos (>=10) = telefone livre; senão external_id de User.
         digits = "".join(c for c in to if c.isdigit())
@@ -58,7 +58,6 @@ class Command(BaseCommand):
         kwargs = {"phone": to} if is_phone else {"to_user": to}
         ext = send_adhoc(
             message=text,
-            subject="Resumo financeiro — Supletivo Brasil",
             caller="staff.digest",
             **kwargs,
         )

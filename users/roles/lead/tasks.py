@@ -84,7 +84,7 @@ def fetch_whatsapp_avatar(profile_pk: int) -> str:
         return "test_mode"
 
     try:
-        from notify.sdk import client as notify_client
+        from integrations.notify import client as notify_client
 
         photo = notify_client.phone_avatar(profile.phone)
     except Exception as exc:  # noqa: BLE001 — enfeite: falhou, ficou sem foto

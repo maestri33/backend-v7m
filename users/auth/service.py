@@ -20,8 +20,8 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.db import IntegrityError, transaction
 
-from notify.sdk import client as notify_client
-from notify.sdk.client import NotifyServerError
+from integrations.notify import client as notify_client
+from integrations.notify.client import NotifyServerError
 from integrations.tools.cpf.scripts import cpfhub
 from users.auth import validation
 from users.auth.models import User
@@ -516,22 +516,19 @@ def _notify_cpf_conflict(owner_profile, attempt_phone: str | None) -> None:
     do funil v2): data, horário e o número usado, orientando acionar o suporte. Best-effort (§12)."""
     from django.utils import timezone
 
-    from notify.interface.send import send
+    from notifications import send_event
 
     when = timezone.localtime()
     numero = _mask_phone_br(attempt_phone) if attempt_phone else "desconhecido"
-    text = (
-        "🔒 Alguém tentou usar o seu CPF para criar um cadastro no Supletivo Brasil "
-        f"em {when.strftime('%d/%m/%Y')} às {when.strftime('%H:%M')}, com o número {numero}. "
-        "O cadastro foi bloqueado e desfeito automaticamente. Se não foi você, fale com o nosso "
-        "suporte por este WhatsApp."
-    )
     try:
-        send(
-            text=text,
-            caller="auth.cpf_conflict",
+        send_event(
+            "auth.cpf_conflict",
             phone=owner_profile.phone,
-            whatsapp=True,
+            ctx={
+                "data": when.strftime("%d/%m/%Y"),
+                "hora": when.strftime("%H:%M"),
+                "numero": numero,
+            },
         )
     except Exception as exc:  # noqa: BLE001 — segurança avisada é best-effort, não muda o 409
         logger.warning("auth.cpf_conflict_notify_failed", error=type(exc).__name__)

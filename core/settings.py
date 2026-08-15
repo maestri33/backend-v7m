@@ -107,10 +107,13 @@ INSTALLED_APPS = [
     # biometria facial (face-match doc×selfie com InsightFace, CPU) — checks só AVISAM (não travam boot)
     "integrations.tools.biometric.apps.BiometricConfig",
     # apps de negócio do monólito
-    "notify.apps.NotifyConfig",
+    # Catálogo/renderização pertencem ao backend; esta integração só entrega payload pronto.
+    "integrations.notify.apps.NotifyIntegrationConfig",
     # users = o "quem" (identidade + papéis + dados pessoais). auth/jwt/otp/profiles/roles vivem
     # dentro dele como pacotes; um migration set só (CONVENTION §2). É o AUTH_USER_MODEL.
     "users.apps.UsersConfig",
+    # Eventos fixos, conteúdo editável no admin e renderização de notificações de negócio.
+    "notifications.apps.NotificationsConfig",
     # finance = motor de comissão/payout (commissions + payout; fees vem depois). Consome users
     # (FK→User, pix do profile), asaas.payout (PIX-out) e notify. Pasta em inglês (Victor 2026-06-01).
     "finance.apps.FinanceConfig",
@@ -344,6 +347,10 @@ for _ia_item in env.list("IA_FALLBACK_CHAIN", default=[]):
 IA_DEFAULT_TEMPERATURE = env.float("IA_DEFAULT_TEMPERATURE", default=0.3)
 IA_MAX_TOKENS = env.int("IA_MAX_TOKENS", default=0)
 IA_TIMEOUT = env.float("IA_TIMEOUT", default=60.0)
+# Exposto p/ api.health (ping em <base>/models) — o provider loader abaixo já consome essa var pelo
+# nome dinâmico IA_<NAME>_BASE_URL; espelhar aqui evita o getattr(...) no health check ter que
+# inspecionar IA_PROVIDERS["omniroute"] (frágil se o nome do provider mudar no .env).
+IA_OMNIROUTE_BASE_URL = env("IA_OMNIROUTE_BASE_URL", default="")
 # Modelo multimodal do gateway OmniRoute para VISÃO (describe_image via /v1/chat/completions). Vazio
 # => o primário OmniRoute é pulado e a visão vai direto pro MiniMax-M3 (fallback sempre presente).
 IA_OMNIROUTE_VISION_MODEL = env("IA_OMNIROUTE_VISION_MODEL", default="")
@@ -433,6 +440,16 @@ NOTIFY_SERVER_URL = env("NOTIFY_SERVER_URL", default="http://notify.v7m.org")
 NOTIFY_API_KEY = os.environ.get("NOTIFY_API_KEY", "")
 NOTIFY_TIMEOUT = env.float("NOTIFY_TIMEOUT", default=10.0)
 NOTIFY_SYNC_TIMEOUT = env.float("NOTIFY_SYNC_TIMEOUT", default=60.0)
+# Hosts que podem ser usados como mídia de notificação. Vazio = mídia remota desabilitada.
+# A allowlist evita transformar notify-server/providers em proxy para URLs internas (SSRF).
+NOTIFICATION_MEDIA_ALLOWED_HOSTS = env.list(
+    "NOTIFICATION_MEDIA_ALLOWED_HOSTS", default=[]
+)
+# Storytelling envia nome e uma faixa etária derivada a um LLM externo. É opt-in consciente:
+# desligado por padrão, mesmo quando o evento está marcado como storytelling no catálogo.
+NOTIFICATION_STORYTELLING_ENABLED = env.bool(
+    "NOTIFICATION_STORYTELLING_ENABLED", default=False
+)
 
 
 # Django-Q2 — fila async com broker no próprio banco (sem Redis). `qcluster` roda o worker.

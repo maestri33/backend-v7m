@@ -90,7 +90,7 @@ def _notify_captured(lead: Lead) -> None:
 
     Momento especial → WhatsApp **+ voz (TTS)**, voz por gênero. Teor/canais/is_tts vêm do Template
     no DB (`send_event`); `{nome}`/`{nome-completo}` resolvidos do profile. Best-effort (§12)."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     p = profiles.get(lead.user)
     if p is None:
@@ -114,7 +114,7 @@ def _notify_promoter_new_lead(lead: Lead) -> None:
 
     Avisa que um lead entrou pela indicação dele. Teor final o Victor edita depois. Best-effort (§12).
     `{name}` = 1º nome do promotor (do profile); `{lead_name}` vem no ctx."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     lead_p = profiles.get(lead.user)
     prom_p = profiles.get(lead.promoter)
@@ -141,7 +141,7 @@ def _notify_checkout(lead: Lead, checkout: Checkout) -> None:
 
     Best-effort (§12). Evento por método: `lead.checkout.pix` (com copia-e-cola) ou `lead.checkout.card`.
     Teor/canais do DB; `{valor}`/`{link}`/`{payload}` no ctx. TTS/wording = decisão do Victor no DB."""
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     profile = profiles.get(lead.user)
     if profile is None:
@@ -780,7 +780,7 @@ def _notify_paid(lead: Lead, hub, checkout: Checkout | None = None) -> None:
     Migração 2026-07-02: usa `send_event` (Template no DB) — canais/is_tts/storytelling vêm do DB,
     `{nome}`/`{nome-completo}` resolvidos do profile. Trigger inativo → send_event devolve None (no-op).
     """
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     profile = profiles.get(lead.user)
     base = str(lead.external_id)

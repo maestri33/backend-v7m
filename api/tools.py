@@ -134,7 +134,7 @@ def tools_notifications_send(request, payload: ToolsNotifyIn):
     todos com destino). Devolve o `external_id` da notificação enfileirada (audit no notify)."""
     require_internal_ip(request)
 
-    from notify.interface.send import send_adhoc
+    from notifications import send_adhoc
 
     external_id = send_adhoc(
         message=payload.message,

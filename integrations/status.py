@@ -30,7 +30,7 @@ _REGISTRY: dict[str, dict] = {
     "notify": {
         "env": ["NOTIFY_SERVER_URL", "NOTIFY_API_KEY"],
         "scope": "notify",
-        "flow": "notify-server: WhatsApp, e-mail, TTS, templates e histórico",
+        "flow": "backend renderiza o conteúdo → notify-server despacha WhatsApp, e-mail ou TTS",
     },
     "ai": {
         "env": [

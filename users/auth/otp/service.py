@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from pathlib import Path
 
 import structlog
 from django.conf import settings
@@ -30,8 +29,6 @@ from users.exceptions import RateLimited
 
 logger = structlog.get_logger()
 
-_TEMPLATE_PATH = Path(__file__).parent / "otp.md"
-
 # Desfechos de `verify` — o front do funil escolhe a tela por eles (ver docstring de verify).
 OK = "ok"
 INVALID = "invalid"
@@ -45,19 +42,6 @@ def _generate_code() -> str:
 def _hash_code(code: str) -> str:
     """SHA256 — o código em texto plano NUNCA é persistido."""
     return hashlib.sha256(code.encode()).hexdigest()
-
-
-def _render(code: str, ttl_minutos: int) -> str:
-    raw = _TEMPLATE_PATH.read_text(encoding="utf-8")
-    footer = settings.OTP_FOOTER
-    rodape = f"\n\n{footer}" if footer else ""
-    return (
-        raw.replace("{{codigo}}", code)
-        .replace("{{ttl_minutos}}", str(ttl_minutos))
-        .replace("{{rodape}}", rodape)
-        .rstrip()
-        + "\n"
-    )
 
 
 def _check_and_record_rate_limit(user) -> None:
@@ -156,15 +140,16 @@ def generate_and_send(user) -> OtpCode:
         return otp
 
     ttl_min = settings.OTP_TTL_S // 60
-    content = _render(code, ttl_min)
+    from notifications import send_event
 
-    from notify.interface.send import send
-
-    notif_external_id = send(
-        text=content,
-        caller="users.auth.otp",
+    notif_external_id = send_event(
+        "auth.otp",
         phone=profile.phone,
-        whatsapp=True,
+        ctx={
+            "codigo": code,
+            "ttl_minutos": ttl_min,
+            "rodape": f"\n\n{settings.OTP_FOOTER}" if settings.OTP_FOOTER else "",
+        },
     )
     otp.status = STATUS_SENT
     otp.notification_external_id = notif_external_id

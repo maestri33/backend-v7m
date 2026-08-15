@@ -52,9 +52,9 @@ def healthz(request):
 staff_health_router = Router(tags=["staff-health"])
 
 
-def _ping(url: str, timeout: float = 5.0) -> dict:
+def _ping(url: str, timeout: float = 5.0, headers: dict | None = None) -> dict:
     try:
-        r = httpx.get(url, timeout=timeout)
+        r = httpx.get(url, timeout=timeout, headers=headers or {})
         return {
             "ok": r.status_code < 500,
             "status": r.status_code,
@@ -80,10 +80,18 @@ def staff_health(request):
         if settings.INFINITEPAY_HANDLE
         else {"ok": None, "note": "não configurado"},
         "omniroute": _ping(
-            getattr(settings, "IA_OMNIROUTE_BASE_URL", "") + "/v1/models"
+            getattr(settings, "IA_OMNIROUTE_BASE_URL", "") + "/models",
+            headers=(
+                {"Authorization": f"Bearer {settings.IA_PROVIDERS['omniroute']['api_key']}"}
+                if settings.IA_PROVIDERS.get("omniroute", {}).get("api_key")
+                else None
+            ),
+            timeout=15.0,
         )
         if getattr(settings, "IA_OMNIROUTE_BASE_URL", "")
         else {"ok": None, "note": "não configurado"},
+        # ^ quando REQUIRE_API_KEY=false no OmniRoute, o `headers` acima vira None (IA_OMNIROUTE_API_KEY
+        # está vazia) e o ping é anônimo. Se re-habilitar auth, basta preencher IA_OMNIROUTE_API_KEY no .env.
         "notify": _ping(settings.NOTIFY_SERVER_URL + "/healthz")
         if settings.NOTIFY_SERVER_URL
         else {"ok": None, "note": "não configurado"},

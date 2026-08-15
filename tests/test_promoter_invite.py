@@ -99,16 +99,19 @@ def test_promoter_invite_recusa_cpf_invalido(client):
 
 
 def test_promoter_invite_envia_com_idempotencia(monkeypatch):
-    from notify.interface import send as notify_send
+    from notifications import delivery as notification_delivery
     from users.roles.promoter import service as promoter_iface
 
     promoter, _token = _promoter_token()
     calls = []
     monkeypatch.setattr(
-        notify_send, "send", lambda **kwargs: calls.append(kwargs) or "notification-id"
+        notification_delivery,
+        "send_event",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or "notification-id",
     )
 
     assert promoter_iface._send_lead_invite(promoter.user, "5543999999999") == "notification-id"
-    assert calls[0]["caller"] == "promoter.lead_invite"
-    assert calls[0]["phone"] == "5543999999999"
-    assert calls[0]["idempotency_key"]
+    args, kwargs = calls[0]
+    assert args == ("promoter.lead_invite",)
+    assert kwargs["phone"] == "5543999999999"
+    assert kwargs["idempotency_key"]

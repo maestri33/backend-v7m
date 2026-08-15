@@ -67,7 +67,7 @@ def _notify_coordinator_assigned(user: User) -> None:
     """Avisa o usuário que acabou de virar coordenador de um polo (best-effort, §12).
 
     wave-2: send_event lê teor/canais/is_tts do Template no DB."""
-    from notify.interface.events import send_event
+    from notifications import send_event
     from users.profiles import interface as profiles
 
     p = profiles.get(user)

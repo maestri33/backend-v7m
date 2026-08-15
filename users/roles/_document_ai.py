@@ -119,10 +119,6 @@ def check_photo(
     IA fora do ar → REVIEW (humano decide). O motivo SEMPRE volta (plan/9)."""
     if doc_type not in DOC_TYPES:
         raise ValueError(f"doc_type inválido: {doc_type!r} (use um de {DOC_TYPES})")
-    if settings.TEST_EXTERNAL_ADAPTERS:
-        from core.test_adapters import kyc_result
-
-        return kyc_result()
     from integrations.ai import service as ai
 
     doc_hint = _DOC_TYPE_HINT[doc_type]

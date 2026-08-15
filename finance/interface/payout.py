@@ -81,21 +81,13 @@ def _notify_commission_paid(pr: PaymentRequest) -> None:
         phone = (profile.phone if profile else None) or None
         if not phone:
             return  # sem telefone não há canal — nada a fazer (não falha)
-        first = ((profile.name or "").strip().split() or [""])[0] if profile else ""
-        saudacao = f"Olá, {first}! " if first else "Olá! "
         valor = f"{pr.amount:.2f}".replace(".", ",")
-        from notify.interface.send import send
+        from notifications import send_event
 
-        send(
-            text=(
-                f"{saudacao}Sua comissão foi paga. 💸\n\n"
-                f"Acabamos de enviar o PIX de R$ {valor} referente ao fechamento da sua semana. "
-                f"O valor deve cair na sua conta em instantes."
-            ),
-            title="Comissão paga",
-            caller="finance.commission_paid",
-            phone=phone,
-            gender=(profile.gender if profile else None) or None,
+        send_event(
+            "finance.commission_paid",
+            profile=profile,
+            ctx={"valor": valor},
             idempotency_key=f"commission_paid:{pr.external_reference}",
         )
     except Exception as exc:  # noqa: BLE001 — notificar nunca derruba o pagamento (§12)

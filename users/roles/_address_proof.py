@@ -282,13 +282,12 @@ def validate_and_store(user_external_id: str, *, caller: str) -> str:
     # Notify explícito só em rejeição (a aprovação o usuário descobre pelo /me normal).
     if status == REJECTED and p is not None:
         try:
-            from notify.interface.events import send_event
+            from notifications import send_event
 
             send_event(
                 "enrollment.address_proof_rejected",
                 profile=p,
-                subject="Seu comprovante de endereço precisa de ajuste",
-                body_md_override=payload.get("reason", "")[:400],
+                ctx={"detail": payload.get("reason", "")[:400]},
             )
         except Exception:  # noqa: BLE001
             logger.warning("address_proof.notify_failed", caller=caller, status=status)

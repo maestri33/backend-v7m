@@ -47,10 +47,10 @@ def test_model_sem_fk_para_notify():
 
 def test_otp_grava_string_devolvida_pelo_send(monkeypatch):
     """generate_and_send persiste EXATAMENTE o retorno de send() (str), sem lookup de model."""
-    import notify.interface.send as notify_send
+    from notifications import delivery as notification_delivery
 
     sentinel = str(uuid.uuid4())
-    monkeypatch.setattr(notify_send, "send", lambda **kwargs: sentinel)
+    monkeypatch.setattr(notification_delivery, "send_event", lambda *args, **kwargs: sentinel)
 
     otp = otp_service.generate_and_send(_user_com_phone("11999990011"))
 

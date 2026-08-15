@@ -1,6 +1,6 @@
 """Testes do phone/check no notify-server.
 
-Mocka a `notify.sdk.client.phone_check_async` (ponto único de rede do caminho remote).
+Mocka a `integrations.notify.client.phone_check_async` (ponto único de rede do caminho remote).
 Cobrem: variantes BR no payload, primeiro exists → resolvido, nenhum → (False, original),
 cache de módulo (positivo E negativo, TTL 1h) e o mapeamento de erro que preserva os 3
 tratamentos por caller (register best-effort / change_phone estrito / TEST_MODE intocado).
@@ -11,7 +11,7 @@ import asyncio
 import httpx
 import pytest
 
-from notify.sdk.client import NotifyServerError
+from integrations.notify.client import NotifyServerError
 from users.auth import service
 from users.exceptions import IntegrationError
 
@@ -42,7 +42,7 @@ def sdk_mock(monkeypatch):
             raise result
         return result
 
-    monkeypatch.setattr("notify.sdk.client.phone_check_async", fake_phone_check_async)
+    monkeypatch.setattr("integrations.notify.client.phone_check_async", fake_phone_check_async)
     return state
 
 
@@ -135,7 +135,7 @@ def test_erro_nao_cacheia(remote_phone, sdk_mock):
 
 # ── SDK real transport (client.phone_check_async, um nível abaixo do fio) ───────
 #
-# Os testes acima mockam `notify.sdk.client.phone_check_async` — um nível ACIMA do fio real,
+# Os testes acima mockam `integrations.notify.client.phone_check_async` — um nível ACIMA do fio real,
 # então um typo dentro do PRÓPRIO `phone_check_async` (path errado, body mal montado, header
 # ausente) passaria 100% verde ali. Este teste mocka só o transporte (`httpx.AsyncClient.request`,
 # o método que `_request_async` de fato chama) e exercita o corpo REAL de `phone_check_async`.
@@ -144,7 +144,7 @@ def test_erro_nao_cacheia(remote_phone, sdk_mock):
 def test_phone_check_async_corpo_real_da_requisicao(settings, monkeypatch):
     """Mocka o transporte (httpx.AsyncClient.request) — path, body e header são os que o CÓDIGO
     de phone_check_async/_request_async realmente monta, não o que o teste presume."""
-    from notify.sdk import client
+    from integrations.notify import client
 
     settings.NOTIFY_SERVER_URL = "http://notify.test"
     settings.NOTIFY_API_KEY = "super-secret-key"

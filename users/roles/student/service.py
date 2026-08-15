@@ -1118,7 +1118,7 @@ def veteran_detail(*, user_external_id: str) -> dict:
 def _notify(student: Student, *, event: str, key: str, **ctx) -> None:
     """Notifica o ALUNO. Teor/canais/is_tts/storytelling vêm do Template no DB (`send_event`):
     `student.diploma_issued` é TTS+story (voz + discurso motivacional da IA); `{nome}` do profile."""
-    from notify.interface.events import send_event
+    from notifications import send_event
     from users.profiles import interface as profiles
 
     p = profiles.get(student.user)
@@ -1131,7 +1131,7 @@ def _notify(student: Student, *, event: str, key: str, **ctx) -> None:
 def _notify_coordinator(student: Student, *, event: str, key: str, **ctx) -> None:
     """Notifica o COORDENADOR do polo do aluno. Teor/canais do DB; `{nome}` do profile do coordenador.
     Sem coordenador ou sem profile → send_event devolve None (no-op, sem row morto)."""
-    from notify.interface.events import send_event
+    from notifications import send_event
     from users.profiles import interface as profiles
 
     coord = student.hub.coordinator

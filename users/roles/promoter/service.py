@@ -234,24 +234,17 @@ def invite_lead(*, promoter: Promoter, phone: str, cpf: str | None = None) -> di
 
 
 def _send_lead_invite(promoter_user, phone: str) -> str | None:
-    from notify.interface.send import send
+    from notifications import send_event
 
     link = ref_url(promoter_user)
     digest = hashlib.sha256(
         f"{promoter_user.external_id}:{phone}".encode()
     ).hexdigest()[:20]
     day = timezone.localdate().isoformat()
-    return send(
-        text=(
-            "Você recebeu um convite para conhecer o Supletivo V7M.\n\n"
-            f"Acesse com segurança pelo link: {link}\n\n"
-            "Você confirma seus próprios dados antes de qualquer matrícula."
-        ),
-        caller="promoter.lead_invite",
+    return send_event(
+        "promoter.lead_invite",
         phone=phone,
-        whatsapp=True,
-        email_channel=False,
-        tts=False,
+        ctx={"link": link},
         idempotency_key=f"promoter_lead_invite_{digest}_{day}",
     )
 
@@ -384,7 +377,7 @@ def list_for_hub(hub) -> list[dict]:
 def _notify_status(promoter: Promoter, event: str) -> None:
     # wave-2: send_event lê teor/canais/is_tts do Template no DB.
     from users.profiles import interface as profiles
-    from notify.interface.events import send_event
+    from notifications import send_event
 
     p = profiles.get(promoter.user)
     try:

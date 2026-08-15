@@ -67,21 +67,13 @@ class Command(BaseCommand):
 
         today = timezone.localdate().isoformat()
         sent = 0
-        from notify.interface.send import send
+        from notifications import send_event
 
         for t in targets:
-            saudacao = f"Olá, {t.name}! " if t.name else "Olá! "
-            send(
-                text=(
-                    f"{saudacao}Passando pra lembrar que a sua matrícula no Supletivo Brasil ainda "
-                    f"está aguardando o pagamento. 😊\n\n"
-                    f"É rapidinho, pelo link: {t.payment_link}\n\n"
-                    f"Se já pagou, pode ignorar esta mensagem — a confirmação é automática. "
-                    f"Qualquer dúvida, é só responder aqui que um atendente te ajuda."
-                ),
-                title="Sua matrícula está quase lá",
-                caller="lead.payment_reminder",
+            send_event(
+                "lead.payment_reminder",
                 phone=t.phone,
+                ctx={"nome": t.name or "", "link": t.payment_link},
                 gender=t.gender,
                 idempotency_key=f"payment_reminder:{t.lead_external_id}:{today}",
             )

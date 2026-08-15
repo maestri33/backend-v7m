@@ -499,13 +499,15 @@ def apply_grade(submission_id: int, grade_value, justification: str) -> None:
         # ponytail: signal post_save do Submission cria o bloco automaticamente.
         # Notify explícito no WhatsApp — fail-open (signal não cobre notify).
         try:
-            from notify.interface.events import send_event
+            from notifications import send_event
 
             send_event(
                 "training.submission_rejected",
-                profile=sub.user,
-                subject=f"Atividade rejeitada: {sub.material.title}",
-                body_md_override=(justification or "")[:400],
+                user=sub.user,
+                ctx={
+                    "material": sub.material.title,
+                    "detail": (justification or "")[:400],
+                },
             )
         except Exception:  # noqa: BLE001
             logger.warning(
@@ -586,7 +588,7 @@ def list_locked_promoters_for_hub(*, hub) -> list[dict]:
 def _notify(user, event: str, *, key: str, tts: bool = False) -> None:
     # Migração 2026-07-02: send_event lê teor/canais/is_tts do Template no DB. O arg `tts` ficou só
     # pra compat dos callers (_notify_cleared passa tts=True) — a fonte de verdade agora é o DB.
-    from notify.interface.events import send_event
+    from notifications import send_event
     from users.profiles import interface as profiles
 
     p = profiles.get(user)
