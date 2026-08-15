@@ -23,3 +23,6 @@ data/
 # credenciais de produção — nunca commitar
 .env.prod
 .env.prod.*
+
+# limpeza 2026-08-14
+.coverage
