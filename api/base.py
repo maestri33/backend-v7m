@@ -23,6 +23,7 @@ from users.exceptions import DomainError
 logger = structlog.get_logger()
 
 API_VERSION = "1.0"
+_DEFAULT_AUTH = object()
 
 
 class WhoamiOut(Schema):
@@ -41,7 +42,7 @@ class HealthOut(Schema):
     status: str
 
 
-def build_group(name: str, description: str, auth_override=None) -> NinjaAPI:
+def build_group(name: str, description: str, auth_override=_DEFAULT_AUTH) -> NinjaAPI:
     """Cria o `NinjaAPI` de um público: versionado, auth JWT default, com health + whoami.
 
     `auth_override` = força auth=None (grupo público como health) ou outro auth customizado."""
@@ -50,7 +51,7 @@ def build_group(name: str, description: str, auth_override=None) -> NinjaAPI:
         urls_namespace=f"api-{name}",
         title=f"API {name}",
         description=description,
-        auth=auth_override if auth_override is not None else JWTAuth(),
+        auth=JWTAuth() if auth_override is _DEFAULT_AUTH else auth_override,
     )
 
     @api.exception_handler(DomainError)

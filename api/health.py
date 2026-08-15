@@ -84,7 +84,7 @@ def staff_health(request):
         )
         if getattr(settings, "IA_OMNIROUTE_BASE_URL", "")
         else {"ok": None, "note": "não configurado"},
-        "notify": _ping(settings.NOTIFY_SERVER_URL + "/healthz")
+        "notify": _ping(settings.NOTIFY_SERVER_URL.rstrip("/") + "/v1/ready")
         if settings.NOTIFY_SERVER_URL
         else {"ok": None, "note": "não configurado"},
         "migrations_pending": _pending_migrations(),

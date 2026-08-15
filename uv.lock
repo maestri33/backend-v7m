@@ -74,7 +74,7 @@ requires-dist = [
     { name = "django-environ", specifier = ">=0.13.0" },
     { name = "django-ninja", specifier = ">=1.6.2" },
     { name = "django-ninja-jwt", specifier = ">=5.4.4" },
-    { name = "django-q2", specifier = ">=1.10.0" },
+    { name = "django-q2", specifier = ">=1.10.0,<1.11" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "insightface", specifier = ">=1.0.1" },
     { name = "pillow", specifier = ">=12.2.0" },
