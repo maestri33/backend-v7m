@@ -41,12 +41,18 @@ def _request(
     """Monta e executa a chamada HTTP (síncrona). Ponto ÚNICO de rede — monkeypatch nos testes."""
     if timeout is None:
         timeout = settings.NOTIFY_TIMEOUT
-    with httpx.Client(
-        base_url=settings.NOTIFY_SERVER_URL,
-        headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
-        timeout=timeout,
-    ) as client:
-        return client.request(method, path, json=json, params=params)
+    try:
+        with httpx.Client(
+            base_url=settings.NOTIFY_SERVER_URL,
+            headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
+            timeout=timeout,
+        ) as client:
+            return client.request(method, path, json=json, params=params)
+    except httpx.HTTPError as exc:
+        from integrations.monitoring import record_failure
+
+        record_failure("notify", f"{method} {path}", exc, error_code=type(exc).__name__)
+        raise
 
 
 async def _request_async(
@@ -59,12 +65,20 @@ async def _request_async(
     """Versão async do `_request` — p/ callers que já rodam dentro de event loop (_wa_check)."""
     if timeout is None:
         timeout = settings.NOTIFY_TIMEOUT
-    async with httpx.AsyncClient(
-        base_url=settings.NOTIFY_SERVER_URL,
-        headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
-        timeout=timeout,
-    ) as client:
-        return await client.request(method, path, json=json)
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.NOTIFY_SERVER_URL,
+            headers={"Authorization": f"Bearer {settings.NOTIFY_API_KEY}"},
+            timeout=timeout,
+        ) as client:
+            return await client.request(method, path, json=json)
+    except httpx.HTTPError as exc:
+        from integrations.monitoring import record_failure_async
+
+        await record_failure_async(
+            "notify", f"{method} {path}", exc, error_code=type(exc).__name__
+        )
+        raise
 
 
 def _error_body(resp):
@@ -81,10 +95,24 @@ def _ok(resp, method: str, path: str):
         logger.warning(
             "notify.sdk.error", method=method, path=path, status=resp.status_code
         )
-        raise NotifyServerError(resp.status_code, _error_body(resp))
+        error = NotifyServerError(resp.status_code, _error_body(resp))
+        from integrations.monitoring import record_failure
+
+        record_failure(
+            "notify",
+            f"{method} {path}",
+            error,
+            error_code=str(resp.status_code),
+            severity="critical" if resp.status_code in (401, 403) else "error",
+            context={"http_status": resp.status_code},
+        )
+        raise error
     logger.debug(
         "notify.sdk.request", method=method, path=path, status=resp.status_code
     )
+    from integrations.monitoring import record_success
+
+    record_success("notify", f"{method} {path}")
     return resp.json()
 
 
@@ -103,6 +131,9 @@ def post_send_event(payload: dict, *, run_sync: bool = False) -> dict | None:
         logger.debug(
             "notify.sdk.request", method="POST", path="/v1/send-event", status=404
         )
+        from integrations.monitoring import record_success
+
+        record_success("notify", "POST /v1/send-event", detail="event_not_dispatched")
         return None
     return _ok(resp, "POST", "/v1/send-event")
 
@@ -147,7 +178,21 @@ def phone_check(numbers: list[str]) -> list[dict]:
 async def phone_check_async(numbers: list[str]) -> list[dict]:
     """Versão async do `phone_check` — o `_wa_check` do auth roda dentro do event loop."""
     resp = await _request_async("POST", "/v1/phone/check", json={"numbers": numbers})
-    return _ok(resp, "POST", "/v1/phone/check")
+    from integrations.monitoring import record_failure_async, record_success_async
+
+    if resp.status_code >= 400:
+        error = NotifyServerError(resp.status_code, _error_body(resp))
+        await record_failure_async(
+            "notify",
+            "POST /v1/phone/check",
+            error,
+            error_code=str(resp.status_code),
+            severity="critical" if resp.status_code in (401, 403) else "error",
+            context={"http_status": resp.status_code},
+        )
+        raise error
+    await record_success_async("notify", "POST /v1/phone/check")
+    return resp.json()
 
 
 # ── staff (dual-write do painel — prefixo com a conta NOTIFY_ACCOUNT_SLUG) ──────

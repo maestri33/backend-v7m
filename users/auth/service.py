@@ -162,6 +162,19 @@ def _check_phone_whatsapp(phone: str) -> tuple[bool, str]:
         ) from exc
 
 
+def check_phone_whatsapp(phone: str) -> tuple[bool, str]:
+    """Valida e consulta um telefone sem criar conta, disparar OTP ou alterar estado.
+
+    Superfície pública para fluxos autenticados que só precisam confirmar o destino
+    (por exemplo, convite enviado por um promotor).
+    """
+    try:
+        normalized = validation.validate_phone(phone)
+    except ValueError as exc:
+        raise ValidationError(str(exc), code="PHONE_INVALID") from exc
+    return _check_phone_whatsapp(normalized)
+
+
 def _jitter() -> None:
     time.sleep(random.uniform(_JITTER_MIN, _JITTER_MAX))
 

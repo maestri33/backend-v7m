@@ -627,7 +627,9 @@ def create_self_study_lead(*, user, payment_method=None) -> dict:
 # ── pagamento (chamado pelo hook do webhook, CONVENTION §7) ─────────────────
 
 
-def mark_paid(*, provider: str, provider_payment_id: str, receipt_url=None) -> bool:
+def mark_paid(
+    *, provider: str, provider_payment_id: str, amount_cents=None, receipt_url=None
+) -> bool:
     """Casa o Checkout do lead por (provider, provider_payment_id). Se for nosso → marca pago + efeitos.
 
     `receipt_url` (do webhook) é guardado no Checkout e vai pro aluno na notify de pago. Idempotente
@@ -641,6 +643,18 @@ def mark_paid(*, provider: str, provider_payment_id: str, receipt_url=None) -> b
     )
     if checkout is None:
         return False
+
+    if amount_cents is not None:
+        expected_cents = int(checkout.amount * 100)
+        if int(amount_cents) < expected_cents:
+            logger.warning(
+                "lead.payment_amount_mismatch",
+                lead=str(checkout.lead.external_id),
+                provider=provider,
+                expected_cents=expected_cents,
+                paid_cents=int(amount_cents),
+            )
+            raise LeadError("payment_amount_mismatch")
 
     lead = checkout.lead
     if lead.status == Lead.Status.PAID:
@@ -776,12 +790,57 @@ def _notify_paid(lead: Lead, hub, checkout: Checkout | None = None) -> None:
     # aluno e não há comissão (Victor 2026-06-16).
     if not lead.self_study:
         promoter_profile = profiles.get(lead.promoter)
+        promoter_event, promoter_ctx = _promoter_paid_notification(lead.promoter)
+        notify_kwargs = {
+            "profile": promoter_profile,
+            "idempotency_key": f"lead_paid_promoter_{base}",
+        }
+        if promoter_ctx:
+            notify_kwargs["ctx"] = promoter_ctx
         _safe(
             "promoter",
-            "lead.paid.promoter",
-            profile=promoter_profile,
-            idempotency_key=f"lead_paid_promoter_{base}",
+            promoter_event,
+            **notify_kwargs,
         )
+
+
+def _promoter_paid_notification(promoter_user) -> tuple[str, dict | None]:
+    """Escolhe a mensagem real do pagamento: comissão simples ou progresso da bolsa."""
+    from users.roles.enrollment.models import Enrollment
+    from users.roles.promoter.models import Promoter
+    from users.roles.promoter.rules import (
+        BOLSA_ENROLL_THRESHOLD,
+        BOLSA_EXAM_THRESHOLD,
+        paid_referrals,
+    )
+
+    paid_count = paid_referrals(promoter_user)
+    promoter = Promoter.objects.filter(user=promoter_user).first()
+    if promoter is not None and promoter.pre_matriculado:
+        remaining = max(BOLSA_ENROLL_THRESHOLD - paid_count, 0)
+        remaining_text = "Falta 1." if remaining == 1 else f"Faltam {remaining}."
+        progress = (
+            f"Esta é a sua {paid_count}ª de {BOLSA_ENROLL_THRESHOLD} matrículas pagas "
+            f"para efetivar a bolsa. {remaining_text}"
+        )
+        return "lead.paid.promoter.scholarship", {"progress_text": progress}
+
+    is_bolsista = Enrollment.objects.filter(user=promoter_user, bolsista=True).exists()
+    if is_bolsista and BOLSA_ENROLL_THRESHOLD < paid_count <= BOLSA_EXAM_THRESHOLD:
+        if paid_count == BOLSA_EXAM_THRESHOLD:
+            progress = (
+                f"Você alcançou as {BOLSA_EXAM_THRESHOLD} matrículas pagas e cumpriu "
+                "o requisito de indicações da prova final."
+            )
+        else:
+            remaining = BOLSA_EXAM_THRESHOLD - paid_count
+            progress = (
+                f"Você já tem {paid_count} de {BOLSA_EXAM_THRESHOLD} matrículas pagas "
+                f"para o requisito da prova final. Faltam {remaining}."
+            )
+        return "lead.paid.promoter.scholarship", {"progress_text": progress}
+
+    return "lead.paid.promoter", None
 
 
 def get_lead(external_id: str) -> Lead | None:

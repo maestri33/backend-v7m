@@ -33,7 +33,7 @@ _DOC_DESC = {
     _T.TRANSCRIPT: "um histórico escolar",
     _T.BLOOD_TYPE: "um documento/cartão indicando o tipo sanguíneo",
     _T.ADDRESS_PROOF: "um comprovante de endereço (conta de consumo/correspondência recente)",
-    _T.ID_CARD: "um documento de identidade com foto (RG ou equivalente)",
+    _T.ID_CARD: "um RG brasileiro com foto (RG antigo ou CIN)",
     _T.BIRTH_CERTIFICATE: "uma certidão (nascimento/casamento)",
 }
 
@@ -56,7 +56,8 @@ _DOC_TYPE_HINT = {
         "manuscrito, selfie, tela de app sem endereço completo ou documento muito antigo."
     ),
     _T.ID_CARD: (
-        "um DOCUMENTO DE IDENTIDADE brasileiro com foto (RG/CIN/CNH/passaporte brasileiro). "
+        "um REGISTRO GERAL brasileiro com foto (RG antigo ou a nova Carteira de Identidade "
+        "Nacional — CIN). NÃO aceite CNH, passaporte, carteira profissional nem outro documento. "
         "Deve ter: FOTO do titular, NOME, DATA DE NASCIMENTO, número do documento e órgão emissor. "
         "NÃO aceite cópia de tela, selfie, foto de outro documento sem os dados pessoais visíveis."
     ),

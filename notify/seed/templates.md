@@ -10,12 +10,12 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
-active: true
+active: false
 ~~~
 {name}, um candidato concluiu o cadastro e aguarda a sua aprovação para virar promotor. Confira no painel, {name}.
 ~~~
@@ -24,11 +24,11 @@ active: true
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Documento liberado para reenvio
+subject: V7M — envie novamente seu documento
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
@@ -42,65 +42,91 @@ active: true
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Documento aprovado
+subject: V7M — seu documento foi aprovado
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-Pode seguir, {name}! ✅ Seu documento foi aprovado e o cadastro segue em frente. Continue o preenchimento, {name}.
+Documento aprovado, {name}! ✅ Você não precisa reenviá-lo. O aplicativo liberará automaticamente o próximo passo ou concluirá seu cadastro, {name}.
 ~~~
 
 [event:candidate.document_in_review]
 is_tts: false
 storytelling: false
-channels: whatsapp,email
-title: 
+channels: whatsapp
+title: Documento aguardando análise
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-{name}, o documento de um candidato precisa da sua análise — a IA ficou em dúvida. Aprove ou reprove no painel, {name}.
+{name}, o documento de {candidate_name} precisa da sua análise. O sistema não conseguiu decidir com segurança; revise as imagens e registre a decisão no painel, {name}.
 ~~~
 
 [event:candidate.document_rejected]
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Documento precisa ser reenviado
+subject: V7M — precisamos de uma nova imagem do seu documento
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-{name}, precisamos de uma nova foto do seu documento: {detail} Reenvie pelo aplicativo, {name} — é rapidinho. 📄
+{name}, recebemos seu documento, mas ele ainda não pôde ser aprovado.
+
+Motivo: {detail}
+
+Abra o aplicativo e envie uma nova imagem completa e legível. Seu cadastro continua salvo, {name}. 📄
+~~~
+
+[event:candidate.address_proof_rejected]
+is_tts: false
+storytelling: false
+channels: whatsapp,email
+title: Comprovante de endereço precisa ser reenviado
+subject: V7M — precisamos de outro comprovante de endereço
+media_url:
+media_type:
+mail_template: v7m
+story_prompt:
+fires_on:
+source: users.roles.candidate
+delay_minutes: 0
+active: true
+~~~
+{name}, recebemos o arquivo, mas ele não pôde ser aceito como comprovante de endereço.
+
+Motivo: {detail}
+
+Envie pelo aplicativo uma conta ou documento recente que mostre o endereço completo. O restante do seu cadastro continua salvo, {name}.
 ~~~
 
 [event:candidate.rejected]
 is_tts: false
 storytelling: false
-channels: whatsapp,email
-title: 
+channels: whatsapp
+title: Atualização do cadastro
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
@@ -114,54 +140,54 @@ active: true
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Foto de confirmação aprovada
+subject: V7M — sua foto de confirmação foi aprovada
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-Aprovado, {name}! ✅ Sua selfie foi confirmada e o cadastro segue em frente. Continue o preenchimento, {name}.
+Foto confirmada, {name}! ✅ Você não precisa enviar outra. Estamos concluindo automaticamente as últimas validações e avisaremos assim que seu acesso estiver pronto, {name}.
 ~~~
 
 [event:candidate.selfie_in_review]
 is_tts: false
 storytelling: false
-channels: whatsapp,email
-title: 
+channels: whatsapp
+title: Foto aguardando análise
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-{name}, a selfie de um candidato precisa da sua análise — a IA ficou em dúvida. Aprove ou reprove no painel, {name}.
+{name}, a foto de confirmação de {candidate_name} precisa da sua análise. O sistema não conseguiu decidir com segurança; revise no painel e registre a decisão, {name}.
 ~~~
 
 [event:candidate.selfie_rejected]
 is_tts: false
 storytelling: false
-channels: whatsapp,email
-title: 
+channels: whatsapp
+title: Precisamos de uma nova foto
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.candidate
 delay_minutes: 0
 active: true
 ~~~
-{name}, sua selfie não pôde ser confirmada. Envie uma nova foto, nítida e mostrando o rosto, {name}.
+{name}, recebemos sua foto, mas ainda não conseguimos confirmar sua identidade com segurança. Abra o aplicativo, fique de frente para a câmera, em um lugar claro, e tente novamente. Seu cadastro continua salvo, {name}.
 ~~~
 
 [event:enrollment.awaiting_release]
@@ -172,7 +198,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -190,7 +216,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -214,7 +240,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -232,7 +258,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -250,7 +276,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -268,7 +294,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -286,7 +312,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -304,7 +330,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -322,7 +348,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -340,7 +366,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -358,7 +384,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: Você escreve para {name}, um(a) aluno(a) adulto(a) da educação de jovens e adultos (EJA), público simples e batalhador, que acabou de ASSINAR a matrícula com a própria selfie. Hoje é {data_hoje} — pode citar a data como o dia em que ele(a) deu esse passo. {faixa_etaria} Escreva uma mensagem calorosa e curta (no máximo 3 frases) celebrando que foi ELE(A) quem assinou, com o próprio rosto, e que agora é só aguardar a liberação. Trate por '{name}'. Português impecável, sem erros, sem gírias, sem emoji, sem inventar outros fatos.
 fires_on: 
 source: users.roles.enrollment
@@ -376,7 +402,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -394,7 +420,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.enrollment
@@ -412,7 +438,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: hub.interface
@@ -430,7 +456,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -448,7 +474,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -466,7 +492,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -487,7 +513,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -509,7 +535,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -527,7 +553,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -541,18 +567,36 @@ active: true
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Sua indicação virou matrícula
+subject: V7M — uma indicação sua confirmou o pagamento
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.lead
 delay_minutes: 0
 active: true
 ~~~
-{name}, seu indicado pagou a matrícula! ✅ Sua comissão entra no fechamento de sexta, {name}. 💸
+Boa notícia, {name}: sua indicação virou uma matrícula paga! ✅ A comissão já entrou no próximo fechamento semanal, {name}.
+~~~
+
+[event:lead.paid.promoter.scholarship]
+is_tts: false
+storytelling: false
+channels: whatsapp,email
+title: Sua indicação avançou sua bolsa
+subject: V7M — sua indicação pagou e sua bolsa avançou
+media_url:
+media_type:
+mail_template: v7m
+story_prompt:
+fires_on:
+source: users.roles.lead
+delay_minutes: 0
+active: true
+~~~
+Boa notícia, {name}: sua indicação virou uma matrícula paga! ✅ A comissão já entrou no próximo fechamento semanal. {progress_text} Continue firme, {name}.
 ~~~
 
 [event:lead.paid.receipt]
@@ -563,7 +607,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.lead
@@ -575,6 +619,24 @@ active: true
 Guarde para referência, {name}.
 ~~~
 
+[event:promoter.scholarship_enrolled]
+is_tts: true
+storytelling: false
+channels: whatsapp,email
+title: Sua bolsa foi efetivada
+subject: V7M — suas três matrículas efetivaram sua bolsa
+media_url:
+media_type:
+mail_template: v7m
+story_prompt:
+fires_on:
+source: users.roles.promoter
+delay_minutes: 0
+active: true
+~~~
+Você conseguiu, {name}! 🎓 Suas {enroll_goal} matrículas pagas efetivaram sua bolsa e sua matrícula como aluno começou sem cobrança. Agora siga o fluxo normal de estudos e documentos. Ao chegar a {exam_goal} matrículas pagas, você cumpre o requisito de indicações para a prova final. Parabéns por essa conquista, {name}!
+~~~
+
 [event:promoter.reactivated]
 is_tts: false
 storytelling: false
@@ -583,7 +645,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.promoter
@@ -601,7 +663,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.promoter
@@ -619,7 +681,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: Você escreve para {name}, um(a) aluno(a) adulto(a) da EJA, público simples e batalhador, que ACABOU de ter o diploma emitido — muitas vezes um sonho adiado por décadas. Hoje é {data_hoje} — pode citar a data como o dia em que ele(a) concluiu. {faixa_etaria} Escreva uma mensagem curta (no máximo 3 frases), emocionante e digna, dizendo que terminou os estudos e que isso é dele(a) para sempre. Trate por '{name}'. NÃO fale de retirada nem logística. Português impecável, sem erros, sem gírias, sem emoji, sem inventar outros fatos.
 fires_on: 
 source: users.roles.student
@@ -637,7 +699,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -655,7 +717,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -673,7 +735,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -691,7 +753,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -709,7 +771,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -727,7 +789,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -745,7 +807,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -763,7 +825,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -781,7 +843,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: supletivo
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -799,7 +861,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.student
@@ -813,18 +875,36 @@ active: true
 is_tts: true
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Seu acesso de promotor está ativo
+subject: V7M — cadastro aprovado e acesso liberado
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.training
 delay_minutes: 0
 active: true
 ~~~
-Parabéns, {name}! 🎉 Você foi aprovado e agora é PROMOTOR. {name}, seu link de captação já está ativo — comece a indicar e a ganhar!
+Deu certo, {name}! 🎉 Seu cadastro foi aprovado e seu acesso de promotor está ativo. Seu link exclusivo já está no painel: compartilhe com quem quer voltar a estudar. Cada matrícula paga entra nas suas metas e comissões, {name}.
+~~~
+
+[event:training.approved.scholarship]
+is_tts: true
+storytelling: false
+channels: whatsapp,email
+title: Promotor ativo e trilha da bolsa iniciada
+subject: V7M — seu acesso está ativo e sua trilha da bolsa começou
+media_url:
+media_type:
+mail_template: v7m
+story_prompt:
+fires_on:
+source: users.roles.training
+delay_minutes: 0
+active: true
+~~~
+Deu certo, {name}! 🎉 Seu acesso de promotor está ativo e você também entrou na trilha da bolsa. Seu link exclusivo já está no painel. Ao conquistar {enroll_goal} matrículas pagas, sua própria matrícula como aluno é efetivada; com {exam_goal}, você cumpre o requisito de indicações para a prova final. Você pode transformar outras vidas e retomar seus estudos, {name}.
 ~~~
 
 [event:training.cleared]
@@ -835,7 +915,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.training
@@ -849,18 +929,36 @@ Treinamento concluído, {name}! 🎉 Seu painel está liberado e seu link de cap
 is_tts: false
 storytelling: false
 channels: whatsapp,email
-title: 
-subject: 
+title: Falta concluir o treinamento
+subject: V7M — conclua o treinamento para liberar seu painel
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.training
 delay_minutes: 0
 active: true
 ~~~
-Parabéns, {name}! Você foi aprovado e agora é PROMOTOR. Antes de liberar seu painel, {name}, conclua o treinamento obrigatório no aplicativo — assim que terminar, tudo é liberado.
+Você foi aprovado, {name}! 🎉 Falta apenas concluir o treinamento obrigatório no aplicativo. Assim que terminar, o painel e o link de indicação serão liberados automaticamente para você, {name}.
+~~~
+
+[event:training.must_train.scholarship]
+is_tts: false
+storytelling: false
+channels: whatsapp,email
+title: Treinamento e trilha da bolsa
+subject: V7M — conclua o treinamento para iniciar sua trilha
+media_url:
+media_type:
+mail_template: v7m
+story_prompt:
+fires_on:
+source: users.roles.training
+delay_minutes: 0
+active: true
+~~~
+Você foi aprovado, {name}! 🎉 Além do acesso de promotor, você entrou na trilha da bolsa. Primeiro, conclua o treinamento obrigatório no aplicativo; depois, seu link será liberado. Com {enroll_goal} matrículas pagas sua matrícula como aluno é efetivada, e com {exam_goal} você cumpre o requisito de indicações da prova final, {name}.
 ~~~
 
 [event:training.new_material]
@@ -871,7 +969,7 @@ title:
 subject: 
 media_url: 
 media_type: 
-mail_template: default
+mail_template: v7m
 story_prompt: 
 fires_on: 
 source: users.roles.training
@@ -880,4 +978,3 @@ active: true
 ~~~
 {name}, há um novo treinamento obrigatório no aplicativo. Conclua a atividade para continuar usando o painel, {name}.
 ~~~
-

@@ -4,6 +4,7 @@ que a auditoria descreveu e verifica que a guarda fecha.
 
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from django.utils import timezone
@@ -70,6 +71,61 @@ def test_g6_comissao_de_semana_passada_entra_no_fechamento():
     c.refresh_from_db()
     assert c.status == Commission.Status.PROCESSED, "comissão atrasada ficou órfã"
     assert PaymentRequest.objects.filter(payee=payee).exists()
+
+
+def test_g6_cinco_comissoes_geram_bonus_flat_e_lote_de_dez(monkeypatch):
+    """Cinco comissões de R$1 geram um único bônus de R$5 e um único PIX de R$10."""
+    from django.conf import settings
+
+    from finance.interface.commissions import run_weekly_closing
+    from finance.models import Commission, PaymentRequest
+    from users.auth.models import User
+    from users.profiles.models import Profile
+
+    payee = User.objects.create_user(external_id=uuid.uuid4())
+    Profile.objects.create(
+        user=payee,
+        phone="5511999990000",
+        pix_key=str(uuid.uuid4()),
+        pix_key_type="EVP",
+    )
+    lead_ids = [uuid.uuid4() for _ in range(5)]
+    for source_external_id in lead_ids:
+        Commission.objects.create(
+            payee=payee,
+            payee_role=Commission.Role.PROMOTER,
+            source_type=Commission.Source.LEAD,
+            source_external_id=source_external_id,
+            amount=Decimal("1.00"),
+        )
+
+    monkeypatch.setattr(settings, "COMMISSION_BONUS_THRESHOLD", 5)
+    monkeypatch.setattr(settings, "COMMISSION_BONUS_FLAT", "5")
+    reference = timezone.now()
+
+    first = run_weekly_closing(reference_date=reference)
+    second = run_weekly_closing(reference_date=reference)
+
+    request = PaymentRequest.objects.get(payee=payee)
+    bonus = Commission.objects.get(
+        payee=payee,
+        source_type=Commission.Source.BONUS,
+    )
+    assert first["bonuses_created"] == 1
+    assert first["payment_requests_created"] == 1
+    assert second["bonuses_created"] == 0
+    assert second["payment_requests_created"] == 0
+    assert request.amount == Decimal("10.00")
+    assert request.status == PaymentRequest.Status.QUEUED
+    assert bonus.amount == Decimal("5.00")
+    assert bonus.status == Commission.Status.PROCESSED
+    assert (
+        Commission.objects.filter(
+            source_type=Commission.Source.LEAD,
+            status=Commission.Status.PROCESSED,
+        ).count()
+        == 5
+    )
 
 
 # ─────────────────── G7: promotor suspenso não recebe ───────────────────

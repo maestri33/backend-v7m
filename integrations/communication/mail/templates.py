@@ -18,6 +18,12 @@ from django.conf import settings
 DEFAULT_SLUG = "default"
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$")
+_SLUG_ALIASES = {
+    "checkout": "supletivo",
+    "parabens": "supletivo",
+    "receipt": "supletivo",
+    "welcome": "supletivo",
+}
 
 
 class TemplateNotFound(Exception):
@@ -225,6 +231,7 @@ def render(
     `{{service_name}}` = settings.MAIL_FROM_NAME.
     """
     resolved = slug if (slug and _SLUG_RE.match(slug)) else DEFAULT_SLUG
+    resolved = _SLUG_ALIASES.get(resolved, resolved)
     try:
         template = _load(resolved)
     except FileNotFoundError:

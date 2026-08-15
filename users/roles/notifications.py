@@ -27,7 +27,9 @@ _TTS_EVENTS = frozenset(
         "enrollment.selfie_approved",  # assinatura da matrícula — com o próprio rosto
         "student.diploma_issued",  # o diploma: o ápice da jornada
         "training.approved",  # virou promotor (já pode captar) — conquista do colaborador
+        "training.approved.scholarship",  # virou promotor + ganhou a trilha da bolsa
         "training.cleared",  # concluiu o treino obrigatório → painel liberado
+        "promoter.scholarship_enrolled",  # 3 matrículas pagas → bolsa efetivada
     }
 )
 
@@ -67,8 +69,12 @@ _MESSAGES: dict[str, str] = {
         "Acompanhe quando o aluno preencher os dados, {name}."
     ),
     "lead.paid.promoter": (
-        "{name}, seu indicado pagou a matrícula! ✅ "
-        "Sua comissão entra no fechamento de sexta, {name}. 💸"
+        "Boa notícia, {name}: sua indicação virou uma matrícula paga! ✅ "
+        "A comissão já entrou no próximo fechamento semanal, {name}."
+    ),
+    "lead.paid.promoter.scholarship": (
+        "Boa notícia, {name}: sua indicação virou uma matrícula paga! ✅ "
+        "A comissão já entrou no próximo fechamento semanal. {progress_text} Continue firme, {name}."
     ),
     # ── ENROLLMENT (coleta → liberação) ──────────────────────────────────────
     "enrollment.awaiting_release": (
@@ -146,32 +152,41 @@ _MESSAGES: dict[str, str] = {
     ),
     # ── CANDIDATE → PROMOTER → (treino overlay) (funil do colaborador, Victor 2026-06-16) ──
     "candidate.selfie_rejected": (
-        "{name}, sua selfie não pôde ser confirmada. Envie uma nova foto, nítida e mostrando o rosto, {name}."
+        "{name}, recebemos sua foto, mas ainda não conseguimos confirmar sua identidade com segurança. "
+        "Abra o aplicativo, fique de frente para a câmera, em um lugar claro, e tente novamente. "
+        "Seu cadastro continua salvo, {name}."
     ),
     "candidate.rejected": (
         "{name}, seu cadastro de colaborador não foi aprovado neste momento. "
         "Fale com o coordenador do seu polo para entender os próximos passos, {name}."
     ),
     "candidate.selfie_approved": (
-        "Aprovado, {name}! ✅ Sua selfie foi confirmada e o cadastro segue em frente. "
-        "Continue o preenchimento, {name}."
+        "Foto confirmada, {name}! ✅ Você não precisa enviar outra. "
+        "Estamos concluindo automaticamente as últimas validações e avisaremos assim que seu acesso estiver pronto, {name}."
     ),
     "candidate.selfie_in_review": (
-        "{name}, a selfie de um candidato precisa da sua análise — a IA ficou em dúvida. "
-        "Aprove ou reprove no painel, {name}."
+        "{name}, a foto de confirmação de {candidate_name} precisa da sua análise. "
+        "O sistema não conseguiu decidir com segurança; revise no painel e registre a decisão, {name}."
     ),
     # Documento do CANDIDATO (plan/15 B) — espelho do aluno; mesmo catálogo, chaves próprias.
     "candidate.document_rejected": (
-        "{name}, precisamos de uma nova foto do seu documento: {detail} "
-        "Reenvie pelo aplicativo, {name} — é rapidinho. 📄"
+        "{name}, recebemos seu documento, mas ele ainda não pôde ser aprovado.\n\n"
+        "Motivo: {detail}\n\n"
+        "Abra o aplicativo e envie uma nova imagem completa e legível. Seu cadastro continua salvo, {name}. 📄"
     ),
     "candidate.document_in_review": (
-        "{name}, o documento de um candidato precisa da sua análise — a IA ficou em dúvida. "
-        "Aprove ou reprove no painel, {name}."
+        "{name}, o documento de {candidate_name} precisa da sua análise. "
+        "O sistema não conseguiu decidir com segurança; revise as imagens e registre a decisão no painel, {name}."
     ),
     "candidate.document_approved": (
-        "Pode seguir, {name}! ✅ Seu documento foi aprovado e o cadastro segue em frente. "
-        "Continue o preenchimento, {name}."
+        "Documento aprovado, {name}! ✅ Você não precisa reenviá-lo. "
+        "O aplicativo liberará automaticamente o próximo passo ou concluirá seu cadastro, {name}."
+    ),
+    "candidate.address_proof_rejected": (
+        "{name}, recebemos o arquivo, mas ele não pôde ser aceito como comprovante de endereço.\n\n"
+        "Motivo: {detail}\n\n"
+        "Envie pelo aplicativo uma conta ou documento recente que mostre o endereço completo. "
+        "O restante do seu cadastro continua salvo, {name}."
     ),
     # coordenador destravou o tipo de documento (candidato escolheu RG/CNH errado). → candidato.
     "candidate.doc_type_reset": (
@@ -185,13 +200,25 @@ _MESSAGES: dict[str, str] = {
     ),
     # coordenador aprovou → virou PROMOTOR e NÃO há treino obrigatório pendente (já pode captar). TTS.
     "training.approved": (
-        "Parabéns, {name}! 🎉 Você foi aprovado e agora é PROMOTOR. "
-        "{name}, seu link de captação já está ativo — comece a indicar e a ganhar!"
+        "Deu certo, {name}! 🎉 Seu cadastro foi aprovado e seu acesso de promotor está ativo. "
+        "Seu link exclusivo já está no painel: compartilhe com quem quer voltar a estudar. "
+        "Cada matrícula paga entra nas suas metas e comissões, {name}."
+    ),
+    "training.approved.scholarship": (
+        "Deu certo, {name}! 🎉 Seu acesso de promotor está ativo e você também entrou na trilha da bolsa. "
+        "Seu link exclusivo já está no painel. Ao conquistar {enroll_goal} matrículas pagas, sua própria matrícula como aluno é efetivada; "
+        "com {exam_goal}, você cumpre o requisito de indicações para a prova final. "
+        "Você pode transformar outras vidas e retomar seus estudos, {name}."
     ),
     # virou promotor MAS há treino obrigatório pendente → painel travado até concluir. Sem TTS.
     "training.must_train": (
-        "Parabéns, {name}! Você foi aprovado e agora é PROMOTOR. Antes de liberar seu painel, {name}, "
-        "conclua o treinamento obrigatório no aplicativo — assim que terminar, tudo é liberado."
+        "Você foi aprovado, {name}! 🎉 Falta apenas concluir o treinamento obrigatório no aplicativo. "
+        "Assim que terminar, o painel e o link de indicação serão liberados automaticamente para você, {name}."
+    ),
+    "training.must_train.scholarship": (
+        "Você foi aprovado, {name}! 🎉 Além do acesso de promotor, você entrou na trilha da bolsa. "
+        "Primeiro, conclua o treinamento obrigatório no aplicativo; depois, seu link será liberado. "
+        "Com {enroll_goal} matrículas pagas sua matrícula como aluno é efetivada, e com {exam_goal} você cumpre o requisito de indicações da prova final, {name}."
     ),
     # concluiu TODAS as matérias obrigatórias → painel liberado (já pode captar). TTS.
     "training.cleared": (
@@ -202,6 +229,11 @@ _MESSAGES: dict[str, str] = {
     "training.new_material": (
         "{name}, há um novo treinamento obrigatório no aplicativo. "
         "Conclua a atividade para continuar usando o painel, {name}."
+    ),
+    "promoter.scholarship_enrolled": (
+        "Você conseguiu, {name}! 🎓 Suas {enroll_goal} matrículas pagas efetivaram sua bolsa e sua matrícula como aluno começou sem cobrança. "
+        "Agora siga o fluxo normal de estudos e documentos. Ao chegar a {exam_goal} matrículas pagas, "
+        "você cumpre o requisito de indicações para a prova final. Parabéns por essa conquista, {name}!"
     ),
     # ── STUDENT → VETERAN ────────────────────────────────────────────────────
     "student.document_rejected": (

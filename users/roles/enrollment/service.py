@@ -255,11 +255,9 @@ def me_dict(enr: Enrollment) -> dict:
             "analysis_reason": rg_data.get("validation_reason"),
             "validation_status": rg_data.get("validation_status"),
             "validation_reason": rg_data.get("validation_reason"),
-            # MESMA régua da seção (doc + perfil) — é a lista que trava a selfie (proposta #10)
-            "missing_fields": [
-                *(f for f in _RG_DOC_FIELDS if not rg_data.get(f)),
-                *(f for f in _RG_PROFILE_FIELDS if not getattr(p, f, None)),
-            ],
+            # A extração é best-effort: campo ausente nunca volta para o aluno digitar nem trava
+            # a matrícula. A foto do RG continua sendo a fonte de verdade para auditoria.
+            "missing_fields": [],
         }
 
     try:
@@ -428,6 +426,7 @@ def submit_address_proof_kinship(*, user_external_id: str, relation: str) -> dic
     enr = _require(user_external_id)  # sem gate de status
     _address_proof.submit_kinship(user_external_id, relation)
     _advance_address(enr, user_external_id)
+    _advance_to_release(enr)
     return me_dict(enr)
 
 
@@ -442,6 +441,7 @@ def run_address_proof_validation(enrollment_id: int) -> None:
     _address_proof.validate_and_store(user_ext, caller="enrollment.address_proof")
     enr.refresh_from_db(fields=["status"])
     _advance_address(enr, user_ext)
+    _advance_to_release(enr)
 
 
 # ── seção DOCUMENTO (plan/13): GET rico · PATCH completa/corrige ─────────────
@@ -456,6 +456,11 @@ _RG_PROFILE_FIELDS = (
     "marital_status",
     "nationality",
 )
+
+
+def _rg_capture_complete(rg) -> bool:
+    """RG inteiro ou o par frente+verso já recebido, independentemente da análise assíncrona."""
+    return bool(rg and (rg.full_photo or (rg.front_photo and rg.back_photo)))
 
 
 def _next_slot_rg(rg) -> str | None:
@@ -474,30 +479,25 @@ def _next_slot_rg(rg) -> str | None:
     def _status(slot: str) -> str | None:
         return (photos.get(slot) or {}).get("status")
 
-    # full aprovada → completo
-    if _status("rg_full") == doc_ai.APPROVED:
-        return None
-    # frente+verso aprovadas → completo
-    if _status("rg_front") == doc_ai.APPROVED and _status("rg_back") == doc_ai.APPROVED:
-        return None
-    # qualquer slot pendente → aguardando
-    for slot in ("rg_full", "rg_front", "rg_back"):
-        if _status(slot) == doc_ai.PENDING:
-            return None
-    # qualquer slot em review → aguardando coordenador
-    for slot in ("rg_full", "rg_front", "rg_back"):
-        if _status(slot) == doc_ai.REVIEW:
-            return None
-    # full reprovada → reenviar full
+    # Reprovação sempre aponta exatamente a foto que deve ser refeita.
     if _status("rg_full") == doc_ai.REJECTED:
         return "rg_full"
-    # frente aprovada → pedir verso
-    if _status("rg_front") == doc_ai.APPROVED:
-        return "rg_back"
-    # verso aprovada → pedir frente
-    if _status("rg_back") == doc_ai.APPROVED:
+    if _status("rg_front") == doc_ai.REJECTED:
         return "rg_front"
-    # nenhuma ou todas reprovadas → frente primeiro
+    if _status("rg_back") == doc_ai.REJECTED:
+        return "rg_back"
+
+    # Accept-first, igual ao candidato: a captura completa libera a próxima etapa e a análise
+    # detalhada continua em segundo plano. Com só a frente recebida, já pedimos o verso mesmo se
+    # a task ainda estiver pending/review.
+    if _rg_capture_complete(rg):
+        return None
+    if rg.full_photo:
+        return None
+    if rg.front_photo:
+        return "rg_back"
+    if rg.back_photo:
+        return "rg_front"
     return "rg_front"
 
 
@@ -534,9 +534,8 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         "analysis_reason": result.get("reason"),
         "validation_status": rg.validation_status if has_photo else None,
         "validation_reason": result.get("reason"),
-        "missing_fields": [
-            k for k in (*_RG_DOC_FIELDS, *_RG_PROFILE_FIELDS) if not fields[k]
-        ],
+        # Compatibilidade de contrato: permanece no JSON, mas nunca exige digitação do aluno.
+        "missing_fields": [],
         # next_slot: qual foto o front deve pedir AGORA (sequencial: frente→verso)
         "next_slot": _next_slot_rg(rg),
         # photos por slot individual (front precisa saber o status de cada foto)
@@ -545,17 +544,14 @@ def _rg_section_dict(enr: Enrollment) -> dict:
 
 
 def get_rg_section(*, user_external_id: str) -> dict:
-    """GET da seção documento (plan/13): fotos + validação + TODOS os campos (extraídos pela IA
-    ou digitados) + `missing_fields` (o que o aluno ainda precisa completar)."""
+    """GET da seção documento: fotos + validação + dados extraídos em modo somente leitura."""
     enr = _require(user_external_id)
     _reconcile_stale_analyses(enr)  # TTL guard (proposta #2)
     return _rg_section_dict(enr)
 
 
 def patch_rg_section(*, user_external_id: str, **fields) -> dict:
-    """PATCH da seção documento (plan/13): completa/CORRIGE o que a extração não trouxe — campos
-    do doc e do perfil. Aceito em qualquer etapa da coleta (é dado do aluno, não progressão);
-    a foto do documento segue sendo a fonte de verdade pra auditoria do coordenador."""
+    """Correção opcional de compatibilidade; não é exigida nem usada para avançar a matrícula."""
     enr = _require(user_external_id, _S.RG, _S.ADDRESS, _S.EDUCATION, _S.SELFIE)
     doc_payload = {k: fields[k] for k in _RG_DOC_FIELDS if fields.get(k) is not None}
     if doc_payload:
@@ -591,6 +587,9 @@ def upload_rg_photo(*, user_external_id: str, slot: str, upload) -> dict:
     enr = _require(user_external_id, _S.RG, _S.ADDRESS, _S.EDUCATION, _S.SELFIE)
     path = documents_iface.upload_photo(user_external_id, slot, upload)
     _reset_rg_validation(user_external_id, slot)
+    # A captura completa libera o restante do wizard imediatamente. Se a análise reprovar depois,
+    # o ValidationBlock manda o aluno de volta ao RG antes da assinatura.
+    _advance_rg(enr, user_external_id)
     from django_q.tasks import async_task
 
     async_task("users.roles.enrollment.tasks.validate_rg", enr.id, slot)
@@ -607,13 +606,12 @@ def selfie_ack(enr: Enrollment) -> dict:
 
 
 def _advance_rg(enr: Enrollment, user_external_id: str) -> None:
-    """Avança RG→ADDRESS quando `number` preenchido + foto presente. A validação da IA roda em
-    background e rejeições viram ValidationBlock — o usuário NÃO fica parado esperando."""
+    """Avança RG→ADDRESS quando a captura está completa; OCR nunca é gate do aluno."""
     if enr.status != _S.RG:
         return
     rg = documents_iface.get_rg(user_external_id)
-    # ponytail: sem gate de validação — usuário avança na hora. Block na rejeição.
-    if rg is not None and rg.number and (rg.front_photo or rg.full_photo):
+    # Sem gate de validação — usuário avança na hora. Rejeição posterior vira ValidationBlock.
+    if _rg_capture_complete(rg):
         _advance_to(enr, _S.ADDRESS)
 
 
@@ -883,6 +881,8 @@ def _rg_post_approval(enr: Enrollment, rg) -> None:
     localiza a região da foto do titular, o Pillow recorta e tenta de novo. Nunca trava o fluxo."""
     # o doc já está aprovado → avança rg→address ANTES de tocar na biometria.
     _advance_rg(enr, str(enr.user.external_id))
+    # Se a selfie terminou antes da análise assíncrona do RG, este é o ponto que fecha a coleta.
+    _advance_to_release(enr)
 
     from pathlib import Path
 
@@ -917,8 +917,8 @@ def _rg_post_approval(enr: Enrollment, rg) -> None:
 def run_rg_fill(enrollment_id: int) -> None:
     """Pós-aprovação do coordenador: OCR+extração best-effort SÓ pra preencher campos vazios.
 
-    A aprovação humana é FINAL — aqui não há veto (o `name_match` fica só registrado). Falhou
-    a IA → o aluno digita o que faltou (`missing_fields` no /me)."""
+    A aprovação humana é FINAL — aqui não há veto (o `name_match` fica só registrado). Falha da
+    extração deixa os campos ausentes para conferência interna; nunca devolve digitação ao aluno."""
     from pathlib import Path
 
     from users.roles import _document_ai as doc_ai
@@ -1346,7 +1346,7 @@ def set_selfie(
     from users.roles import _selfie
 
     enr = _require(user_external_id, _S.SELFIE)
-    _require_rg_ready_for_selfie(enr)  # gates #9/#10: rosto do doc + perfil completo
+    _require_rg_ready_for_selfie(enr)  # capturas completas + rejeições assíncronas resolvidas
     enr.selfie_image = _save_selfie(enr, image_bytes, content_type)
     # ponytail: re-upload resolve o bloco imediatamente; análise roda em background
     blocks.resolve_for_source(user=enr.user, source_type="selfie")
@@ -1369,24 +1369,33 @@ def set_selfie(
 
 
 def _require_rg_ready_for_selfie(enr: Enrollment) -> None:
-    """Gates mínimos: foto presente + missing_fields vazio. Com accept-first, a IA rodando em
-    background gera ValidationBlock quando reprovada — não bloqueia o wizard aqui."""
+    """Exige capturas completas e devolve rejeições assíncronas à etapa correta."""
     rg = documents_iface.get_rg(str(enr.user.external_id))
-    if rg is None or not (rg.front_photo or rg.full_photo):
+    if not _rg_capture_complete(rg):
         raise Conflict(
-            "Envie a frente do RG antes da selfie.",
+            "Envie o RG completo antes da selfie.",
             code="WRONG_STATUS",
             extra={"expected_status": _S.RG.value},
         )
-    missing = _rg_section_dict(enr)["missing_fields"]
-    if missing:
+
+    proof = documents_iface.get_address_proof(str(enr.user.external_id))
+    if proof is None or not proof.photo:
         raise Conflict(
-            "Complete os dados do documento antes da selfie: "
-            + ", ".join(missing)
-            + ".",
+            "Envie o comprovante de endereço antes da selfie.",
             code="WRONG_STATUS",
-            extra={"expected_status": _S.RG.value, "missing_fields": missing},
+            extra={"expected_status": _S.ADDRESS.value},
         )
+
+    recovery_status = {"rg": _S.RG.value, "address_proof": _S.ADDRESS.value}
+    active = {block.source_type: block for block in blocks.get_active_blocks(enr.user)}
+    for source_type in ("rg", "address_proof"):
+        block = active.get(source_type)
+        if block is not None:
+            raise Conflict(
+                block.description,
+                code="WRONG_STATUS",
+                extra={"expected_status": recovery_status[source_type]},
+            )
 
 
 def run_selfie_validation(enrollment_id: int) -> None:
@@ -1489,8 +1498,36 @@ def _resolve_selfie(enr: Enrollment) -> None:
 
 
 def _advance_to_release(enr: Enrollment) -> None:
-    """Selfie enviada → AWAITING_RELEASE. Validação/biometria rodam em background."""
+    """Fecha a coleta só quando selfie, RG e comprovante estão aprovados."""
     if enr.status != _S.SELFIE:
+        return
+    from users.roles import _address_proof, _document_ai, _selfie
+
+    selfie_ready = enr.selfie_status == _selfie.APPROVED or (
+        enr.selfie_reject_count >= _selfie.MAX_REJECTS_BEFORE_MEETING
+    )
+    if not selfie_ready:
+        return
+
+    user_ext = str(enr.user.external_id)
+    rg = documents_iface.get_rg(user_ext)
+    proof = documents_iface.get_address_proof(user_ext)
+    if (
+        rg is None
+        or rg.validation_status != _document_ai.APPROVED
+        or proof is None
+        or proof.validation_status != _address_proof.APPROVED
+    ):
+        logger.info(
+            "enrollment.release_waiting_documents",
+            enrollment=str(enr.external_id),
+            rg_status=rg.validation_status if rg else "missing",
+            address_proof_status=proof.validation_status if proof else "missing",
+        )
+        return
+
+    active_sources = {block.source_type for block in blocks.get_active_blocks(enr.user)}
+    if active_sources.intersection({"rg", "address_proof", "selfie"}):
         return
     _set_status(enr, _S.AWAITING_RELEASE)
     from users.roles.enrollment.signals import enrollment_ready_for_matricula

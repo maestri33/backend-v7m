@@ -509,6 +509,66 @@ def list_integrations(request):
     return integ_status.list_integrations()
 
 
+@api.get("/integrations/incidents", tags=["staff"])
+def integration_incidents(request, status: str = "open", limit: int = 100):
+    """Incidentes deduplicados; detalhes já chegam sanitizados, sem segredo/PII."""
+    require_superuser(request.auth)
+    from core.models import IntegrationIncident
+    from integrations.monitoring import incident_dict
+
+    qs = IntegrationIncident.objects.order_by("-last_seen_at")
+    if status:
+        qs = qs.filter(status=status)
+    return [incident_dict(row) for row in qs[: max(1, min(limit, 500))]]
+
+
+@api.post("/integrations/incidents/{external_id}/resolve", tags=["staff"])
+def resolve_integration_incident(request, external_id: str):
+    require_superuser(request.auth)
+    from django.utils import timezone
+    from core.models import IntegrationIncident
+    from integrations.monitoring import incident_dict
+
+    incident = IntegrationIncident.objects.filter(external_id=external_id).first()
+    if incident is None:
+        raise NotFound("Incidente não encontrado.", code="INCIDENT_NOT_FOUND")
+    incident.status = IntegrationIncident.Status.RESOLVED
+    incident.resolved_at = timezone.now()
+    incident.resolution = "resolvido manualmente pelo staff"
+    incident.save(update_fields=["status", "resolved_at", "resolution"])
+    return incident_dict(incident)
+
+
+@api.get("/integrations/actions", tags=["staff"])
+def integration_actions(request, status: str | None = None, limit: int = 100):
+    require_superuser(request.auth)
+    from core.models import IntegrationAction
+    from integrations.monitoring import action_dict
+
+    qs = IntegrationAction.objects.select_related("incident").order_by("-created_at")
+    if status:
+        qs = qs.filter(status=status)
+    return [action_dict(row) for row in qs[: max(1, min(limit, 500))]]
+
+
+@api.post("/integrations/actions/{external_id}/approve", tags=["staff"])
+def approve_integration_action(request, external_id: str):
+    require_superuser(request.auth)
+    from django_q.tasks import async_task
+    from core.models import IntegrationAction
+    from integrations.monitoring import action_dict
+
+    action = IntegrationAction.objects.filter(external_id=external_id).first()
+    if action is None:
+        raise NotFound("Ação não encontrada.", code="ACTION_NOT_FOUND")
+    if action.status != IntegrationAction.Status.PENDING_APPROVAL:
+        raise Conflict("Ação não aguarda aprovação.", code="ACTION_NOT_PENDING")
+    action.status = IntegrationAction.Status.APPROVED
+    action.save(update_fields=["status", "updated_at"])
+    async_task("integrations.tasks.execute_integration_action", str(action.external_id))
+    return action_dict(action)
+
+
 @api.get("/integrations/{name}", tags=["staff"])
 def integration_detail(request, name: str):
     """Detalhe de uma integração (asaas faz run_checks AO VIVO: saldo + webhook)."""

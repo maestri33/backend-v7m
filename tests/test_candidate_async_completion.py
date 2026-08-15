@@ -56,11 +56,12 @@ def test_selfie_nao_promove_enquanto_documento_esta_pendente(monkeypatch):
         service, "_promote_to_promoter", lambda cand: promoted.append(cand.pk)
     )
 
-    service._complete_candidate(candidate)
+    completed = service._complete_candidate(candidate)
 
     candidate.refresh_from_db()
     assert candidate.status == Candidate.Status.COMPLETED
     assert promoted == []
+    assert completed is False
 
 
 @pytest.mark.django_db
@@ -82,9 +83,43 @@ def test_promove_quando_analises_assincronas_terminam(monkeypatch):
         service, "_promote_to_promoter", lambda cand: promoted.append(cand.pk)
     )
 
-    service._complete_candidate(candidate)
+    completed = service._complete_candidate(candidate)
 
     assert promoted == [candidate.pk]
+    assert completed is True
+
+
+def test_selfie_aprovada_nao_duplica_mensagem_quando_promove(monkeypatch):
+    from types import SimpleNamespace
+
+    from users.roles.candidate import service
+
+    notified = []
+    monkeypatch.setattr(service, "_complete_candidate", lambda _cand: True)
+    monkeypatch.setattr(
+        service, "_notify_selfie_approved", lambda cand: notified.append(cand)
+    )
+
+    service._resolve_selfie(SimpleNamespace(selfie_status="approved"))
+
+    assert notified == []
+
+
+def test_selfie_aprovada_avisa_quando_outras_analises_ainda_faltam(monkeypatch):
+    from types import SimpleNamespace
+
+    from users.roles.candidate import service
+
+    candidate = SimpleNamespace(selfie_status="approved")
+    notified = []
+    monkeypatch.setattr(service, "_complete_candidate", lambda _cand: False)
+    monkeypatch.setattr(
+        service, "_notify_selfie_approved", lambda cand: notified.append(cand)
+    )
+
+    service._resolve_selfie(candidate)
+
+    assert notified == [candidate]
 
 
 def test_comprovante_pode_ser_a_fonte_inicial_do_endereco():

@@ -17,5 +17,6 @@ def on_payment_paid(
     return mark_paid(
         provider=provider,
         provider_payment_id=provider_payment_id,
+        amount_cents=amount_cents,
         receipt_url=receipt_url,
     )

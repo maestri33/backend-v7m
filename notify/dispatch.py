@@ -258,11 +258,23 @@ def _subject_from_body(text: str) -> str:
 
 def _send_email(notif: Notification) -> None:
     try:
+        if notif.mail_template == "v7m":
+            from_name = "V7M"
+        elif notif.mail_template in {
+            "supletivo",
+            "checkout",
+            "parabens",
+            "receipt",
+            "welcome",
+        }:
+            from_name = "Supletivo Brasil"
+        else:
+            from_name = settings.MAIL_FROM_NAME
         subject = (
             notif.subject
             or notif.title
             or _subject_from_body(notif.text)
-            or "Supletivo Brasil"
+            or from_name
         )
         if notif.media_url:
             # e-mail embute a mídia pela URL PÚBLICA (destinatário busca pela internet).
@@ -283,7 +295,7 @@ def _send_email(notif: Notification) -> None:
             html = mail_templates.render(
                 notif.mail_template, title=notif.title or "", content=notif.text
             )
-        client = mail_client.get_client()
+        client = mail_client.get_client(from_name=from_name)
         async_to_sync(client.send_email)(
             notif.recipient_email, subject, html_body=html, plain_body=notif.text
         )

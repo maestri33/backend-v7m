@@ -11,6 +11,7 @@ Config (base_url, timeout) vem do .env via settings (CONVENTION §8/§10).
 from __future__ import annotations
 
 import re
+import time
 
 import httpx
 import structlog
@@ -32,6 +33,9 @@ async def lookup(zipcode: str) -> dict | None:
     Chaves de retorno (alinhadas ao futuro modelo `address`): zipcode, street,
     complement, neighborhood, city, state.
     """
+    from integrations import monitoring
+
+    started = time.monotonic()
     clean = re.sub(r"\D", "", zipcode or "")
     if len(clean) != 8:
         return None
@@ -41,18 +45,36 @@ async def lookup(zipcode: str) -> dict | None:
         async with httpx.AsyncClient(timeout=settings.VIACEP_TIMEOUT_SECONDS) as client:
             resp = await client.get(url)
     except httpx.RequestError as exc:
-        logger.warning("viacep.request_failed", zipcode=clean)
-        raise ViaCepUnavailable("ViaCEP indisponível no momento") from exc
+        logger.warning("viacep.request_failed")
+        error = ViaCepUnavailable("ViaCEP indisponível no momento")
+        await monitoring.record_failure_async(
+            "cep", "lookup", error, error_code=type(exc).__name__
+        )
+        raise error from exc
 
     if resp.status_code != 200:
-        logger.warning("viacep.bad_status", zipcode=clean, status=resp.status_code)
-        raise ViaCepUnavailable(f"ViaCEP retornou status {resp.status_code}")
+        logger.warning("viacep.bad_status", status=resp.status_code)
+        error = ViaCepUnavailable(f"ViaCEP retornou status {resp.status_code}")
+        await monitoring.record_failure_async(
+            "cep",
+            "lookup",
+            error,
+            error_code=str(resp.status_code),
+            context={"http_status": resp.status_code},
+        )
+        raise error
 
     data = resp.json()
     if data.get("erro"):
+        await monitoring.record_success_async(
+            "cep",
+            "lookup",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            detail="provider_ok; zipcode_not_found",
+        )
         return None
 
-    return {
+    result = {
         "zipcode": clean,
         "street": data.get("logradouro") or None,
         "complement": data.get("complemento") or None,
@@ -60,3 +82,10 @@ async def lookup(zipcode: str) -> dict | None:
         "city": data.get("localidade") or None,
         "state": data.get("uf") or None,
     }
+    await monitoring.record_success_async(
+        "cep",
+        "lookup",
+        latency_ms=int((time.monotonic() - started) * 1000),
+        detail="zipcode_found",
+    )
+    return result

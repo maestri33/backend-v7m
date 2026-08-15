@@ -6,14 +6,22 @@ consome pra amarrar o lead ao promotor. Listagens (leads/comissões) são read-o
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from decimal import Decimal
 
 import structlog
 from django.conf import settings
+from django.utils import timezone
 
 from users.blocks import service as blocks
-from users.exceptions import Forbidden, NotFound
+from users.exceptions import (
+    Conflict,
+    Forbidden,
+    IntegrationError,
+    NotFound,
+    ValidationError,
+)
 from users.roles.promoter.models import Promoter
 from users.roles.promoter.rules import BOLSA_ENROLL_THRESHOLD, paid_referrals
 
@@ -81,10 +89,30 @@ def maybe_auto_enroll_bolsista(promoter_user) -> bool:
         self_study=True,
         bolsista=True,
     )
+    _notify_scholarship_enrolled(promoter_user)
     logger.info(
         "promoter.auto_enrolled_bolsista", external_id=str(promoter_user.external_id)
     )
     return True
+
+
+def _notify_scholarship_enrolled(promoter_user) -> None:
+    from notify.interface.events import send_event
+    from users.profiles import interface as profiles
+    from users.roles.promoter.rules import BOLSA_EXAM_THRESHOLD
+
+    try:
+        send_event(
+            "promoter.scholarship_enrolled",
+            profile=profiles.get(promoter_user),
+            ctx={
+                "enroll_goal": BOLSA_ENROLL_THRESHOLD,
+                "exam_goal": BOLSA_EXAM_THRESHOLD,
+            },
+            idempotency_key=f"promoter_scholarship_enrolled_{promoter_user.external_id}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("promoter.notify_scholarship_enrolled_failed", error=str(exc))
 
 
 def get_for_user(user) -> Promoter | None:
@@ -174,6 +202,73 @@ def list_leads(user) -> list[dict]:
             }
         )
     return out
+
+
+def invite_lead(*, promoter: Promoter, phone: str, cpf: str) -> dict:
+    """Valida o destino e envia o link de indicação sem criar conta, Lead, cobrança ou OTP."""
+    from users.auth import service as auth_iface
+    from users.auth import validation
+    from users.profiles import interface as profiles
+    from users.roles.training import service as training_iface
+
+    if promoter.status != Promoter.Status.ACTIVE:
+        raise Forbidden(
+            "Promotor suspenso não pode enviar convites.", code="PROMOTER_SUSPENDED"
+        )
+    if training_iface.is_locked(promoter.user):
+        raise Forbidden(
+            "Conclua o treinamento antes de enviar convites.",
+            code="PROMOTER_TRAINING_LOCKED",
+        )
+
+    try:
+        normalized_cpf = validation.validate_cpf(cpf)
+    except ValueError as exc:
+        raise ValidationError(str(exc), code="CPF_INVALID") from exc
+    if not validation.cpf_check_digits_ok(normalized_cpf):
+        raise ValidationError("CPF inválido.", code="CPF_INVALID")
+    if profiles.exists_cpf(normalized_cpf):
+        raise Conflict("CPF já cadastrado.", code="CPF_EXISTS")
+
+    exists, normalized_phone = auth_iface.check_phone_whatsapp(phone)
+    if profiles.exists_phone(normalized_phone):
+        raise Conflict("Telefone já cadastrado.", code="PHONE_EXISTS")
+    if not exists:
+        raise ValidationError(
+            "Telefone sem WhatsApp ativo.",
+            code="PHONE_NOT_ON_WHATSAPP",
+        )
+
+    notification_id = _send_lead_invite(promoter.user, normalized_phone)
+    if notification_id is None:
+        raise IntegrationError(
+            "Não foi possível encaminhar o convite.",
+            code="INVITE_NOT_SENT",
+        )
+    return {"sent": True, "phone_last4": normalized_phone[-4:]}
+
+
+def _send_lead_invite(promoter_user, phone: str) -> str | None:
+    from notify.interface.send import send
+
+    link = ref_url(promoter_user)
+    digest = hashlib.sha256(
+        f"{promoter_user.external_id}:{phone}".encode()
+    ).hexdigest()[:20]
+    day = timezone.localdate().isoformat()
+    return send(
+        text=(
+            "Você recebeu um convite para conhecer o Supletivo V7M.\n\n"
+            f"Acesse com segurança pelo link: {link}\n\n"
+            "Você confirma seus próprios dados antes de qualquer matrícula."
+        ),
+        caller="promoter.lead_invite",
+        phone=phone,
+        whatsapp=True,
+        email_channel=False,
+        tts=False,
+        idempotency_key=f"promoter_lead_invite_{digest}_{day}",
+    )
 
 
 def list_commissions(user) -> list[dict]:

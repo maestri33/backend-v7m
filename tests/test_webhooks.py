@@ -1,5 +1,7 @@
 """Testes de webhooks: idempotência + validação de valor."""
 
+import uuid
+from decimal import Decimal
 import pytest
 from unittest.mock import patch
 
@@ -92,3 +94,68 @@ def test_infinitepay_webhook_valor_correto_aprova():
     checkout.refresh_from_db()
     assert checkout.status == Checkout.Status.PAID
     assert checkout.paid_amount_cents == 1000
+
+
+def test_asaas_webhook_propaga_valor_real_do_payload(monkeypatch):
+    from core import hooks
+    from integrations.bank.asaas import webhooks
+    from integrations.bank.asaas.models import Payment
+
+    Payment.objects.create(
+        payment_id="chg_amount",
+        kind=Payment.Kind.CHARGE,
+        status="PENDING",
+        amount=Decimal("5.00"),
+    )
+    received = []
+
+    def handler(**kwargs):
+        received.append(kwargs)
+        return True
+
+    monkeypatch.setitem(hooks._HOOKS, "payment.paid", [handler])
+    webhooks.handle_event(
+        {
+            "event": "PAYMENT_RECEIVED",
+            "payment": {
+                "externalReference": "chg_amount",
+                "id": "pay_amount",
+                "value": 4.99,
+            },
+        }
+    )
+
+    assert received[0]["amount_cents"] == 499
+
+
+def test_lead_nao_credita_comissao_com_valor_menor():
+    from users.auth.models import User
+    from users.roles.lead import service
+    from users.roles.lead.models import Checkout, Lead
+
+    promoter = User.objects.create_user(external_id=uuid.uuid4())
+    student = User.objects.create_user(external_id=uuid.uuid4())
+    lead = Lead.objects.create(user=student, promoter=promoter)
+    checkout = Checkout.objects.create(
+        lead=lead,
+        payment_method=Checkout.Method.PIX,
+        provider=Checkout.Provider.ASAAS,
+        provider_payment_id="lead_underpaid",
+        amount=Decimal("5.00"),
+    )
+
+    with (
+        patch.object(service, "_apply_effects") as effects,
+        pytest.raises(service.LeadError, match="payment_amount_mismatch"),
+    ):
+        service.mark_paid(
+            provider="asaas",
+            provider_payment_id="lead_underpaid",
+            amount_cents=499,
+        )
+
+    lead.refresh_from_db()
+    checkout.refresh_from_db()
+    assert lead.status == Lead.Status.PENDING
+    assert checkout.is_paid is False
+    effects.assert_not_called()

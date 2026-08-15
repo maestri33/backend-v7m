@@ -40,13 +40,15 @@ class MailError(Exception):
 class MailClient:
     """Envio de email via SMTP STARTTLS:587 autenticado."""
 
-    def __init__(self, *, timeout: float | None = None) -> None:
+    def __init__(
+        self, *, timeout: float | None = None, from_name: str | None = None
+    ) -> None:
         self._host = settings.MAIL_SMTP_HOST
         self._port = settings.MAIL_SMTP_PORT
         self._user = settings.MAIL_SMTP_USER
         self._password = settings.MAIL_SMTP_PASSWORD
         self._from_email = settings.MAIL_FROM_EMAIL or settings.MAIL_SMTP_USER
-        self._from_name = settings.MAIL_FROM_NAME
+        self._from_name = from_name or settings.MAIL_FROM_NAME
         self._timeout = timeout if timeout is not None else settings.MAIL_TIMEOUT
 
     @property
@@ -127,6 +129,8 @@ class MailClient:
             ) from exc
 
 
-def get_client(*, timeout: float | None = None) -> MailClient:
+def get_client(
+    *, timeout: float | None = None, from_name: str | None = None
+) -> MailClient:
     """Constrói o client com host/user/senha/from do .env (config via settings — §10)."""
-    return MailClient(timeout=timeout)
+    return MailClient(timeout=timeout, from_name=from_name)

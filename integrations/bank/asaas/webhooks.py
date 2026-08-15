@@ -6,6 +6,8 @@ Payment.status (só altera estado DENTRO do app asaas) → o que não casa com n
 fallback logger do core (consumidores reais — fees/commissions — ainda não existem).
 """
 
+from decimal import Decimal, InvalidOperation
+
 import structlog
 from django.utils import timezone
 
@@ -38,6 +40,17 @@ ASAAS_TO_PAYOUT_STATUS = {
 }
 
 _PAYOUT_KINDS = (Payment.Kind.PIXKEY, Payment.Kind.QRCODE)
+
+
+def _paid_amount_cents(payload: dict, fallback_amount) -> int:
+    raw = (payload.get("payment") or {}).get("value")
+    if raw is None:
+        raw = fallback_amount
+    try:
+        return int((Decimal(str(raw)) * 100).quantize(Decimal("1")))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError("invalid_payment_value") from exc
+
 
 # Trechos do `failReason` do Asaas que indicam SALDO insuficiente na conta — não é recusa
 # definitiva: o Payment (e a PaymentRequest que reconcilia por cima) fica AWAITING_BALANCE e a
@@ -94,7 +107,7 @@ def handle_event(payload, source_ip=None, user_agent=None):
                 reraise=True,
                 provider="asaas",
                 provider_payment_id=payment.payment_id,
-                amount_cents=int(payment.amount * 100),
+                amount_cents=_paid_amount_cents(payload, payment.amount),
                 # comprovante PIX (Asaas) → o lead manda pro aluno na notify de pago.
                 receipt_url=(payload.get("payment") or {}).get("transactionReceiptUrl"),
             )

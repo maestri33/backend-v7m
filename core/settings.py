@@ -342,6 +342,19 @@ CPFHUB_API_KEY = env("CPFHUB_API_KEY", default="")
 CPFHUB_BASE_URL = env("CPFHUB_BASE_URL", default="https://api.cpfhub.io")
 CPFHUB_TIMEOUT = env.float("CPFHUB_TIMEOUT", default=5.0)
 
+# Monitor de integrações: incidentes deduplicados, triagem por IA e alerta operacional.
+# Ações financeiras nascem desligadas e exigem também allowlist + política no banco.
+INTEGRATION_FAILURE_THRESHOLD = env.int("INTEGRATION_FAILURE_THRESHOLD", default=2)
+INTEGRATION_AI_TRIAGE_ENABLED = env.bool("INTEGRATION_AI_TRIAGE_ENABLED", default=True)
+INTEGRATION_ALERT_PHONE = env("INTEGRATION_ALERT_PHONE", default="")
+INTEGRATION_ALERT_EMAIL = env("INTEGRATION_ALERT_EMAIL", default="")
+INTEGRATION_AUTO_ACTIONS_ENABLED = env.bool(
+    "INTEGRATION_AUTO_ACTIONS_ENABLED", default=False
+)
+INTEGRATION_AUTO_PURCHASE_ALLOWLIST = env.list(
+    "INTEGRATION_AUTO_PURCHASE_ALLOWLIST", default=[]
+)
+
 
 # IA (integrations.ai) — engine LLM multi-provider OpenAI-compatible + fallback (CONVENTION §8/§10).
 # Todos os providers (deepseek, dashscope, groq, openai, openrouter, nvidia, …) falam o mesmo

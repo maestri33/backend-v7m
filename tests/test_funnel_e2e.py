@@ -7,7 +7,8 @@ que o `status` do wizard avançou. Se um passo não avança (ex.: "preso em addr
 
 Fronteira HTTP × interface (deliberada, cada uma comentada onde acontece):
   - **HTTP-testado** (endpoint real + asserção de estado): register, check, login, upload de RG,
-    PATCH do RG, POST/PATCH de endereço, upload do comprovante, escolaridade, selfie, student/me.
+    captura completa do RG, POST/PATCH de endereço, upload do comprovante, escolaridade, selfie,
+    student/me.
   - **interface-driven** (portão EXTERNO/HUMANO/HARDWARE que NÃO roda no CI, dirigido pelo módulo
     com comentário): (a) confirmação do pagamento (webhook Asaas), (b) veredito da IA que aprova o
     RG e o comprovante (o provider de IA não existe no CI e a task Django-Q não roda no teste),
@@ -85,11 +86,7 @@ def _simulate_payment(user_external_id: str) -> None:
 
 
 def _approve_rg(user_external_id: str) -> None:
-    """MODELA o pipeline de IA aprovando a foto do RG (visão → OCR → extração).
-
-    A validação real roda numa task Django-Q com provider de IA — nenhum dos dois existe no CI.
-    Setamos o MESMO estado terminal que a task escreveria (validation_status=approved); o `number`
-    e os campos de perfil o aluno completa via PATCH HTTP (o funil real também aceita digitação)."""
+    """Modela só o veredito assíncrono do RG; OCR pode continuar sem extrair nenhum campo."""
     from users.documents import service as documents_iface
     from users.roles import _document_ai as doc_ai
 
@@ -222,34 +219,29 @@ def test_aluno_funnel_end_to_end(client, default_hub):
     token = r.json()["access_token"]
 
     # matrícula nasce na etapa RG (documento primeiro — plan/13).
-    assert _me_status(client, token)["status"] == "rg"
+    me = _me_status(client, token)
+    assert me["status"] == "rg"
+    assert "pix" not in me and "pix_key" not in me, "matrícula do aluno não possui chave Pix"
 
-    # 5) RG — upload da foto (HTTP) → aprovação da IA (interface) → PATCH dos campos (HTTP) → ADDRESS.
+    # 5) RG — frente + verso por HTTP. A captura completa avança imediatamente; OCR e validação
+    # seguem em segundo plano e NENHUM campo extraído volta como digitação obrigatória.
     r = client.post(
         f"{BASE}/enrollment/documents/rg/photo/front",
         {"file": _png()},
         HTTP_AUTHORIZATION=f"Bearer {token}",
     )
     assert r.status_code == 200, f"upload rg: {r.status_code} {r.content}"
-    _approve_rg(uid)  # interface: IA aprovou a foto do documento
-    r = _json(
-        client,
-        "patch",
-        "/enrollment/documents/rg",
-        {
-            "number": "12.345.678-9",
-            "issuing_agency": "SSP-SP",
-            "issue_date": "2015-06-01",
-            "mother_name": "Maria da Silva",
-            "father_name": "José da Silva",
-            "birthplace": "São Paulo-SP",
-            "marital_status": "solteiro",
-            "nationality": "brasileira",
-        },
-        token,
+    assert _me_status(client, token)["status"] == "rg", "só a frente não pode concluir o RG"
+    r = client.post(
+        f"{BASE}/enrollment/documents/rg/photo/back",
+        {"file": _png()},
+        HTTP_AUTHORIZATION=f"Bearer {token}",
     )
-    assert r.status_code == 200, f"patch rg: {r.status_code} {r.content}"
-    assert r.json()["status"] == "address", "RG completo não avançou pra ADDRESS"
+    assert r.status_code == 200, f"upload verso rg: {r.status_code} {r.content}"
+    me = _me_status(client, token)
+    assert me["status"] == "address", "captura completa do RG não avançou pra ADDRESS"
+    assert me["rg"]["missing_fields"] == [], "OCR ausente não pode pedir digitação ao aluno"
+    _approve_rg(uid)  # análise assíncrona aprova sem exigir PATCH de dados
 
     # 6) ENDEREÇO — POST só com CEP (HTTP, ViaCEP mockado) → falta o número.
     r = _json(client, "post", "/enrollment/address", {"cep": "01310100"}, token)

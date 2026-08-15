@@ -1131,6 +1131,10 @@ def _notify_doc_event(
     wave-2: send_event lê teor/canais/is_tts do Template no DB."""
     from notify.interface.events import send_event
 
+    candidate_profile = profiles.get(cand.user)
+    candidate_name = (
+        candidate_profile.name if candidate_profile and candidate_profile.name else "o candidato"
+    )
     if event == "candidate.document_in_review":
         coord = cand.hub.coordinator
         if coord is None:
@@ -1139,14 +1143,17 @@ def _notify_doc_event(
         target_profile = cp
         channels = ("whatsapp",)  # coordenador: WhatsApp-only (legado)
     else:
-        target_profile = profiles.get(cand.user)
+        target_profile = candidate_profile
         channels = None  # Template decide os canais
 
     try:
         send_event(
             event,
             profile=target_profile,
-            ctx={"detail": detail or ""},
+            ctx={
+                "detail": detail or "",
+                "candidate_name": candidate_name,
+            },
             subject=subject,
             channels_override=channels,
         )
@@ -1562,8 +1569,8 @@ def _resolve_selfie(cand: Candidate) -> None:
     from users.roles import _selfie
 
     if cand.selfie_status == _selfie.APPROVED:
-        _notify_selfie_approved(cand)
-        _complete_candidate(cand)
+        if not _complete_candidate(cand):
+            _notify_selfie_approved(cand)
     elif cand.selfie_status == _selfie.REJECTED:
         _notify_selfie_rejected(cand)
         # F2: 5ª reprovação → sobe a flag nível-pessoa (não bloqueia) e SEGUE promovendo — o encontro
@@ -1602,25 +1609,27 @@ def _promote_to_promoter(cand: Candidate) -> bool:
     with transaction.atomic():
         if "promoter" not in roles.active_roles(cand.user):
             roles.promote(cand.user, "promoter")
-        promoter_iface.create_promoter(user=cand.user, hub=cand.hub)
+        promoter = promoter_iface.create_promoter(user=cand.user, hub=cand.hub)
         _set_status(cand, _S.APPROVED)
         locked = training_iface.on_became_promoter(cand.user)
-    _notify_became_promoter(cand, locked=locked)
+    _notify_became_promoter(
+        cand, locked=locked, scholarship=promoter.pre_matriculado
+    )
     logger.info("candidate.approved", external_id=str(cand.external_id), locked=locked)
     return locked
 
 
-def _complete_candidate(cand: Candidate) -> None:
-    """Promove depois da selfie, sem prender as telas durante as análises assíncronas."""
+def _complete_candidate(cand: Candidate) -> bool:
+    """Promove depois da selfie e devolve se a promoção ocorreu nesta chamada."""
     from users.roles import _address_proof, _document_ai, _selfie
 
     if cand.status not in (_S.SELFIE, _S.COMPLETED):
-        return
+        return False
     selfie_allowed = cand.selfie_verified or (
         cand.selfie_reject_count >= _selfie.MAX_REJECTS_BEFORE_MEETING
     )
     if not selfie_allowed:
-        return
+        return False
     user_ext = str(cand.user.external_id)
     document = (
         documents_iface.get_doc_sub(user_ext, cand.doc_type) if cand.doc_type else None
@@ -1635,8 +1644,9 @@ def _complete_candidate(cand: Candidate) -> None:
     if not checks_ready:
         if cand.status == _S.SELFIE:
             _set_status(cand, _S.COMPLETED)
-        return
+        return False
     _promote_to_promoter(cand)
+    return True
 
 
 def decide_selfie(
@@ -1677,7 +1687,8 @@ def decide_selfie(
         ]
     )
     if approve:
-        _complete_candidate(cand)
+        if not _complete_candidate(cand):
+            _notify_selfie_approved(cand)
     else:
         _notify_selfie_rejected(cand)
     return cand
@@ -1706,10 +1717,15 @@ def _notify_selfie_review(cand: Candidate) -> None:
     if coord is None:
         return
     cp = profiles.get(coord)
+    candidate_profile = profiles.get(cand.user)
+    candidate_name = (
+        candidate_profile.name if candidate_profile and candidate_profile.name else "o candidato"
+    )
     try:
         send_event(
             "candidate.selfie_in_review",
             profile=cp,
+            ctx={"candidate_name": candidate_name},
             channels_override=("whatsapp",),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1862,17 +1878,33 @@ def reject_candidate(
     return cand
 
 
-def _notify_became_promoter(cand: Candidate, *, locked: bool) -> None:
+def _notify_became_promoter(
+    cand: Candidate, *, locked: bool, scholarship: bool
+) -> None:
     """Virou promotor: travado → `training.must_train` (texto); liberado → `training.approved` (TTS).
 
     Migração 2026-07-02: send_event lê teor/canais/is_tts do Template no DB; `{nome}` do profile."""
     from notify.interface.events import send_event
 
-    event = "training.must_train" if locked else "training.approved"
+    from users.roles.promoter.rules import (
+        BOLSA_ENROLL_THRESHOLD,
+        BOLSA_EXAM_THRESHOLD,
+    )
+
+    if locked:
+        event = "training.must_train.scholarship" if scholarship else "training.must_train"
+    else:
+        event = "training.approved.scholarship" if scholarship else "training.approved"
     p = profiles.get(cand.user)
     try:
         send_event(
-            event, profile=p, idempotency_key=f"candidate_promoted_{cand.external_id}"
+            event,
+            profile=p,
+            ctx={
+                "enroll_goal": BOLSA_ENROLL_THRESHOLD,
+                "exam_goal": BOLSA_EXAM_THRESHOLD,
+            },
+            idempotency_key=f"candidate_promoted_{cand.external_id}",
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("candidate.notify_promoted_failed", error=str(exc))

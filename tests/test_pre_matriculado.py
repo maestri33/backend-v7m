@@ -51,13 +51,19 @@ def _add_paid_leads(promoter_user, hub, n: int):
 
 
 @pytest.mark.django_db
-def test_auto_enroll_converte_uma_vez_e_baixa_flag():
+def test_auto_enroll_converte_uma_vez_e_baixa_flag(monkeypatch):
     from users.roles.enrollment.models import Enrollment
     from users.roles.promoter import service as promoter_iface
     from users.roles.promoter.models import Promoter
 
     user, hub, _ = _mk_promoter(pre_matriculado=True)
     _add_paid_leads(user, hub, 3)
+    notified = []
+    monkeypatch.setattr(
+        promoter_iface,
+        "_notify_scholarship_enrolled",
+        lambda promoted_user: notified.append(promoted_user),
+    )
 
     # duas chamadas em sequência simulam dois pagamentos concorrentes: só a 1ª converte.
     first = promoter_iface.maybe_auto_enroll_bolsista(user)
@@ -68,6 +74,7 @@ def test_auto_enroll_converte_uma_vez_e_baixa_flag():
     enr = Enrollment.objects.get(user=user)
     assert enr.bolsista is True
     assert Promoter.objects.get(user=user).pre_matriculado is False
+    assert notified == [user]
 
 
 @pytest.mark.django_db
@@ -97,6 +104,42 @@ def test_auto_enroll_ignora_quem_nao_e_pre_matriculado():
 
     assert promoter_iface.maybe_auto_enroll_bolsista(user) is False
     assert Enrollment.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
+def test_notify_do_pagamento_mostra_progresso_real_da_bolsa():
+    from users.roles.lead import service as lead_iface
+
+    user, hub, _ = _mk_promoter(pre_matriculado=True)
+    _add_paid_leads(user, hub, 2)
+
+    event, ctx = lead_iface._promoter_paid_notification(user)
+
+    assert event == "lead.paid.promoter.scholarship"
+    assert "2ª de 3" in ctx["progress_text"]
+    assert "Falta 1" in ctx["progress_text"]
+
+
+@pytest.mark.django_db
+def test_notify_do_bolsista_mostra_progresso_para_prova():
+    from users.roles.enrollment.models import Enrollment
+    from users.roles.lead import service as lead_iface
+
+    user, hub, promoter = _mk_promoter(pre_matriculado=False)
+    Enrollment.objects.create(
+        user=user,
+        promoter=user,
+        hub=hub,
+        self_study=True,
+        bolsista=True,
+    )
+    _add_paid_leads(user, hub, 6)
+
+    event, ctx = lead_iface._promoter_paid_notification(user)
+
+    assert event == "lead.paid.promoter.scholarship"
+    assert "6 de 10" in ctx["progress_text"]
+    assert "Faltam 4" in ctx["progress_text"]
 
 
 @pytest.mark.django_db

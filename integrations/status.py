@@ -76,13 +76,22 @@ def _config(integ: dict) -> dict:
 
 
 def _summary(name: str, integ: dict) -> dict:
+    from core.models import IntegrationIncident
+
     cfg = _config(integ)
+    open_incidents = IntegrationIncident.objects.filter(
+        integration=integ["scope"], status=IntegrationIncident.Status.OPEN
+    )
     return {
         "name": name,
         "configured": all(cfg.values()) if cfg else True,  # cep não tem env
         "config": cfg,
         "flow": integ["flow"],
         "checks": latest_checks(integ["scope"]),
+        "open_incidents": open_incidents.count(),
+        "critical_incidents": open_incidents.filter(
+            severity=IntegrationIncident.Severity.CRITICAL
+        ).count(),
     }
 
 

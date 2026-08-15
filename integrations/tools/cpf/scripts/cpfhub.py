@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -65,8 +66,15 @@ async def lookup(cpf: str) -> CpfIdentity | None:
     Retorna None se o CPF tiver formato inválido (≠ 11 dígitos) ou não for encontrado (404).
     Levanta CpfHubError se a CPFHub falhar de verdade (rede, 401 key, 429 limite, 5xx após retry).
     """
+    from integrations import monitoring
+
+    started = time.monotonic()
     if not settings.CPFHUB_API_KEY:
-        raise CpfHubError(0, "CPFHUB_API_KEY ausente no .env")
+        error = CpfHubError(0, "CPFHUB_API_KEY ausente no .env")
+        await monitoring.record_failure_async(
+            "cpf", "lookup", error, error_code="missing_key", severity="critical"
+        )
+        raise error
 
     digits = re.sub(r"\D", "", cpf or "")
     if len(digits) != 11:
@@ -91,7 +99,11 @@ async def lookup(cpf: str) -> CpfIdentity | None:
                 if attempt + 1 < max_attempts:
                     await asyncio.sleep(_RETRY_DELAYS[attempt])
                     continue
-                raise CpfHubError(0, "CPFHub indisponível (rede)") from exc
+                error = CpfHubError(0, "CPFHub indisponível (rede)")
+                await monitoring.record_failure_async(
+                    "cpf", "lookup", error, error_code=type(exc).__name__
+                )
+                raise error from exc
             if resp.status_code in _RETRY_STATUSES and attempt + 1 < max_attempts:
                 logger.warning(
                     "cpfhub.transient", attempt=attempt, status=resp.status_code
@@ -106,20 +118,46 @@ async def lookup(cpf: str) -> CpfIdentity | None:
         raise CpfHubError(0, "CPFHub sem resposta")
     if resp.status_code == 404:
         logger.info("cpfhub.not_found")
+        await monitoring.record_success_async(
+            "cpf",
+            "lookup",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            detail="provider_ok; identity_not_found",
+        )
         return None
     if resp.status_code != 200:
         # 401 (key inválida), 429 (limite), 5xx (após esgotar retry) -> erro real
         logger.warning("cpfhub.error_status", status=resp.status_code)
-        raise CpfHubError(resp.status_code)
+        error = CpfHubError(resp.status_code)
+        severity = "critical" if resp.status_code in (401, 403) else "error"
+        await monitoring.record_failure_async(
+            "cpf",
+            "lookup",
+            error,
+            error_code=str(resp.status_code),
+            severity=severity,
+            context={"http_status": resp.status_code},
+        )
+        raise error
 
     body = _json_or_none(resp)
     if not isinstance(body, dict) or not body.get("success"):
         logger.info("cpfhub.unsuccessful")
+        await monitoring.record_failure_async(
+            "cpf", "lookup", "resposta sem success=true", error_code="invalid_payload"
+        )
         return None
     data = body.get("data")
     if not isinstance(data, dict):
         return None
-    return _parse_identity(digits, data)
+    identity = _parse_identity(digits, data)
+    await monitoring.record_success_async(
+        "cpf",
+        "lookup",
+        latency_ms=int((time.monotonic() - started) * 1000),
+        detail="identity_found",
+    )
+    return identity
 
 
 def _parse_identity(cpf: str, data: dict) -> CpfIdentity:

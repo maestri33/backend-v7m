@@ -371,6 +371,16 @@ class PromoterLeadOut(Schema):
     created_at: str
 
 
+class PromoterLeadInviteIn(Schema):
+    phone: str
+    cpf: str
+
+
+class PromoterLeadInviteOut(Schema):
+    sent: bool
+    phone_last4: str
+
+
 class PromoterCommissionOut(Schema):
     """Comissão do promotor (read-only)."""
 
@@ -790,6 +800,20 @@ def promoter_me(request):
 @api.get("/promoter/me/leads", response=list[PromoterLeadOut], tags=["promoter"])
 def promoter_leads(request):
     return promoter_iface.list_leads(_promoter(request).user)
+
+
+@api.post(
+    "/promoter/me/leads/invite",
+    response=PromoterLeadInviteOut,
+    tags=["promoter"],
+)
+def promoter_lead_invite(request, payload: PromoterLeadInviteIn):
+    """Valida telefone/CPF disponíveis e encaminha o link do promotor, sem criar cadastro."""
+    return promoter_iface.invite_lead(
+        promoter=_promoter(request),
+        phone=payload.phone,
+        cpf=payload.cpf,
+    )
 
 
 @api.get(
