@@ -16,7 +16,7 @@ sobre o `hub/` (plan/14, Victor 2026-06-12).
 from __future__ import annotations
 
 import structlog
-from ninja import Field, File, Router, Schema
+from ninja import Field, File, Query, Router, Schema
 from ninja.files import UploadedFile
 
 from api.auth import require_roles
@@ -1311,10 +1311,16 @@ def reactivate_promoter(request, external_id: str):
 
 @api.get("/students", response=PaginatedStudentsOut, tags=["student"])
 def list_hub_students(
-    request, status: str | None = None, limit: int = 200, offset: int = 0
+    request,
+    status: str | None = None,
+    limit: int = Query(200, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ):
     """Alunos do polo do coordenador (A2 — lista nova, Victor 2026-06-21). Filtro opcional por status,
-    paginação `limit`/`offset` + `total`. Cada item traz o `external_id` pra abrir o detalhe."""
+    paginação `limit`/`offset` + `total`. Cada item traz o `external_id` pra abrir o detalhe.
+
+    limit/offset com Field (ge/le): `offset=-1` ou `limit>200` → 422 do schema, não mais 500 no
+    `qs[offset:offset+limit]` (auditoria API C1)."""
     coordinator = _coordinator(request)
     hub = _coordinator_hub(coordinator)
     items, total = student_iface.list_for_hub(

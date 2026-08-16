@@ -1945,6 +1945,8 @@ def list_for_staff(*, hub_external_id=None, status=None, limit=200) -> list[dict
 def list_for_hub(*, hub, status: str | None = None) -> list[dict]:
     """Matrículas do polo (visão do coordenador): status REAL + resumo das 2 parcelas da taxa.
     `?status=awaiting_release` = quem terminou o wizard e espera ação do coordenador."""
+    from users.roles._listing import capped
+
     qs = (
         Enrollment.objects.filter(hub=hub)
         .select_related("user")
@@ -1952,7 +1954,14 @@ def list_for_hub(*, hub, status: str | None = None) -> list[dict]:
     )
     if status:
         qs = qs.filter(status=status)
-    return [_hub_item_dict(enr) for enr in qs]
+    # teto de segurança + log se truncar (auditoria API C1) — nunca materializa o polo inteiro.
+    enrs = capped(
+        qs,
+        event="enrollment.list_truncated",
+        hub=str(getattr(hub, "external_id", None)),
+        status=status,
+    )
+    return [_hub_item_dict(enr) for enr in enrs]
 
 
 def coordinated_user_ext(*, enrollment_external_id: str, coordinator) -> str:

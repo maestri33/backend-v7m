@@ -1151,6 +1151,10 @@ def list_for_hub(
     detalhe /students/{id}; agora lista/busca por status). Devolve (rows, total) pra paginação."""
     from users.profiles import interface as profiles
 
+    # clamp defensivo (2ª camada além do Field da borda): protege chamadas internas de valores
+    # negativos/absurdos — `qs[-1:...]` levanta ValueError (500). Auditoria API C1.
+    offset = max(0, offset)
+    limit = max(1, min(limit, 200))
     qs = Student.objects.filter(hub=hub).select_related("user").order_by("-created_at")
     if status:
         qs = qs.filter(status=status)

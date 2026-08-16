@@ -841,8 +841,13 @@ def list_leads(*, hub=None, status=None, created_after=None, limit=None) -> list
     data mínima (`created_after`) e `limit`.
 
     HUB = o polo do lead: o promotor pertence ao hub (`Promoter.hub`) OU a matrícula já está no hub
-    (`Enrollment.hub`, pós-pagamento). Sem hub → todos (staff/tools). Coordenador passa o seu hub."""
+    (`Enrollment.hub`, pós-pagamento). Sem hub → todos (staff/tools). Coordenador passa o seu hub.
+
+    Sem `limit` explícito, aplica o teto de segurança (com log se truncar — auditoria API C1);
+    `/staff/leads` numa base de 20k materializava a tabela inteira."""
     from django.db.models import Q
+
+    from users.roles._listing import capped
 
     qs = Lead.objects.select_related("user", "promoter", "checkout").order_by(
         "-created_at"
@@ -856,8 +861,13 @@ def list_leads(*, hub=None, status=None, created_after=None, limit=None) -> list
             Q(promoter__promoter__hub=hub) | Q(user__enrollment__hub=hub)
         ).distinct()
     if limit is not None:
-        qs = qs[:limit]
-    return list(qs)
+        return list(qs[: max(1, limit)])
+    return capped(
+        qs,
+        event="lead.list_truncated",
+        hub=str(getattr(hub, "external_id", None)),
+        status=status,
+    )
 
 
 def lead_to_dict(lead: Lead, pmap: dict | None = None) -> dict:

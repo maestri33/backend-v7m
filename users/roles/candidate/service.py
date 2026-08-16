@@ -1992,6 +1992,7 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
     # vazio — o coordenador nunca via os candidatos que precisavam da decisão dele.
     from django.db.models import Q
 
+    from users.roles._listing import capped
     from users.roles._selfie import SelfieStatus
 
     qs = (
@@ -2003,7 +2004,12 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    cands = list(qs)
+    # teto de segurança + log se truncar (auditoria API C1).
+    cands = capped(
+        qs,
+        event="candidate.awaiting_list_truncated",
+        hub=str(getattr(hub, "external_id", None)),
+    )
     pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
     for cand in cands:
         p = pmap.get(cand.user_id)
