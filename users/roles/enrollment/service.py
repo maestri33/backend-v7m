@@ -230,8 +230,12 @@ def me_dict(enr: Enrollment) -> dict:
     education = None
     if edu is not None:
         education = {
-            "last_year_studied": edu.last_year_studied,
+            "level": edu.level,
+            "grade": edu.grade,
+            "completed": edu.completed,
             "last_school": edu.last_school,
+            "city": edu.city,
+            "state": edu.state,
             "last_year_when": edu.last_year_when,
         }
 
@@ -364,6 +368,11 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         "nationality": p.nationality if p else None,
     }
     result = (rg.validation_result or {}) if rg else {}
+    # MESMA régua da selfie (_selfie_dict: `enr.selfie_status if enr.selfie_image else None`):
+    # sem foto não há análise em voo, então `analysis_status` é None (front mostra o upload, não
+    # "extraindo…"). O RG nasce com validation_status="pending" por default — surfá-lo cru travava
+    # o passo RG num spinner eterno mesmo sem nenhuma foto enviada.
+    has_photo = bool(rg and (rg.front_photo or rg.back_photo or rg.full_photo))
     return {
         **fields,
         "name": p.name if p else None,
@@ -372,9 +381,9 @@ def _rg_section_dict(enr: Enrollment) -> dict:
         "back_photo": rg.back_photo if rg else None,
         "full_photo": rg.full_photo if rg else None,
         # canônico unificado (proposta #4) + alias `validation_*` (compat) até o front migrar.
-        "analysis_status": rg.validation_status if rg else None,
+        "analysis_status": rg.validation_status if has_photo else None,
         "analysis_reason": result.get("reason"),
-        "validation_status": rg.validation_status if rg else None,
+        "validation_status": rg.validation_status if has_photo else None,
         "validation_reason": result.get("reason"),
         "missing_fields": [
             k for k in (*_RG_DOC_FIELDS, *_RG_PROFILE_FIELDS) if not fields[k]
@@ -732,12 +741,13 @@ def _rg_post_approval(enr: Enrollment, rg) -> None:
         if enrolled is None and full.exists():
             cropped = doc_ai.crop_face(full.read_bytes(), caller="enrollment.rg")
             if cropped:
-                crop_path = full.with_name("rg_face_crop.jpg")
-                crop_path.write_bytes(cropped)
+                from core.media import save_media
+
+                crop_rel = save_media(prefix="documents", data=cropped, ext="jpg")
                 biometric.try_enroll_document(
                     user=enr.user,
                     slot="rg_front",
-                    image_path=str(crop_path),
+                    image_path=str(Path(settings.MEDIA_ROOT) / crop_rel),
                     caller="enrollment.document_crop",
                 )
 
@@ -866,6 +876,99 @@ def _resume_link() -> str:
     return base + getattr(settings, "ENROLLMENT_RESUME_PATH", "/matricula")
 
 
+_SELFIE_STORY_PROMPT = (
+    "Você é um redator de mensagens que EMOCIONAM. Escreve para uma pessoa que acabou de assinar, com o "
+    "próprio rosto, a matrícula num supletivo (EJA) — ela voltou a estudar. Já pagou, já enviou tudo: a "
+    "matrícula está confirmada. Esta mensagem é pra marcar essa decisão na vida dela.\n\n"
+    "Escreva uma mensagem curta (8 a 12 linhas) que:\n"
+    "- Fale com a PESSOA, não sobre o produto. O herói da mensagem é a coragem dela de voltar a estudar.\n"
+    "- EMOCIONE de verdade: toque no peso de recomeçar depois de anos, no que essa decisão significa, em "
+    "quem ela honra ao dar esse passo. Pode ser forte, pode dar um nó na garganta — desde que seja "
+    "VERDADEIRO, nunca água com açúcar.\n"
+    "- Reconheça que dar esse passo JÁ é uma vitória, independente do que venha depois.\n"
+    "- Fuja de clichê vazio e bajulação genérica ('você é incrível', 'extraordinário', 'você consegue'): "
+    "emoção se constrói com verdade concreta, não com elogio solto.\n"
+    "- NÃO mande a pessoa aguardar, esperar ser chamada, nem explique trâmite burocrático ('a secretaria "
+    "vai analisar', 'você será chamada em breve'). Isso esfria tudo. Encerre olhando pra FRENTE — o que "
+    "se abre a partir daqui — não pra fila de espera.\n"
+    "- NÃO invente detalhes sobre a vida, dificuldades ou histórico da pessoa além do fornecido.\n"
+    "- NÃO venda nada nem peça indicações.\n"
+    "- Trate pelo nome (use mais de uma vez) e ajuste querida/querido/neutro conforme o sexo, sem soar "
+    "forçado.\n\n"
+    "Adapte pela idade: jovem (até ~20), o futuro que se abre, a vida inteira pela frente; adulto, o "
+    "mérito raro de voltar a estudar no meio do trabalho, da família, da correria.\n\n"
+    "A aparência física abaixo é REAL (extraída da foto) e serve SÓ pra você calibrar o tom (cansaço, "
+    "horário, ambiente). NUNCA descreva nem comente o rosto, o corpo ou a aparência da pessoa na "
+    "mensagem — isso constrange.\n\n"
+    "Dados do aluno:\n"
+    "- Nome: {name}\n"
+    "- Idade: {idade}\n"
+    "- Sexo: {sexo}\n"
+    "- Aparência física (foto): {aparencia}\n"
+    "- Observação: (não informada)\n\n"
+    "Escreva a mensagem final, pronta para envio, sem comentários extras antes ou depois do texto."
+)
+
+
+def _selfie_story(enr: Enrollment, p, first: str) -> str | None:
+    """Storytelling RICO da matrícula assinada (Victor 2026-06-21): a visão (MiniMax) descreve a selfie
+    só pra CALIBRAR o tom; o Opus 4.8 escreve um pequeno discurso motivacional (fallback DeepSeek →
+    MiniMax). Dados REAIS (idade/sexo). Best-effort: qualquer falha devolve None e o caller cai no teor
+    fixo. Roda async (qcluster), então a latência da visão+LLM não trava ninguém."""
+    from pathlib import Path
+
+    from integrations.ai import service as ai
+    from users.roles import notifications as msgs
+
+    try:
+        desc = ""
+        try:
+            if enr.selfie_image:
+                fp = Path(settings.MEDIA_ROOT) / enr.selfie_image
+                if fp.exists():
+                    desc = ai.describe_image(
+                        fp.read_bytes(),
+                        caller="story.selfie.vision",
+                        prompt=(
+                            "Descreva objetivamente a aparencia da pessoa nesta selfie em 4-6 linhas "
+                            "(idade aparente, expressao, vestimenta, ambiente, iluminacao, mood/horario). "
+                            "Nao identifique quem e."
+                        ),
+                    )
+        except Exception:  # noqa: BLE001 — visão é apoio; sem ela o tom é genérico
+            desc = ""
+
+        idade = msgs.age_from(getattr(p, "birth_date", None))
+        sexo = {"M": "Masculino", "F": "Feminino"}.get(
+            (getattr(p, "gender", None) or "").upper(), "não informado"
+        )
+        instruction = _SELFIE_STORY_PROMPT.format(
+            name=first,
+            idade=f"{idade} anos" if idade else "não informada",
+            sexo=sexo,
+            aparencia=desc or "não disponível",
+        )
+        for mdl in ("claude-opus-4-8", "deepseek-v4-pro", "MiniMax-M3"):
+            try:
+                out = ai.generate_text(
+                    f"Escreva a mensagem para {first}.",
+                    caller=f"story.selfie.{mdl}",
+                    instruction=instruction,
+                    temperature=0.7,
+                    max_tokens=900,
+                    model=mdl,
+                )
+                out = (out or "").strip().replace("**", "")
+                if len(out) >= 60 and first.lower() in out.lower():
+                    return out
+            except Exception:  # noqa: BLE001 — falhou esse modelo, tenta o próximo
+                continue
+        return None
+    except Exception as exc:  # noqa: BLE001 — jamais quebra o notify
+        logger.warning("enrollment.selfie_story_failed", error=str(exc))
+        return None
+
+
 def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
     """Notify de RESOLUÇÃO de análise pro ALUNO (aprovado/reprovado — automático OU decisão do
     coordenador): **multicanal** (WhatsApp + e-mail) com **deep-link** de volta pro wizard
@@ -874,12 +977,30 @@ def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
     from users.roles import notifications as msgs
 
     p = profiles.get(enr.user)
-    text = msgs.text(
-        event_key, name=msgs.first_name(p.name if p else None), **placeholders
-    )
+    name = msgs.first_name(p.name if p else None)
+    fallback = msgs.text(event_key, name=name, **placeholders)
+    if event_key == "enrollment.selfie_approved":
+        # assinatura da matrícula = pequeno discurso motivacional RICO (visão da selfie → Opus 4.8,
+        # fallback DeepSeek → MiniMax). Cai no story_text simples e, por fim, no teor fixo.
+        text = _selfie_story(enr, p, name) or msgs.story_text(
+            event_key,
+            name=name,
+            fallback=fallback,
+            age=msgs.age_from(getattr(p, "birth_date", None)),
+        )
+    else:
+        text = msgs.story_text(
+            event_key,
+            name=name,
+            fallback=fallback,
+            age=msgs.age_from(getattr(p, "birth_date", None)),
+        )
+    # O link de "continuar" só faz sentido quando o aluno PRECISA voltar ao wizard. Em marcos de
+    # conclusão/assinatura (a mensagem manda AGUARDAR) o link se contradiz — por isso o guard.
     link = _resume_link()
-    if link:
+    if link and event_key not in {"enrollment.selfie_approved"}:
         text += f"\n\nContinue sua matrícula por aqui: {link}"
+    tts = msgs.is_tts(event_key)
     try:
         send(
             text=text,
@@ -888,6 +1009,8 @@ def _notify_resolution(enr: Enrollment, event_key: str, **placeholders) -> None:
             email=p.email if p else None,
             email_channel=bool(p and p.email),
             subject="Sua matrícula — atualização",
+            tts=tts,
+            gender=p.gender if (p and tts) else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -934,8 +1057,12 @@ def get_education(*, user_external_id: str) -> dict:
     except EducationalData.DoesNotExist:
         edu = None
     return {
-        "last_year_studied": edu.last_year_studied if edu else None,
+        "level": edu.level if edu else None,
+        "grade": edu.grade if edu else None,
+        "completed": edu.completed if edu else None,
         "last_school": edu.last_school if edu else None,
+        "city": edu.city if edu else None,
+        "state": edu.state if edu else None,
         "last_year_when": edu.last_year_when if edu else None,
     }
 
@@ -943,21 +1070,52 @@ def get_education(*, user_external_id: str) -> dict:
 def set_education(
     *,
     user_external_id: str,
-    last_year_studied: str,
+    level: str,
+    grade: int,
+    completed: bool,
     last_school: str,
+    city: str,
+    state: str,
     last_year_when=None,
 ) -> Enrollment:
     enr = _require(user_external_id, _S.EDUCATION)
+    # nível válido (Fundamental | Médio)
+    if level not in EducationalData.Level.values:
+        raise EnrollmentError(
+            "Nível de ensino inválido.",
+            code="EDUCATION_LEVEL_INVALID",
+            extra={"level": level, "allowed": list(EducationalData.Level.values)},
+        )
+    # série dentro da faixa do nível: Fundamental 1–9, Médio 1–3 (o dado mais valioso da matrícula)
+    lo, hi = EducationalData.GRADE_RANGE[level]
+    if grade is None or not (lo <= grade <= hi):
+        raise EnrollmentError(
+            f"Série fora da faixa do nível ({lo}–{hi}).",
+            code="EDUCATION_GRADE_OUT_OF_RANGE",
+            extra={"level": level, "grade": grade, "min": lo, "max": hi},
+        )
     EducationalData.objects.update_or_create(
         enrollment=enr,
         defaults={
-            "last_year_studied": last_year_studied,
-            "last_year_when": last_year_when,
+            "level": level,
+            "grade": grade,
+            "completed": completed,
             "last_school": last_school,
+            "city": city,
+            "state": state,
+            "last_year_when": last_year_when,
         },
     )
     _set_status(enr, _S.SELFIE)
     return enr
+
+
+# Mensagem PÚBLICA da selfie (o que o aluno vê). O comentário cru da IA (`selfie_description`) é
+# INTERNO/auditoria e NUNCA é exposto ao front (Victor 2026-06-21) — o `status` diz o resto.
+_SELFIE_PUBLIC_REASON = {
+    "rejected": "Não conseguimos confirmar sua selfie. Envie uma nova foto, nítida e com o rosto bem visível.",
+    "review": "Recebemos sua selfie e estamos confirmando. Avisamos você em instantes.",
+}
 
 
 def _selfie_dict(enr: Enrollment) -> dict:
@@ -973,14 +1131,14 @@ def _selfie_dict(enr: Enrollment) -> dict:
         # canônico unificado (proposta #4): `analysis_status`/`analysis_reason` + alias `status`/
         # `description` (compat). `expires_at` = até quando o `pending` vale (proposta #2).
         "analysis_status": status,
-        "analysis_reason": enr.selfie_description,
+        "analysis_reason": _SELFIE_PUBLIC_REASON.get(status),
         "expires_at": (
             _analysis.expires_at(enr.selfie_taken_at).isoformat()
             if status == _analysis.PENDING and enr.selfie_taken_at
             else None
         ),
         "verified": enr.selfie_verified,
-        "description": enr.selfie_description,
+        "description": _SELFIE_PUBLIC_REASON.get(status),
     }
 
 
@@ -1103,6 +1261,7 @@ def run_selfie_validation(enrollment_id: int) -> None:
     logger.info(
         "enrollment.selfie_validated", enrollment=str(enr.external_id), status=status
     )
+    _save_selfie_audit(enr, status, desc)
     _resolve_selfie(enr)
 
 
@@ -1180,11 +1339,9 @@ def decide_selfie(
 
 
 def _notify_selfie_rejected(enr: Enrollment) -> None:
-    _notify_resolution(
-        enr,
-        "enrollment.selfie_rejected",
-        detail=(enr.selfie_description or "").strip(),
-    )
+    # O comentário da IA (`selfie_description`) é INTERNO (auditoria) — NUNCA vai pro aluno; ele
+    # recebe só a mensagem genérica do catálogo (Victor 2026-06-21).
+    _notify_resolution(enr, "enrollment.selfie_rejected")
 
 
 def _notify_selfie_approved(enr: Enrollment) -> None:
@@ -1212,15 +1369,65 @@ def _notify_selfie_review(enr: Enrollment) -> None:
         logger.warning("enrollment.notify_selfie_review_failed", error=str(exc))
 
 
+def _save_selfie_audit(enr: Enrollment, status: str, desc: str | None) -> None:
+    """Auditoria da selfie (pedido do Victor 2026-06-21): por TENTATIVA, salva os recortes de rosto
+    (selfie + documento) + o comentário CRU da IA num diretório com timestamp — nunca sobrescreve, pra
+    o time conferir depois se a IA não está 'delirando'. Best-effort: jamais quebra o fluxo da matrícula."""
+    try:
+        import json
+        from datetime import datetime, timezone as _tz
+        from pathlib import Path
+
+        from core.media import media_token, save_media_at
+        from integrations.tools.biometric import face_match
+
+        # pasta da tentativa por TOKEN aleatório (sem id no path — só o log liga token→enrollment).
+        token = media_token()
+        base = f"audit/selfie/{token}"
+
+        if enr.selfie_image:
+            sp = Path(settings.MEDIA_ROOT) / enr.selfie_image
+            if sp.exists():
+                crop = face_match.face_crop_bytes(str(sp))
+                if crop:
+                    save_media_at(path=f"{base}/rosto_selfie.jpg", data=crop)
+
+        rg = documents_iface.get_rg(str(enr.user.external_id))
+        doc_rel = (rg.full_photo or rg.front_photo) if rg else None
+        if doc_rel:
+            dp = Path(settings.MEDIA_ROOT) / doc_rel
+            if dp.exists():
+                crop = face_match.face_crop_bytes(str(dp))
+                if crop:
+                    save_media_at(path=f"{base}/rosto_documento.jpg", data=crop)
+
+        save_media_at(
+            path=f"{base}/veredito.json",
+            data=json.dumps(
+                {
+                    "quando_utc": datetime.now(_tz.utc).isoformat(),
+                    "status": str(status),
+                    "comentario_ia": desc or "",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ).encode("utf-8"),
+        )
+        logger.info(
+            "enrollment.selfie_audit_saved",
+            enrollment=str(enr.external_id),
+            user=str(enr.user.external_id),
+            path=base,
+        )
+    except Exception as exc:  # noqa: BLE001 — auditoria nunca quebra o fluxo
+        logger.warning("enrollment.selfie_audit_failed", error=str(exc))
+
+
 def _save_selfie(enr: Enrollment, image_bytes: bytes, content_type: str) -> str:
-    from pathlib import Path
+    from core.media import save_media
 
     ext = _SELFIE_EXT.get(content_type, "jpg")
-    rel = f"enrollment/{enr.external_id}/selfie.{ext}"
-    fp = Path(settings.MEDIA_ROOT) / rel
-    fp.parent.mkdir(parents=True, exist_ok=True)
-    fp.write_bytes(image_bytes)
-    return rel
+    return save_media(prefix="selfie", data=image_bytes, ext=ext)
 
 
 def _notify_coordinator_awaiting(enr: Enrollment) -> None:

@@ -94,6 +94,34 @@ def embed(image_path: str) -> tuple[list[float], dict]:
     return emb, meta
 
 
+def face_crop_bytes(image_path: str) -> bytes | None:
+    """Best-effort: recorta o MAIOR rosto e devolve JPEG bytes (None se sem rosto/deps/erro).
+
+    Usado só para AUDITORIA (pedido do Victor 2026-06-21): guardar o rosto que a IA viu, pra o time
+    conferir depois se ela não está "delirando". Nunca levanta — falha vira None e o chamador segue."""
+    try:
+        import cv2
+
+        app = _get_app()
+        img = cv2.imread(image_path)
+        if img is None:
+            return None
+        faces = app.get(img)
+        if not faces:
+            return None
+        f = _largest_face(faces)
+        h, w = img.shape[:2]
+        x1, y1, x2, y2 = (int(max(0.0, v)) for v in f.bbox)
+        x2, y2 = min(w, x2), min(h, y2)
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+        ok, buf = cv2.imencode(".jpg", crop)
+        return buf.tobytes() if ok else None
+    except Exception:  # noqa: BLE001 — auditoria é best-effort; nunca quebra o fluxo
+        return None
+
+
 def cosine(a, b) -> float:
     """Cosseno entre dois embeddings (listas de float). Python puro — sem numpy (os vetores já são L2)."""
     dot = sum(x * y for x, y in zip(a, b))

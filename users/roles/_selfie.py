@@ -11,6 +11,8 @@ Uma implementação só, reusada (CONVENTION §12).
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from django.db import models
 
@@ -31,9 +33,11 @@ REJECTED = SelfieStatus.REJECTED
 REVIEW = SelfieStatus.REVIEW
 
 _PROMPT = (
-    "Esta imagem é uma SELFIE de uma pessoa real, fotografada ao vivo — e NÃO uma foto de outra foto, "
-    "de tela, de papel ou de documento? Responda em português começando OBRIGATORIAMENTE com a palavra "
-    "VALIDA (se for selfie de pessoa real) ou INVALIDA (caso contrário), seguida de um motivo curto."
+    "Você é o verificador de selfie de um cadastro escolar. A imagem é uma selfie de uma PESSOA "
+    "REAL, fotografada ao vivo agora? Só reprove se for CLARAMENTE foto de outra foto, de tela, de "
+    "papel ou de documento — em caso de dúvida, APROVE. Responda em UMA linha, começando com a "
+    "palavra VALIDA ou INVALIDA (sem markdown, sem asteriscos), seguida de no máximo uma frase curta "
+    "de motivo. NÃO escreva seu raciocínio e NÃO se corrija."
 )
 
 
@@ -53,13 +57,15 @@ def verify(
             REVIEW,
             "IA indisponível no momento — enviado para revisão manual do coordenador.",
         )
-    head = (desc or "").strip().upper()[:16]
-    # "INVALIDA" NÃO começa com "VALIDA" (começa com I) → startswith resolve sem ambiguidade.
-    if head.startswith("VALIDA"):
-        return APPROVED, desc
-    if head.startswith("INVALIDA"):
-        return REJECTED, desc
-    return REVIEW, desc  # resposta inconclusiva → revisão humana
+    # Lê o veredito FINAL, não o primeiro: modelos de raciocínio (MiniMax-M3) às vezes narram e se
+    # corrigem ("INVALIDA… na verdade VALIDA"). `\b` evita casar "VALIDA" dentro de "INVALIDA".
+    verdicts = re.findall(r"\b(?:IN)?VALIDA\b", (desc or "").upper())
+    if not verdicts:
+        return (
+            REVIEW,
+            desc,
+        )  # resposta inconclusiva → revisão humana (nunca reprova no escuro)
+    return (REJECTED if verdicts[-1].startswith("IN") else APPROVED), desc
 
 
 # ── "somar" liveness + biometria facial (Victor 2026-06-05) ──────────────────────────────────────

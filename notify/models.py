@@ -6,7 +6,7 @@ Convenções (CONVENTION §4/§6/§12):
  - notify NÃO guarda contato (contato é do `profiles`, §4-3): o caller passa phone/email —
    dispatcher puro.
  - Envio é assíncrono (Django-Q) e nunca quebra o fluxo do caller (§12). Status por canal.
- - Mídia vai por URL: WhatsApp busca pela LAN (IP interno), e-mail embute pela URL pública (§0.2).
+ - Mídia vai por URL: Evolution GO busca pela LAN, e-mail embute pela URL pública (§0.2).
 """
 
 from django.db import models

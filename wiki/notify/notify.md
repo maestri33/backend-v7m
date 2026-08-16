@@ -48,16 +48,18 @@ Uma linha = uma notificação (pode atingir vários canais). Campos-chave: `exte
 `dispatch(notification_id)` roda os canais ainda `pending`, cada um em `try/except` isolado (§12), e
 grava status+erro. Clientes async via `async_to_sync`.
 
-- **WhatsApp** — com `media_url`: `send_media(num, _to_lan(url), media_type, caption=corpo)`; sem mídia:
+- **WhatsApp via Evolution GO** — com `media_url`: `send_media(num, _to_lan(url), media_type,
+  caption=corpo)`; sem mídia:
   `send_text(num, corpo)`. Corpo = `*título*\n\n texto`. Número resolvido por `resolve_br_number` (9º dígito BR).
 - **E-mail** — `mail.templates.render(template, title, content=text)`; com mídia, embute pela **URL
   pública** via `text_to_html(text) + media_html(url, type)` e `content_is_html=True`. Envia por
   `mail.client.send_email(...)`.
 - **TTS** — `ai.service.tts(text, caller=..., gender=...)` gera o mp3 (`media/ai/audio/...`) →
-  `send_whatsapp_audio(num, audio_url)` (voice-note/PTT). `audio_url` pela **URL LAN**.
+  `send_whatsapp_audio(num, audio_url)` → `/send/media` com `type=audio` (voice-note/PTT).
+  `audio_url` pela **URL LAN**.
 
 ### Roteamento de URL de mídia (decisão do Victor)
-- **WhatsApp = IP local + caminho** (`MEDIA_LAN_BASE` = `http://10.1.20.30/media/...`) — a Evolution
+- **WhatsApp = IP local + caminho** (`MEDIA_LAN_BASE` + `/media/...`) — o Evolution GO
   alcança o arquivo pelo **IP interno**, sem egress/TLS/DNS (porte do `_to_lan` do legado).
 - **E-mail = endereço externo** (`EXTERNAL_URL` = `https://dev.m33.live/media/...`) — o cliente de
   e-mail do destinatário busca pela **internet**.

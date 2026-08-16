@@ -6,7 +6,7 @@ clientes externos do `integrations/` são async → rodam via `async_to_sync` (p
 a task em caso de erro não tratado (aqui tratamos por canal, então a task termina "ok" com o
 status gravado).
 
-Mídia (§0.2 do plano): WhatsApp busca a mídia/áudio pela URL **LAN** (IP interno, sem egress —
+Mídia (§0.2 do plano): Evolution GO busca a mídia/áudio pela URL **LAN** (IP interno, sem egress —
 `_to_lan`, padrão do legado); o e-mail embute a mídia pela URL **pública** (o cliente do
 destinatário busca pela internet).
 """
@@ -55,7 +55,7 @@ def dispatch(notification_id: int) -> None:
 
 
 def _to_lan(url: str) -> str:
-    """URL pública → LAN p/ a Evolution buscar a mídia pelo IP interno (sem egress), como o legado.
+    """URL pública → LAN p/ o Evolution GO buscar a mídia pelo IP interno.
 
     Troca o prefixo EXTERNAL_URL (ex.: https://dev.m33.live) pelo MEDIA_LAN_BASE (ex.:
     http://10.1.20.30). URL que não começa com a pública é devolvida como está.
@@ -143,7 +143,7 @@ def _send_tts(notif: Notification) -> None:
             notif.text, caller=f"notify:{notif.caller}", gender=notif.gender or None
         )
         notif.tts_audio_path = rel_path
-        # a Evolution busca a URL: usa a base LAN (IP interno, mesma sub-rede, sem egress/TLS —
+        # O Evolution GO busca a URL: usa a base LAN (IP interno, sem egress/TLS —
         # padrão do legado `_to_lan`); sem ela, cai na pública EXTERNAL_URL.
         base = settings.MEDIA_LAN_BASE or settings.EXTERNAL_URL
         audio_url = f"{base}{settings.MEDIA_URL}{rel_path}"

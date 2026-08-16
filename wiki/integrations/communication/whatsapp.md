@@ -1,59 +1,43 @@
-# whatsapp — integrations/communication/whatsapp (Evolution API)
+# whatsapp — integrations/communication/whatsapp (Evolution GO)
 
-> **ESTADO:** cliente WhatsApp (Evolution API 2.3.7) — **porte completo** do micro legado, feito e
-> **testado com chamadas REAIS** (health + envio pro número do Victor, 2026-06-01). §4-item-1,
-> subgrupo **comunicação**. Label do app: `whatsapp`. É **só o cliente** — quem orquestra
-> template/contato/log/inbound é o app `notify` (§4-item-2, ainda não existe).
+> **ESTADO:** cliente do Evolution GO. O contrato antigo da Evolution API v2 foi removido em
+> 2026-07-23 porque a instância ficou inacessível.
 
-App Django que porta o `WhatsAppClient` da Evolution do micro legado (`~/coders/backend/notify`,
-FastAPI) pro monólito. **Evolution é gateway self-hosted; auth = header `apikey`.** Sem models/
-migração/endpoint (cliente stateless; cache do 9º dígito é em memória). Consumo in-process pelo `notify`.
+## Contrato adotado
 
-## Config (.env, CONVENTION §8/§10)
+O token enviado no header `apikey` identifica a instância; nome de instância não vai na URL.
 
-| Chave | Exemplo | O que é |
-|---|---|---|
-| `WHATSAPP_API_BASE_URL` | `http://10.1.20.200` | URL da Evolution (interna/tailnet) |
-| `WHATSAPP_GLOBAL_API_KEY` | `ePha...` | api-key global (header `apikey`) |
-| `WHATSAPP_INSTANCE_NAME` | `default` | instância default (também existe `ieadpg`) |
+| Operação interna | Evolution GO |
+|---|---|
+| `health()` | `GET /instance/status` |
+| `check_numbers()` | `POST /user/check` com `{"number": [...]}` |
+| `send_text()` | `POST /send/text` |
+| `send_media()` | `POST /send/media` com `number`, `url`, `type`, `caption`, `filename` |
+| `send_whatsapp_audio()` | `POST /send/media` com `type=audio` (o GO converte para Opus/PTT) |
 
-Sem base_url/api-key → checks `whatsapp.E001`/`whatsapp.E002` **travam** o boot (padrão asaas).
+O cliente normaliza `Query`/`IsInWhatsapp`/`JID`/`RemoteJID` de `data.Users` para o formato interno
+já consumido pelo auth e pelo `notify`. Mídia deve ser uma URL HTTP(S) alcançável pelo servidor GO;
+base64 e caminhos locais pertenciam ao contrato antigo e não são aceitos.
 
-## Cliente (`client.py`)
+## Configuração
 
-`WhatsAppClient` (httpx puro, `AsyncClient` próprio com `base_url`+header `apikey`; erro não-2xx →
-`WhatsAppError`). `get_client(instance=None)` constrói com a config do `.env`. Métodos (porte 1:1):
+| Chave | Uso |
+|---|---|
+| `WHATSAPP_API_BASE_URL` | URL do Evolution GO, sem barra final |
+| `WHATSAPP_API_KEY` | token da instância, armazenado fora do Git |
+| `MEDIA_LAN_BASE` | base pela qual o GO alcança mídia gerada pelo backend |
 
-- **leitura/perfil:** `health`, `check_numbers`, `get_jid`, `fetch_profile`, `fetch_business_profile`
-- **envio:** `send_text`, `send_media`, `send_whatsapp_audio`, `send_sticker`, `send_location`,
-  `send_contact`, `send_poll`, `send_buttons`, `send_reaction`, `send_status`
-- **chamada:** `reject_call`
-- **🔑 `resolve_br_number(phone)`** — resolve a variante BR com/sem o **9º dígito** (cache em memória,
-  TTL 1h). A Evolution às vezes responde 201 sem entregar quando o número só existe na outra variante;
-  pré-resolver evita esse silent-fail. **Provado real:** input `5543996648750` → entregou em
-  `554396648750@s.whatsapp.net`.
+Para desenvolvimento, o gateway validado está em `http://10.3.20.200:4000`, instância `default`
+identificada pelo token.
 
-## Como validar (§8 — chamada real)
+## Validação
 
 ```bash
-python manage.py whatsapp_health                          # lista instâncias (auth + conectividade)
-python manage.py whatsapp_send 5543996648750 "texto"      # texto (resolve 9º dígito antes)
-python manage.py whatsapp_send 5543996648750 "txt" --instance ieadpg
-# mídia: source = URL pública (Evolution busca) OU arquivo local (vira base64)
-python manage.py whatsapp_send_media 5543996648750 image https://picsum.photos/400
-python manage.py whatsapp_send_media 5543996648750 document ./arquivo.pdf --filename matricula.pdf
-python manage.py whatsapp_send_media 5543996648750 audio https://.../som.mp3            # áudio transmitido
-python manage.py whatsapp_send_media 5543996648750 audio https://.../som.mp3 --voice    # nota de voz (PTT)
+python manage.py test integrations.communication.whatsapp
+python manage.py whatsapp_health
+python manage.py whatsapp_send 55... "texto"
+python manage.py whatsapp_send_media 55... image http://backend/media/imagem.png
+python manage.py whatsapp_send_media 55... audio http://backend/media/audio.mp3
 ```
 
-Todos os tipos (image/video/audio/document) e os 2 modos de áudio (transmitido via `send_media` e
-nota de voz nativa via `send_whatsapp_audio`) foram **testados em envio real** — ver
-`.claude/tests/1-communication-whatsapp.md`.
-
-Evidência: `.claude/tests/1-communication-whatsapp.md`.
-
-## Rabo pra trás
-
-- App `notify` (§4-item-2): templates, contatos, logs, orquestração async e **webhook inbound** de
-  WhatsApp (mensagens/chamadas recebidas).
-- Cliente de **mail** (`integrations/communication/mail`) — o outro do subgrupo comunicação.
+`whatsapp_health` é somente leitura. Os dois últimos comandos enviam mensagens reais.

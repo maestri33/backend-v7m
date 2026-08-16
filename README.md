@@ -34,7 +34,7 @@ Config em `backend/.env` (não versionado). Dev usa SQLite.
 - **integrations/tools/biometric:** biometria facial — face-match documento × selfie (InsightFace
   `buffalo_l`, CPU; pesos fora do repo). Persiste templates no perfil + auditoria; "somado" à validação
   de selfie por IA nos funis `candidate`/`enrollment`. Provado real. → [[wiki/integrations/tools/biometric]]
-- **integrations/communication/whatsapp (§4 item 1):** cliente WhatsApp (Evolution API 2.3.7) — porte
+- **integrations/communication/whatsapp (§4 item 1):** cliente WhatsApp (Evolution GO) — contrato
   completo, async, com resolução do 9º dígito BR. O app `notify` consome depois.
   → [[wiki/integrations/communication/whatsapp]]
 - **integrations/ai (§4 item 1):** engine LLM multi-provider OpenAI-compatible + fallback (DeepSeek,

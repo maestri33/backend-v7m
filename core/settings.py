@@ -169,13 +169,13 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media (arquivos servidos) — CONVENTION §6 (Django expõe /media/). Ex.: PNG do QR das cobranças.
-# Servido SEMPRE pelo Django neste host (core/urls.py, independente de DEBUG — o notify/Evolution
-# buscam mídia por URL); em prod o reverse proxy pode assumir.
+# Servido SEMPRE pelo Django neste host (core/urls.py, independente de DEBUG — o notify e o
+# Evolution GO buscam mídia por URL); em prod o reverse proxy pode assumir.
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 # Base LAN do /media/ pra serviços da MESMA sub-rede buscarem o arquivo pelo IP interno (sem TLS/
-# DNS/egress) — padrão do legado (`_to_lan`): a Evolution busca o áudio do voice-note (TTS) por
-# aqui, não pela URL pública. Vazio => o notify cai no EXTERNAL_URL. Ex. dev: http://10.1.20.30
+# DNS/egress) — padrão do legado (`_to_lan`): o Evolution GO busca o áudio do voice-note (TTS) por
+# aqui, não pela URL pública. Vazio => o notify cai no EXTERNAL_URL.
 MEDIA_LAN_BASE = env("MEDIA_LAN_BASE", default="")
 
 # Limite de upload de imagem dos documentos (users/documents) — config, não hardcoded (§10).
@@ -354,12 +354,10 @@ if GEMINI_API_KEY and any(_p == "gemini" for _p, _m in IA_FALLBACK_CHAIN):
     )
 
 
-# WhatsApp (integrations.communication.whatsapp) — cliente da Evolution API. Config via .env
-# (CONVENTION §8/§10). A api-key global é alfanumérica (sem "$"), então env() normal serve. Sem
-# base_url/api-key os checks whatsapp.E001/E002 travam o boot.
+# WhatsApp (integrations.communication.whatsapp) — cliente da Evolution GO. O token identifica a
+# própria instância; não há nome de instância na rota. Sem base_url/api-key os checks travam o boot.
 WHATSAPP_API_BASE_URL = env("WHATSAPP_API_BASE_URL", default="")
-WHATSAPP_GLOBAL_API_KEY = env("WHATSAPP_GLOBAL_API_KEY", default="")
-WHATSAPP_INSTANCE_NAME = env("WHATSAPP_INSTANCE_NAME", default="default")
+WHATSAPP_API_KEY = os.environ.get("WHATSAPP_API_KEY", "")
 
 # Mail (integrations.communication.mail) — cliente SMTP STARTTLS:587 autenticado. Config via .env
 # (CONVENTION §8/§10). A senha do noreply tem "!"/"@" (sem "$"), mas lemos via os.environ literal

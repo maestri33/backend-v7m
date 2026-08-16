@@ -1,4 +1,4 @@
-"""Validação manual da Evolution: lista instâncias (prova auth + conectividade). NÃO envia msg.
+"""Validação do Evolution GO: consulta a instância do token. NÃO envia mensagem.
 
 Uso: python manage.py whatsapp_health
 Fecha parte do Portão 3 (§8 — integração validada com chamada real).
@@ -13,7 +13,7 @@ from integrations.communication.whatsapp.client import WhatsAppError, get_client
 
 
 class Command(BaseCommand):
-    help = "Lista as instâncias da Evolution API (valida api-key e conectividade)."
+    help = "Consulta o status da instância do Evolution GO (auth + conectividade)."
 
     def handle(self, *args, **options):
         async def _run():
@@ -31,5 +31,5 @@ class Command(BaseCommand):
             )
             return
 
-        self.stdout.write(self.style.SUCCESS("Evolution respondeu (auth ok):"))
+        self.stdout.write(self.style.SUCCESS("Evolution GO respondeu (auth ok):"))
         self.stdout.write(json.dumps(result, ensure_ascii=False, indent=2))

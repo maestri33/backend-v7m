@@ -43,7 +43,7 @@ urlpatterns = [
     path("api/v1/collaborators/", collaborators_api.urls),
     path("api/v1/leadership/", leadership_api.urls),
     path("api/v1/staff/", staff_api.urls),
-    # /media/ servido SEMPRE pelo Django neste host (independente de DEBUG): o notify/Evolution buscam
+    # /media/ servido SEMPRE pelo Django neste host: notify/Evolution GO buscam
     # mídia por URL (QR, voice-note) e DEBUG agora é False (auditoria front 2026-06-11). Em prod o
     # reverse proxy pode assumir este caminho.
     re_path(

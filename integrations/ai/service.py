@@ -460,10 +460,11 @@ def _voice_for_gender(gender: str | None) -> str | None:
     if not gender:
         return None
     g = gender.strip().upper()
+    # CRUZADA (regra do Victor): homem recebe voz FEMININA; mulher, voz MASCULINA.
     if g == "M":
-        return settings.ELEVENLABS_VOICE_MALE
-    if g == "F":
         return settings.ELEVENLABS_VOICE_FEMALE
+    if g == "F":
+        return settings.ELEVENLABS_VOICE_MALE
     return None
 
 
@@ -484,42 +485,42 @@ def tts(
 ) -> str:
     """TTS: gera áudio a partir do texto. Salva em media/ai/audio/ e devolve o caminho.
 
-    MiniMax (t2a_v2) é o PRIMÁRIO; em falha cai pro ElevenLabs (fallback). A voz segue: `voice_id`
-    explícito > voz por `gender` (M/F → MINIMAX_VOICE_MALE/FEMALE no MiniMax; ELEVENLABS_VOICE_* no
-    fallback) > voz default do provider. `voice_id` explícito deve casar com o provider ativo.
+    ElevenLabs é o PRIMÁRIO (voz mais natural, Victor 2026-06-21); em falha cai pro MiniMax (fallback).
+    A voz segue: `voice_id` explícito > voz por `gender` (M/F → ELEVENLABS_VOICE_* no primário;
+    MINIMAX_VOICE_* no fallback) > voz default do provider. `voice_id` explícito casa com o provider ativo.
     """
-    from .minimax import MiniMaxClient
+    from .elevenlabs import ElevenLabsClient
 
-    mm = MiniMaxClient()
-    mm_voice = voice_id or _minimax_voice_for_gender(gender)
+    el = ElevenLabsClient()
+    el_voice = voice_id or _voice_for_gender(gender)
 
-    async def mm_coro():
-        return await mm.tts(text, voice_id=mm_voice)
+    async def el_coro():
+        return await el.tts(text, voice_id=el_voice)
 
     try:
-        audio = _media_call(
-            operation=AiCall.Operation.TTS,
-            provider="minimax",
-            model=settings.MINIMAX_TTS_MODEL,
-            caller=caller,
-            coro=mm_coro,
-        )
-    except Exception as exc:  # noqa: BLE001 — MiniMax falhou → tenta o ElevenLabs (fallback)
-        logger.warning("ai.tts_fallback_elevenlabs", error=str(exc)[:160])
-        from .elevenlabs import ElevenLabsClient
-
-        el = ElevenLabsClient()
-        el_voice = voice_id or _voice_for_gender(gender)
-
-        async def el_coro():
-            return await el.tts(text, voice_id=el_voice)
-
         audio = _media_call(
             operation=AiCall.Operation.TTS,
             provider="elevenlabs",
             model=settings.ELEVENLABS_MODEL_ID,
             caller=caller,
             coro=el_coro,
+        )
+    except Exception as exc:  # noqa: BLE001 — ElevenLabs falhou → tenta o MiniMax (fallback)
+        logger.warning("ai.tts_fallback_minimax", error=str(exc)[:160])
+        from .minimax import MiniMaxClient
+
+        mm = MiniMaxClient()
+        mm_voice = voice_id or _minimax_voice_for_gender(gender)
+
+        async def mm_coro():
+            return await mm.tts(text, voice_id=mm_voice)
+
+        audio = _media_call(
+            operation=AiCall.Operation.TTS,
+            provider="minimax",
+            model=settings.MINIMAX_TTS_MODEL,
+            caller=caller,
+            coro=mm_coro,
         )
     return _save_media("audio", "mp3", audio)
 

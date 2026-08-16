@@ -343,8 +343,12 @@ class AddressDataIn(Schema):
 
 
 class EducationIn(Schema):
-    last_year_studied: str
+    level: str  # 'fundamental' | 'medio'
+    grade: int  # 1–9 (fundamental) / 1–3 (médio) — validado no service por nível
+    completed: bool  # concluiu o nível?
     last_school: str
+    city: str  # cidade da escola
+    state: str  # UF da escola
     last_year_when: str | None = None
 
 
@@ -480,8 +484,12 @@ class RgOut(Schema):
 
 
 class EducationOut(Schema):
-    last_year_studied: str | None = None
+    level: str | None = None
+    grade: int | None = None
+    completed: bool | None = None
     last_school: str | None = None
+    city: str | None = None
+    state: str | None = None
     last_year_when: str | None = None
 
 
@@ -613,8 +621,12 @@ def enrollment_education(request, payload: EducationIn):
     ext = _enr_guard(request)
     enr = enrollment_iface.set_education(
         user_external_id=ext,
-        last_year_studied=payload.last_year_studied,
+        level=payload.level,
+        grade=payload.grade,
+        completed=payload.completed,
         last_school=payload.last_school,
+        city=payload.city,
+        state=payload.state,
         last_year_when=payload.last_year_when,
     )
     return enrollment_iface.me_dict(enr)

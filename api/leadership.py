@@ -33,8 +33,43 @@ from users.roles.promoter import interface as promoter_iface
 from users.roles.student import interface as student_iface
 from users.roles.training import interface as training_iface
 
+_ERROR_REGISTRY = """
+### Códigos de erro (`{detail, code, …extra}`)
+
+Todo erro 4xx/5xx sai nesse envelope; o front faz `switch(code)`, nunca parseia `detail`.
+
+| code | quando | status | extras |
+|---|---|---|---|
+| `NOT_HUB_COORDINATOR` | loga como coordenador mas não coordena nenhum polo | 403 | — |
+| `FORBIDDEN_ROLE` | sem a role coordinator | 403 | — |
+| `UNAUTHORIZED` | sem/expirou token | 401 | — |
+| `WRONG_STATUS` | ação fora da etapa esperada | 409 | `expected_status` |
+| `FEES_INCOMPLETE` | tentou concluir sem as 2 parcelas da taxa | 409 | — |
+| `FEE_ALREADY_PAID` / `FEE_ALREADY_SCHEDULED` | taxa repetida | 409 | — |
+| `FEE_QR_INVALID` / `FEE_QR_NO_DUE_DATE` | QR PIX inválido na taxa | 422 | — |
+| `RG_NOT_IN_REVIEW` / `DOC_NOT_IN_REVIEW` / `SELFIE_NOT_IN_REVIEW` | decide análise que não está em revisão | 422 | `*_validation_status` |
+| `ALREADY_APPROVED` / `ALREADY_GRADING` | submeteu algo já decidido | 409 | — |
+| `EDUCATION_LEVEL_INVALID` / `EDUCATION_GRADE_OUT_OF_RANGE` | escolaridade fora da faixa | 422 | `min`/`max` |
+| `DOC_TYPE_LOCKED` / `DOC_TYPE_NOT_SET` / `INVALID_DOC_TYPE` | troca de tipo de doc travada | 422 | — |
+| `MILITARY_MALE_ONLY` | doc militar só p/ masculino | 422 | — |
+| `SLOT_INVALID` / `INVALID_KIND` / `INVALID_MATERIAL_KIND` / `INVALID_BLOOD_TYPE` / `INVALID_SCHEDULED_AT` | parâmetro inválido | 422 | — |
+| `MATERIAL_NOT_FOUND` / `MATERIAL_NOT_ASSIGNED` / `MATERIAL_INACTIVE` / `MATERIAL_NOT_TRANSITORY` / `MATERIAL_NOT_EPHEMERAL` | material LMS | 404/422 | — |
+| `OPEN_PENDENCIES` / `PENDENCY_NOT_FOUND` | pendência do aluno | 409/404 | — |
+| `NO_PENDING_EXAM` / `DIPLOMA_NOT_ISSUED` | exame/diploma fora de ordem | 409 | — |
+| `DESCRIPTION_REQUIRED` / `SUBJECT_REQUIRED` / `NO_FIELDS` / `PROFILE_CPF_MISSING` | campo obrigatório faltando | 422 | — |
+| `NO_HUB` / `COMMISSION_PAYEE_INVALID` / `PIX_INVALID` | comissão/pix | 422 | — |
+| `ENROLLMENT_NOT_FOUND` / `LEAD_NOT_FOUND` / `CANDIDATE_NOT_FOUND` / `STUDENT_NOT_FOUND` / `USER_NOT_FOUND` / `PROMOTER_NOT_FOUND` / `DOCUMENT_NOT_FOUND` | recurso não existe (404 sem vazar existência entre polos) | 404 | — |
+| `RATE_LIMITED` | espera do OTP | 429 | `retry_after_s` |
+| `ERROR` | fallback sem code próprio | — | — |
+
+### Paginação
+`GET /students` usa `limit`/`offset` e devolve `{items, total, limit, offset}` (`PaginatedOut`). Demais
+listas (leads/enrollments/candidates/promoters) são arrays diretos (sem `total` por ora).
+"""
+
 api = build_group(
-    "leadership", "Coordenador do polo (hub): aprovações, acesso, taxas, diploma."
+    "leadership",
+    "Coordenador do polo (hub): aprovações, acesso, taxas, diploma." + _ERROR_REGISTRY,
 )
 
 logger = structlog.get_logger()
@@ -101,6 +136,192 @@ class LoginIn(Schema):
     otp: str
 
 
+# ── schemas de SAÍDA (response=) — espelham o snake_case real dos services (Victor 2026-06-21:
+# antes os GET devolviam dict solto e o front tipava no escuro; agora o OpenAPI publica o contrato).
+class HubLeadRowOut(Schema):
+    external_id: str
+    status: str
+    name: str | None = None
+    phone: str | None = None
+    promoter_external_id: str
+    payment_link: str | None = None
+    receipt_url: str | None = None
+
+
+class LeadCustomerOut(Schema):
+    name: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    cpf: str | None = None
+
+
+class LeadPromoterOut(Schema):
+    external_id: str
+    name: str | None = None
+
+
+class LeadCheckoutOut(Schema):
+    payment_method: str | None = None
+    provider: str | None = None
+    amount: str | None = None
+    is_paid: bool | None = None
+    url: str | None = None  # ✦ checkout↔recibo (short_url virou `url`)
+    receipt_url: str | None = None
+    qrcode_payload: str | None = None
+    qrcode_image: str | None = None
+    due_date: str | None = None
+
+
+class HubLeadDetailOut(Schema):
+    external_id: str
+    status: str
+    failed_reason: str | None = None
+    created_at: str
+    customer: LeadCustomerOut
+    promoter: LeadPromoterOut
+    checkout: LeadCheckoutOut | None = None
+
+
+class FeeFactsOut(Schema):
+    first_paid: bool = False
+    second_scheduled: bool = False
+    # `first`/`second` são opacos do finance (id/status/amount quando existem); ficam `dict`.
+
+
+class HubEnrollmentRowOut(Schema):
+    external_id: str
+    name: str | None = None
+    phone: str | None = None
+    status: str  # status REAL (sem máscara) — visão do coordenador
+    fees: dict
+    created_at: str
+
+
+class ReviewItemOut(Schema):
+    """Item NORMALIZADO de qualquer balde do /reviews: sempre external_id + type + kind, mais
+    extras (name/doc_type/since/rejected/…). O front roteia por `type`+`kind` e linka por `external_id`."""
+
+    external_id: str = Field(
+        description="id do recurso a decidir (matrícula/candidato/documento/student)"
+    )
+    type: str = Field(description="enrollment | candidate | student | promoter")
+    kind: str = Field(
+        description="rg | selfie | document | awaiting_approval | locked_training"
+    )
+    name: str | None = None
+    doc_type: str | None = None
+    since: str | None = None
+    rejected: bool | None = None
+    document_external_id: str | None = Field(
+        None, description="só kind=document de student (par student+doc)"
+    )
+    student_external_id: str | None = Field(
+        None, description="só kind=document de student"
+    )
+    promoter_external_id: str | None = Field(
+        None, description="só kind=locked_training (id do promotor)"
+    )
+    pending_materials: list[dict] | None = None
+
+
+class ReviewsOut(Schema):
+    """Tela-âncora do coordenador — TODOS os baldes unificados em listas de ReviewItemOut (Victor
+    2026-06-21: antes cada balde tinha nome de id diferente e sem `type`; agora é homogêneo)."""
+
+    enrollment_rg: list[ReviewItemOut] = []
+    enrollment_selfie: list[ReviewItemOut] = []
+    candidate_document: list[ReviewItemOut] = []
+    candidate_selfie: list[ReviewItemOut] = []
+    student_documents: list[ReviewItemOut] = []
+    candidates_awaiting_approval: list[ReviewItemOut] = []
+    locked_promoters: list[ReviewItemOut] = []
+
+
+class PaginatedOut(Schema):
+    """Envelope de paginação padronizado (A5): toda lista do leadership passa a devolver isto."""
+
+    items: list
+    total: int
+    limit: int
+    offset: int
+
+
+class HubPromoterRowOut(Schema):
+    external_id: str
+    name: str | None = None
+    status: str
+    locked: bool
+
+
+class CandidateAwaitingOut(Schema):
+    external_id: str
+    name: str | None = None
+    since: str | None = None
+    rejected: bool
+
+
+class HubStudentRowOut(Schema):
+    """Aluno do polo (A2 — lista nova): rol de aluno pelo status, com o external_id pra abrir o detalhe."""
+
+    external_id: str
+    name: str | None = None
+    phone: str | None = None
+    status: str
+    created_at: str
+
+
+# ── detalhe RICO do aluno (A1 — Victor 2026-06-21: /students/{id} devolvia dict solto; agora tipa o
+# que `student.detail_for_coordinator` monta = `to_dict` + self_study + user, tudo estático).
+class StudentPlatformOut(Schema):
+    url: str | None = None
+    login: str | None = None
+    password: str | None = None
+    notes: str | None = None
+
+
+class StudentDocItemOut(Schema):
+    doc_type: str
+    validation_status: str
+    has_photo: bool
+
+
+class StudentPendencyOut(Schema):
+    external_id: str
+    kind: str
+    description: str
+    amount_cents: int | None = None
+    resolved: bool
+
+
+class StudentDiplomaOut(Schema):
+    issued_at: str | None = None
+    picked_up: bool
+
+
+class StudentUserOut(Schema):
+    external_id: str
+    name: str | None = None
+    cpf: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
+class HubStudentDetailOut(Schema):
+    """Detalhe do aluno pro coordenador: docs/pendências/diploma/plataforma/identidade. `diploma`
+    é `null` enquanto não emitido; `platform` traz as credenciais da instituição (visão do coord)."""
+
+    external_id: str
+    status: str
+    hub_external_id: str
+    blood_type: str | None = None
+    self_study: bool
+    platform: StudentPlatformOut
+    documents: list[StudentDocItemOut] = []
+    pendencies: list[StudentPendencyOut] = []
+    diploma: StudentDiplomaOut | None = None
+    user: StudentUserOut
+
+
 auth_router = Router(tags=["auth"])
 
 
@@ -148,7 +369,7 @@ api.add_router("/auth", auth_router)
 
 
 # ── leads do polo (coordenador vê os leads do SEU hub) ──────────────────────
-@api.get("/leads", tags=["lead"])
+@api.get("/leads", response=list[HubLeadRowOut], tags=["lead"])
 def list_hub_leads(request, status: str | None = None):
     """Lista os leads do polo do coordenador (link de pagamento + comprovante). Filtro opcional por status."""
     coordinator = _coordinator(request)
@@ -157,7 +378,7 @@ def list_hub_leads(request, status: str | None = None):
     return [lead_iface.lead_to_dict(lead) for lead in leads]
 
 
-@api.get("/leads/{external_id}", tags=["lead"])
+@api.get("/leads/{external_id}", response=HubLeadDetailOut, tags=["lead"])
 def get_hub_lead(request, external_id: str):
     """Detalhe COMPLETO de um lead do polo — o coordenador vê TUDO (nome, cpf, e-mail, telefone,
     promotor, checkout com link e recibo — Victor 2026-06-12). 404 se não existe OU não é do polo."""
@@ -170,7 +391,7 @@ def get_hub_lead(request, external_id: str):
 
 
 # ── matrículas do polo: lista + detalhe + análises pendentes (plan/14) ──────
-@api.get("/enrollments", tags=["enrollment"])
+@api.get("/enrollments", response=list[HubEnrollmentRowOut], tags=["enrollment"])
 def list_hub_enrollments(request, status: str | None = None):
     """Matrículas do polo: status REAL + resumo das 2 parcelas da taxa em cada item.
     `?status=awaiting_release` = quem terminou o wizard e espera ação do coordenador."""
@@ -189,28 +410,72 @@ def get_hub_enrollment(request, external_id: str):
     )
 
 
-@api.get("/reviews", tags=["review"])
+@api.get("/reviews", response=ReviewsOut, tags=["review"])
 def list_reviews(request):
     """TUDO que espera análise/decisão do coordenador no polo, num lugar só (plan/14): RG e selfie
     de matrículas em revisão, selfie de candidatos, documentos de students, candidatos aguardando
-    aprovação (→ promotor) e promotores travados no treino (matéria em aberto a aprovar). Cada item
-    aponta pro POST de decisão correspondente."""
+    aprovação (→ promotor) e promotores travados no treino (matéria em aberto a aprovar). Cada item é
+    NORMALIZADO (`external_id` + `type` + `kind` + extras) — o front roteia por `type`/`kind` e linka
+    por `external_id`, sem depender de qual balde veio (Victor 2026-06-21: antes cada balde tinha nome
+    de id diferente e sem `type`)."""
     coordinator = _coordinator(request)
     hub = _coordinator_hub(coordinator)
     enrollment_reviews = enrollment_iface.list_reviews_for_hub(hub=hub)
+
+    def _norm(item: dict, type_: str, kind: str) -> dict:
+        return {
+            "external_id": item.get("external_id"),
+            "type": type_,
+            "kind": kind,
+            **item,
+        }
+
     return {
-        "enrollment_rg": enrollment_reviews["rg"],
-        "enrollment_selfie": enrollment_reviews["selfie"],
-        # documentos (RG/CNH) de CANDIDATOS em review — a IA fora do ar/em dúvida cai aqui pro
-        # coordenador decidir (fix da auditoria 2026-06-17: estava ausente → candidato travado
-        # em `documents` sem ninguém pra destravar; agora segue a hierarquia user→coord→staff).
-        "candidate_document": candidate_iface.list_document_reviews_for_hub(hub=hub),
-        "candidate_selfie": candidate_iface.list_selfie_reviews_for_hub(hub=hub),
-        "student_documents": student_iface.list_document_reviews_for_hub(hub=hub),
-        "candidates_awaiting_approval": candidate_iface.list_awaiting_approval_for_hub(
-            hub=hub
-        ),
-        "locked_promoters": training_iface.list_locked_promoters_for_hub(hub=hub),
+        "enrollment_rg": [
+            _norm(i, "enrollment", "rg") for i in enrollment_reviews["rg"]
+        ],
+        "enrollment_selfie": [
+            _norm(i, "enrollment", "selfie") for i in enrollment_reviews["selfie"]
+        ],
+        "candidate_document": [
+            _norm(i, "candidate", "document")
+            for i in candidate_iface.list_document_reviews_for_hub(hub=hub)
+        ],
+        "candidate_selfie": [
+            _norm(i, "candidate", "selfie")
+            for i in candidate_iface.list_selfie_reviews_for_hub(hub=hub)
+        ],
+        # student_documents vem com `student_external_id`+`document_external_id` (par student+doc):
+        # mapeia pro ReviewItemOut homogêneo mantendo os dois ids.
+        "student_documents": [
+            {
+                "external_id": i["document_external_id"],
+                "type": "student",
+                "kind": "document",
+                "student_external_id": i.get("student_external_id"),
+                "document_external_id": i.get("document_external_id"),
+                "name": i.get("name"),
+                "doc_type": i.get("doc_type"),
+                "since": i.get("since"),
+            }
+            for i in student_iface.list_document_reviews_for_hub(hub=hub)
+        ],
+        "candidates_awaiting_approval": [
+            _norm(i, "candidate", "awaiting_approval")
+            for i in candidate_iface.list_awaiting_approval_for_hub(hub=hub)
+        ],
+        # locked_promoters vem com `promoter_external_id` (o id é do promotor, não do item):
+        "locked_promoters": [
+            {
+                "external_id": i["promoter_external_id"],
+                "type": "promoter",
+                "kind": "locked_training",
+                "promoter_external_id": i.get("promoter_external_id"),
+                "name": i.get("name"),
+                "pending_materials": i.get("pending_materials"),
+            }
+            for i in training_iface.list_locked_promoters_for_hub(hub=hub)
+        ],
     }
 
 
@@ -512,7 +777,7 @@ class RejectIn(Schema):
     reason: str
 
 
-@api.get("/candidates", tags=["candidate"])
+@api.get("/candidates", response=list[CandidateAwaitingOut], tags=["candidate"])
 def list_candidates_awaiting(request):
     """Fila de candidatos do polo que concluíram a coleta e aguardam a APROVAÇÃO do coordenador."""
     coordinator = _coordinator(request)
@@ -567,7 +832,7 @@ def approve_open_material(request, external_id: str, material_external_id: str):
 
 
 # ── coordenador: PROMOTORES do polo (listar/suspender/reativar) + DETALHE do aluno (WP5) ──
-@api.get("/promoters", tags=["promoter"])
+@api.get("/promoters", response=list[HubPromoterRowOut], tags=["promoter"])
 def list_hub_promoters(request):
     """Promotores do polo (status + se travados no treino) — pro painel do coordenador."""
     coordinator = _coordinator(request)
@@ -591,7 +856,21 @@ def reactivate_promoter(request, external_id: str):
     return {"external_id": external_id, "status": p.status}
 
 
-@api.get("/students/{external_id}", response=dict, tags=["student"])
+@api.get("/students", response=PaginatedOut, tags=["student"])
+def list_hub_students(
+    request, status: str | None = None, limit: int = 200, offset: int = 0
+):
+    """Alunos do polo do coordenador (A2 — lista nova, Victor 2026-06-21). Filtro opcional por status,
+    paginação `limit`/`offset` + `total`. Cada item traz o `external_id` pra abrir o detalhe."""
+    coordinator = _coordinator(request)
+    hub = _coordinator_hub(coordinator)
+    items, total = student_iface.list_for_hub(
+        hub=hub, status=status, limit=limit, offset=offset
+    )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@api.get("/students/{external_id}", response=HubStudentDetailOut, tags=["student"])
 def get_student_for_coordinator(request, external_id: str):
     """Detalhe RICO do aluno (docs/pendências/diploma/plataforma/identidade) pro coordenador — antes
     ele agia no aluno (grade/decide/pendency) mas não tinha um GET completo dele."""

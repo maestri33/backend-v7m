@@ -204,12 +204,10 @@ def set_blood_type(*, user_external_id: str, blood_type: str) -> Student:
 def _save_photo(
     student: Student, doc_type: str, image_bytes: bytes, content_type: str
 ) -> str:
+    from core.media import save_media
+
     ext = _EXT.get(content_type, "jpg")
-    rel = f"student/{student.external_id}/{doc_type}.{ext}"
-    fp = Path(settings.MEDIA_ROOT) / rel
-    fp.parent.mkdir(parents=True, exist_ok=True)
-    fp.write_bytes(image_bytes)
-    return rel
+    return save_media(prefix="student", data=image_bytes, ext=ext)
 
 
 def upload_document(
@@ -657,6 +655,11 @@ def issue_diploma(*, student_external_id: str, coordinator) -> StudentDiploma:
         event="student.diploma_issued",
         key=f"student_diploma_issued_{diploma.external_id}",
     )
+    _notify(
+        student,
+        event="student.diploma_pickup",
+        key=f"student_diploma_pickup_{diploma.external_id}",
+    )
     logger.info("student.diploma_issued", external_id=str(diploma.external_id))
     return diploma
 
@@ -789,10 +792,16 @@ def _notify(student: Student, *, event: str, key: str, **ctx) -> None:
     from users.roles import notifications as msgs
 
     p = profiles.get(student.user)
+    name = msgs.first_name(p.name if p else None)
     tts = msgs.is_tts(event)
     try:
         send(
-            text=msgs.text(event, name=msgs.first_name(p.name if p else None), **ctx),
+            text=msgs.story_text(
+                event,
+                name=name,
+                fallback=msgs.text(event, name=name, **ctx),
+                age=msgs.age_from(getattr(p, "birth_date", None)),
+            ),
             caller=event,
             phone=p.phone if p else None,
             email=p.email if p else None,
@@ -824,6 +833,34 @@ def _notify_coordinator(student: Student, *, event: str, key: str, **ctx) -> Non
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("student.notify_coord_failed", caller=event, error=str(exc))
+
+
+def list_for_hub(
+    *, hub, status: str | None = None, limit: int = 200, offset: int = 0
+) -> tuple[list[dict], int]:
+    """Alunos do POLO (visão do coordenador, A2 — Victor 2026-06-21: antes o coordenador só tinha o
+    detalhe /students/{id}; agora lista/busca por status). Devolve (rows, total) pra paginação."""
+    from users.profiles import interface as profiles
+
+    qs = Student.objects.filter(hub=hub).select_related("user").order_by("-created_at")
+    if status:
+        qs = qs.filter(status=status)
+    total = qs.count()
+    rows = list(qs[offset : offset + limit])
+    pmap = profiles.get_map([r.user for r in rows])
+    out = []
+    for s in rows:
+        p = pmap.get(s.user_id)
+        out.append(
+            {
+                "external_id": str(s.external_id),
+                "name": p.name if p else None,
+                "phone": p.phone if p else None,
+                "status": s.status,
+                "created_at": s.created_at.isoformat(),
+            }
+        )
+    return out, total
 
 
 def list_for_staff(*, hub_external_id=None, status=None, limit=200) -> list[dict]:

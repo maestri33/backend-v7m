@@ -93,16 +93,34 @@ class Enrollment(ExternalIdModel):
 
 
 class EducationalData(models.Model):
-    """Dados escolares coletados na matrícula (etapa `education`, 6b). 1-1 com o Enrollment."""
+    """Dados escolares coletados na matrícula (etapa `education`, 6b). 1-1 com o Enrollment.
+
+    Estruturado (Victor 2026-06-20): nível + série (validada por nível) + flag de conclusão +
+    escola/cidade/UF — é o dado mais valioso da matrícula (define a modalidade Fundamental×Médio
+    e o que falta o aluno cursar). Campos nullable (criado vazio, preenchido no passo); a
+    obrigatoriedade real é no schema da API + validação do service (`set_education`)."""
+
+    class Level(models.TextChoices):
+        FUNDAMENTAL = "fundamental", "Ensino Fundamental"
+        MEDIO = "medio", "Ensino Médio"
+
+    # faixa de série válida por nível: Fundamental 1–9, Médio 1–3 (usado em set_education)
+    GRADE_RANGE = {"fundamental": (1, 9), "medio": (1, 3)}
 
     enrollment = models.OneToOneField(
         Enrollment,
         on_delete=models.CASCADE,
         related_name="educational_data",
     )
-    last_year_studied = models.CharField("último ano/série cursado", max_length=64)
+    level = models.CharField(
+        "nível", max_length=16, choices=Level.choices, null=True, blank=True
+    )
+    grade = models.PositiveSmallIntegerField("série/ano", null=True, blank=True)
+    completed = models.BooleanField("concluiu o nível?", null=True, blank=True)
+    last_school = models.CharField("qual escola", max_length=255, null=True, blank=True)
+    city = models.CharField("cidade da escola", max_length=100, null=True, blank=True)
+    state = models.CharField("UF da escola", max_length=2, null=True, blank=True)
     last_year_when = models.CharField("quando", max_length=64, null=True, blank=True)
-    last_school = models.CharField("qual escola", max_length=255)
     created_at = models.DateTimeField("criado em", auto_now_add=True)
     updated_at = models.DateTimeField("atualizado em", auto_now=True)
 

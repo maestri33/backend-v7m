@@ -3,7 +3,7 @@
 Uso:
   python manage.py notify_send --phone 5543996648750 --title "Teste" --text "olá do notify"
   python manage.py notify_send --phone 5543... --email a@b.com --email-channel --tts --text "..."
-  # com imagem (WhatsApp pela LAN, e-mail pela URL pública):
+  # com imagem (Evolution GO pela LAN, e-mail pela URL pública):
   python manage.py notify_send --phone 55... --email a@b.com --whatsapp --email-channel \
       --text "Seu QR" --media-url https://dev.m33.live/media/qrcodes/pay_x.png --media-type image
 

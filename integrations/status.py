@@ -28,9 +28,9 @@ _REGISTRY: dict[str, dict] = {
         "flow": "checkout (autentica pelo handle) → webhook (order_nsu opaco) → payment_check",
     },
     "whatsapp": {
-        "env": ["WHATSAPP_API_BASE_URL", "WHATSAPP_GLOBAL_API_KEY"],
+        "env": ["WHATSAPP_API_BASE_URL", "WHATSAPP_API_KEY"],
         "scope": "whatsapp",
-        "flow": "Evolution API (instância 'default'): health + send (texto/mídia/áudio)",
+        "flow": "Evolution GO (instância definida pelo token): status + texto/mídia/áudio PTT",
     },
     "mail": {
         "env": [

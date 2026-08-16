@@ -151,3 +151,63 @@ class MiniMaxClient:
             chars=len(text),
         )
         return text.strip()
+
+    async def generate_image(
+        self,
+        prompt: str,
+        *,
+        subject_image: bytes | None = None,
+        subject_mime: str = "image/jpeg",
+        aspect_ratio: str = "3:4",
+        model: str = "image-01",
+    ) -> bytes:
+        """Gera uma imagem (image-01). Com `subject_image` usa `subject_reference` (consistência de
+        rosto/personagem — preserva a cara). Devolve os bytes da 1ª imagem."""
+        body: dict = {
+            "model": model,
+            "prompt": prompt,
+            "aspect_ratio": aspect_ratio,
+            "response_format": "base64",
+            "n": 1,
+            "prompt_optimizer": True,
+        }
+        if subject_image is not None:
+            data_url = (
+                f"data:{subject_mime};base64,{base64.b64encode(subject_image).decode()}"
+            )
+            body["subject_reference"] = [{"type": "character", "image_file": data_url}]
+        url = f"{self._base_url}/v1/image_generation"
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(self._timeout, connect=10.0)
+        ) as c:
+            resp = await c.post(url, json=body, headers=self._headers())
+        if resp.status_code >= 400:
+            raise MiniMaxError(
+                f"MiniMax imagem HTTP {resp.status_code}: {resp.text[:300]}"
+            )
+        data = resp.json()
+        base = data.get("base_resp") or {}
+        if base.get("status_code") not in (0, None):
+            raise MiniMaxError(
+                f"MiniMax imagem status {base.get('status_code')}: {base.get('status_msg')}"
+            )
+        d = data.get("data") or {}
+        b64list = d.get("image_base64") or []
+        if b64list:
+            img_bytes = base64.b64decode(b64list[0])
+        else:
+            urls = d.get("image_urls") or []
+            if not urls:
+                raise MiniMaxError(f"MiniMax imagem sem retorno: {resp.text[:200]}")
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(self._timeout, connect=10.0)
+            ) as c:
+                got = await c.get(urls[0])
+            img_bytes = got.content
+        logger.info(
+            "minimax.image_done",
+            model=model,
+            kb=round(len(img_bytes) / 1024, 1),
+            subject=bool(subject_image),
+        )
+        return img_bytes

@@ -22,13 +22,12 @@ from __future__ import annotations
 # São os marcos de acolhimento/conquista do aluno/colaborador.
 _TTS_EVENTS = frozenset(
     {
-        "lead.captured",  # boas-vindas ao novo lead
-        "lead.paid",  # parabéns: matrícula começou (o recibo vai à parte, em texto)
-        "enrollment.released",  # virou aluno
-        "training.approved",  # virou promotor (sem treino obrigatório pendente — já pode captar)
-        "training.cleared",  # concluiu o treino obrigatório → painel liberado (já pode captar)
-        "student.exam_passed",  # passou na prova
-        "student.veteran",  # formou / virou veterano
+        # Voz só nos PICOS (enxugado 2026-06-21: voz demais mata o "momento especial").
+        "lead.paid",  # recomeço: a matrícula começou (o recibo vai à parte, em texto)
+        "enrollment.selfie_approved",  # assinatura da matrícula — com o próprio rosto
+        "student.diploma_issued",  # o diploma: o ápice da jornada
+        "training.approved",  # virou promotor (já pode captar) — conquista do colaborador
+        "training.cleared",  # concluiu o treino obrigatório → painel liberado
     }
 )
 
@@ -77,16 +76,17 @@ _MESSAGES: dict[str, str] = {
         "Confira quando puder, {name}."
     ),
     "enrollment.released": (
-        "Parabéns, {name}! 🎓 Sua matrícula foi liberada e você já é nosso aluno. "
-        "Seja muito bem-vindo(a), {name}!"
+        "{name}, é oficial: você é nosso aluno! 💚 Sua matrícula foi liberada. "
+        "Seja muito bem-vindo(a), {name} — a sua escola estava esperando por você."
     ),
     "enrollment.selfie_rejected": (
-        "{name}, sua selfie não pôde ser confirmada: {detail}\n"
-        "Envie uma nova foto pelo aplicativo, {name}."
+        "{name}, sua selfie não pôde ser confirmada. Envie uma nova foto pelo aplicativo, "
+        "nítida e mostrando bem o rosto, {name}."
     ),
     "enrollment.selfie_approved": (
-        "Tudo certo, {name}! ✅ Sua foto foi aprovada e sua matrícula está assinada. "
-        "Agora é com a gente, {name} — avisamos assim que sua matrícula for liberada."
+        "{name}, sua matrícula está assinada. ✍️ E quem assinou foi você, com o seu próprio rosto — "
+        "ninguém fez isso por você. Esse passo é seu pra sempre, {name}. Agora é com a gente: "
+        "assim que estiver tudo conferido, a gente te avisa por aqui."
     ),
     "enrollment.selfie_in_review": (
         "{name}, a selfie de uma matrícula precisa da sua análise — a IA ficou em dúvida. "
@@ -102,7 +102,7 @@ _MESSAGES: dict[str, str] = {
         "Aprove ou reprove no painel, {name}."
     ),
     "enrollment.rg_approved": (
-        "Boa notícia, {name}! ✅ Seu RG foi aprovado e sua matrícula segue em frente. "
+        "Tudo certo, {name}! ✅ Seu RG foi aprovado e sua matrícula segue em frente. "
         "Continue o preenchimento, {name}."
     ),
     # Ciclo da TAXA da matrícula (plan/14, Victor 2026-06-12) — TODOS pro COORDENADOR, nunca pro
@@ -132,7 +132,7 @@ _MESSAGES: dict[str, str] = {
         "Fale com o coordenador do seu polo para entender os próximos passos, {name}."
     ),
     "candidate.selfie_approved": (
-        "Boa notícia, {name}! ✅ Sua selfie foi aprovada e o cadastro segue em frente. "
+        "Aprovado, {name}! ✅ Sua selfie foi confirmada e o cadastro segue em frente. "
         "Continue o preenchimento, {name}."
     ),
     "candidate.selfie_in_review": (
@@ -149,7 +149,7 @@ _MESSAGES: dict[str, str] = {
         "Aprove ou reprove no painel, {name}."
     ),
     "candidate.document_approved": (
-        "Boa notícia, {name}! ✅ Seu documento foi aprovado e o cadastro segue em frente. "
+        "Pode seguir, {name}! ✅ Seu documento foi aprovado e o cadastro segue em frente. "
         "Continue o preenchimento, {name}."
     ),
     # coordenador destravou o tipo de documento (candidato escolheu RG/CNH errado). → candidato.
@@ -209,12 +209,18 @@ _MESSAGES: dict[str, str] = {
         "Resolva para seguir com a emissão do diploma, {name}."
     ),
     "student.diploma_issued": (
-        "{name}, seu diploma foi emitido e está disponível para retirada! "
-        "Procure o coordenador do seu polo, {name}."
+        "{name}, chegou o grande dia: o seu diploma está pronto! 🎓 Você terminou os seus estudos — "
+        "o que um dia ficou para trás, hoje você concluiu. E isso é seu para sempre, {name}. "
+        "Parabéns! A gente tem muito orgulho de você."
+    ),
+    # logística separada (texto), pra não contaminar o momento emocional do diploma acima.
+    "student.diploma_pickup": (
+        "Para retirar o seu diploma, {name}, é só procurar o coordenador do seu polo. "
+        "Ele já está esperando por você, {name}."
     ),
     "student.veteran": (
-        "Parabéns, {name}, você se formou! 🎓 Agora você é veterano da plataforma. "
-        "Bem-vindo ao clube, {name}!"
+        "{name}, agora você é veterano da nossa escola. 💚 Você chegou até o fim — e quem chega ao "
+        "fim inspira quem ainda está começando. Bem-vindo ao time, {name}!"
     ),
     "student.veteran.coordinator": (
         "{name}, um aluno do seu polo se formou e foi diplomado. ✅ "
@@ -231,7 +237,7 @@ _MESSAGES: dict[str, str] = {
         "Fale com o coordenador para regularizar, {name}."
     ),
     "promoter.reactivated": (
-        "Boa notícia, {name}! Sua atuação como promotor foi reativada. "
+        "Que bom te ver de volta, {name}! Sua atuação como promotor foi reativada. "
         "{name}, seu link de captação está ativo de novo — bora!"
     ),
 }
@@ -256,3 +262,113 @@ def text(event: str, **ctx) -> str:
 def is_tts(event: str) -> bool:
     """True se o evento é um MOMENTO ESPECIAL (vai por voz). Default = texto."""
     return event in _TTS_EVENTS
+
+
+def age_from(birth_date) -> int | None:
+    """Idade em anos a partir da data de nascimento (None se não houver) — pro storytelling adaptar o tom."""
+    if not birth_date:
+        return None
+    from datetime import date
+
+    today = date.today()
+    return (
+        today.year
+        - birth_date.year
+        - ((today.month, today.day) < (birth_date.month, birth_date.day))
+    )
+
+
+# ── Storytelling por IA nos marcos (Victor 2026-06-21) ──────────────────────────
+# Marcos que ganham TEXTO GERADO por 1 LLM (caloroso, personalizado) — SEMPRE com fallback pro
+# teor fixo acima se a IA falhar/vier ruim. Público de EJA: simples, digno, sem erro de português.
+_STORY_EVENTS = frozenset({"enrollment.selfie_approved", "student.diploma_issued"})
+
+_STORY_INSTRUCTIONS = {
+    "enrollment.selfie_approved": (
+        "Você escreve para {name}, um(a) aluno(a) adulto(a) da educação de jovens e adultos (EJA), "
+        "público simples e batalhador, que acabou de ASSINAR a matrícula com a própria selfie. "
+        "Hoje é {data_hoje} — pode citar a data como o dia em que ele(a) deu esse passo. {faixa_etaria} "
+        "Escreva uma mensagem calorosa e curta (no máximo 3 frases) celebrando que foi ELE(A) quem "
+        "assinou, com o próprio rosto, e que agora é só aguardar a liberação. Trate por '{name}'. "
+        "Português impecável, sem erros, sem gírias, sem emoji, sem inventar outros fatos."
+    ),
+    "student.diploma_issued": (
+        "Você escreve para {name}, um(a) aluno(a) adulto(a) da EJA, público simples e batalhador, "
+        "que ACABOU de ter o diploma emitido — muitas vezes um sonho adiado por décadas. Hoje é "
+        "{data_hoje} — pode citar a data como o dia em que ele(a) concluiu. {faixa_etaria} "
+        "Escreva uma mensagem curta (no máximo 3 frases), emocionante e digna, dizendo que terminou "
+        "os estudos e que isso é dele(a) para sempre. Trate por '{name}'. NÃO fale de retirada nem "
+        "logística. Português impecável, sem erros, sem gírias, sem emoji, sem inventar outros fatos."
+    ),
+}
+
+
+def story_text(
+    event: str, *, name: str, fallback: str, age: int | None = None, **_ctx
+) -> str:
+    """Texto caloroso gerado por 1 LLM (temperatura baixa) nos marcos especiais; cai no `fallback`
+    fixo se o evento não for de história, se a IA falhar, ou se o texto vier ruim (curto/sem o nome).
+    Enriquece com a DATA de hoje e adapta o tom à IDADE (Victor 2026-06-21). Roda síncrono no caller;
+    mantenha o caller fora do request quando possível (o de selfie é async)."""
+    if event not in _STORY_EVENTS:
+        return fallback
+    try:
+        from datetime import date
+
+        from integrations.ai import service as ai
+
+        _meses = (
+            "janeiro",
+            "fevereiro",
+            "março",
+            "abril",
+            "maio",
+            "junho",
+            "julho",
+            "agosto",
+            "setembro",
+            "outubro",
+            "novembro",
+            "dezembro",
+        )
+        hoje = date.today()
+        data_hoje = f"{hoje.day} de {_meses[hoje.month - 1]} de {hoje.year}"
+        if age is None:
+            faixa = ""
+        elif age >= 50:
+            faixa = (
+                f"A pessoa tem cerca de {age} anos: honre, com respeito e sem nenhum espanto, a "
+                "coragem de retomar os estudos mais tarde na vida."
+            )
+        elif age >= 30:
+            faixa = (
+                f"A pessoa tem cerca de {age} anos: reconheça a determinação de estudar conciliando "
+                "com o trabalho e a vida adulta."
+            )
+        else:
+            faixa = (
+                f"A pessoa tem cerca de {age} anos: celebre, com entusiasmo, que está garantindo o "
+                "futuro cedo."
+            )
+
+        instruction = _STORY_INSTRUCTIONS[event].format(
+            name=name, data_hoje=data_hoje, faixa_etaria=faixa
+        )
+        out = ai.generate_text(
+            f"Escreva a mensagem para {name}.",
+            caller=f"story.{event}",
+            instruction=instruction,
+            temperature=0.6,
+            # DeepSeek (NÃO o MiniMax-M3, que volta vazio aqui) + orçamento alto: o reasoner gasta
+            # tokens "pensando" no <think> (que é removido); sem orçamento sobra string vazia, e o
+            # guard cai no teor fixo. 1000 dá folga pra pensar E escrever. Falha → teor fixo.
+            max_tokens=1000,
+            model="deepseek-v4-pro",
+        )
+        out = (out or "").strip().replace("**", "")
+        # guarda-chuva: precisa existir, ser substancial e citar o nome — senão usa o teor fixo.
+        if len(out) < 20 or name.lower() not in out.lower():
+            return fallback
+        return out
+    except Exception:  # noqa: BLE001 — IA é enfeite; jamais deixa um marco sem mensagem
+        return fallback

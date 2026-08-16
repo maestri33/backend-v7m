@@ -28,12 +28,12 @@ def check_users(app_configs, **kwargs):
 
     if not (
         getattr(settings, "WHATSAPP_API_BASE_URL", "")
-        and getattr(settings, "WHATSAPP_GLOBAL_API_KEY", "")
+        and getattr(settings, "WHATSAPP_API_KEY", "")
     ):
         errors.append(
             DjangoWarning(
                 "WhatsApp não configurado — o OTP (login passwordless do auth) não tem canal de envio.",
-                hint="Configure WHATSAPP_API_BASE_URL/WHATSAPP_GLOBAL_API_KEY no .env.",
+                hint="Configure WHATSAPP_API_BASE_URL/WHATSAPP_API_KEY.",
                 id="users.W001",
             )
         )

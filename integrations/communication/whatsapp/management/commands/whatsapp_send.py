@@ -1,7 +1,7 @@
 """Validação manual de ENVIO: manda um texto real pra um número (teste de entrega §8).
 
 Uso: python manage.py whatsapp_send 5543996648750 "olá do mvp"
-Resolve a variante BR (9º dígito) antes de enviar. Opcional: --instance ieadpg.
+Resolve a variante BR (9º dígito) antes de enviar. A instância é definida por WHATSAPP_API_KEY.
 """
 
 import json
@@ -14,7 +14,7 @@ from integrations.communication.whatsapp.client import WhatsAppError, get_client
 
 class Command(BaseCommand):
     help = (
-        "Envia uma mensagem de texto real via Evolution (resolve o 9º dígito BR antes)."
+        "Envia texto real via Evolution GO (resolve o 9º dígito BR antes)."
     )
 
     def add_arguments(self, parser):
@@ -22,15 +22,11 @@ class Command(BaseCommand):
             "number", help="Destinatário DDI+DDD+número (ex.: 5543996648750)"
         )
         parser.add_argument("text", help="Texto da mensagem")
-        parser.add_argument(
-            "--instance", default=None, help="Instância da Evolution (default: do .env)"
-        )
-
     def handle(self, *args, **options):
-        number, text, instance = options["number"], options["text"], options["instance"]
+        number, text = options["number"], options["text"]
 
         async def _run():
-            async with get_client(instance=instance) as wa:
+            async with get_client() as wa:
                 resolved = await wa.resolve_br_number(number)
                 return resolved, await wa.send_text(resolved, text)
 

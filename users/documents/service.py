@@ -253,7 +253,6 @@ def upload_photo(external_id: str, slot: str, upload) -> str:
 
     Aceita JPEG/PNG/WEBP (decode real — arquivo renomeado não passa) e PDF (convertido pra JPEG
     internamente; no disco fica sempre imagem) — plan/12."""
-    from django.core.files.base import ContentFile
 
     if slot not in _PHOTO_SLOTS:
         raise ValidationError(f"Slot de foto inválido: {slot}.", code="SLOT_INVALID")
@@ -288,12 +287,13 @@ def upload_photo(external_id: str, slot: str, upload) -> str:
     else:
         _decode_image(data)
         ext = _ALLOWED_IMAGE[content_type]
-    path = f"documents/{external_id}/{slot}.{ext}"
-    if default_storage.exists(path):
-        default_storage.delete(path)
-    default_storage.save(path, ContentFile(data))
+    from core.media import save_media
 
     sub = getattr(document, sub_name)
+    old = getattr(sub, field, None)
+    path = save_media(prefix="documents", data=data, ext=ext)
+    if old and old != path and default_storage.exists(old):
+        default_storage.delete(old)
     setattr(sub, field, path)
     sub.save(update_fields=[field])
     logger.info("documents.photo_uploaded", external_id=external_id, slot=slot)
