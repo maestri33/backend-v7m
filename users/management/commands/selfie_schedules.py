@@ -7,8 +7,10 @@ foi movida pra estes jobs; os GETs viraram leitura pura.
 
 - `users.age_stale_candidate_selfies`: MINUTES a cada 5 min.
 - `users.age_stale_enrollment_selfies`: MINUTES a cada 5 min.
+- `users.age_stale_review_documents`: MINUTES a cada 5 min (documento parado → review, global —
+  mesma correção "write fora do GET", agora pro inbox /reviews do coordenador). Auditoria API B4.
 
-Intervalo curto (o TTL default é 120s): a selfie estourada cai na fila do coordenador em ≤5 min.
+Intervalo curto (o TTL default é 120s): a selfie/documento estourado cai na fila do coordenador em ≤5 min.
 
 Uso (DEPLOY precisa rodar 1×): python manage.py selfie_schedules
 """
@@ -24,6 +26,12 @@ _SCHEDULES = (
     (
         "users.age_stale_enrollment_selfies",
         "users.roles.enrollment.tasks.age_stale_selfies",
+    ),
+    # documento parado (worker morto) → review, global. Antes rodava DENTRO do GET /reviews em
+    # 3 serviços (write numa leitura); agora aqui, como as selfies. Auditoria API B4.
+    (
+        "users.age_stale_review_documents",
+        "users.roles.review_tasks.age_stale_review_documents",
     ),
 )
 

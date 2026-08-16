@@ -2011,26 +2011,12 @@ def coordinator_correct_identity(
     return {**me_dict(enr), "status": enr.status}
 
 
-def _sweep_stale_reviews(hub) -> None:
-    from users.documents.models import RG
-    from users.roles import _analysis
-
-    _analysis.sweep_stale_selfies(Enrollment, hub)
-    user_ids = list(
-        Enrollment.objects.filter(hub=hub).values_list("user_id", flat=True)
-    )
-    _analysis.sweep_stale_documents(
-        RG.objects.filter(document__user_id__in=user_ids), _rg_started_at
-    )
-
-
 def list_reviews_for_hub(*, hub) -> dict:
     """Análises da MATRÍCULA paradas esperando decisão do coordenador (RG e selfie em revisão).
-    Cada item aponta pro POST de decisão que já existe (`/rg/decide`, `/selfie/decide`).
-    Antes de listar, varre PENDING órfão (worker morto) → review (`_sweep_stale_reviews`)."""
+    Cada item aponta pro POST de decisão que já existe (`/rg/decide`, `/selfie/decide`). O sweep de
+    PENDING órfão → review saiu do GET (era write numa leitura) pros schedules globais
+    `age_stale_enrollment_selfies` (selfie) e `age_stale_review_documents` (RG). Auditoria API B4."""
     from users.roles import _analysis, _selfie
-
-    _sweep_stale_reviews(hub)
 
     def _item(enr: Enrollment) -> dict:
         p = profiles.get(enr.user)

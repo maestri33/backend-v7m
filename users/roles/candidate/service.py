@@ -1186,24 +1186,12 @@ def _notify_doc_event(
         )
 
 
-def _sweep_stale_reviews(hub) -> None:
-    from users.documents.models import CNH, RG
-    from users.roles import _analysis
-
-    _analysis.sweep_stale_selfies(Candidate, hub)
-    user_ids = list(Candidate.objects.filter(hub=hub).values_list("user_id", flat=True))
-    for model in (RG, CNH):
-        _analysis.sweep_stale_documents(
-            model.objects.filter(document__user_id__in=user_ids), _doc_started_at
-        )
-
-
 def list_document_reviews_for_hub(*, hub) -> list[dict]:
     """Candidatos do polo com o documento parado em REVISÃO (decisão do coordenador — plan/15 B3).
-    Cada item aponta pro POST de decisão que existe. Antes, varre PENDING órfão → review."""
+    Cada item aponta pro POST de decisão que existe. O sweep de PENDING órfão → review saiu do GET
+    (era write numa leitura) pro schedule global `age_stale_review_documents` (auditoria API B4)."""
     from users.roles import _document_ai as doc_ai
 
-    _sweep_stale_reviews(hub)
     out = []
     qs = (
         Candidate.objects.filter(hub=hub, doc_type__isnull=False)
@@ -2034,10 +2022,10 @@ def list_selfie_reviews_for_hub(*, hub) -> list[dict]:
     """Candidatos do polo com a selfie parada em REVISÃO (decisão do coordenador — plan/14).
 
     Cada item aponta pro POST de decisão que já existe (`/candidates/{ext}/selfie/decide`).
-    Antes, varre PENDING órfão (worker morto) → review (`_sweep_stale_reviews`)."""
+    Selfie estourada → review é responsabilidade do schedule `age_stale_candidate_selfies` (não
+    mais deste GET — auditoria API B4)."""
     from users.roles._selfie import SelfieStatus
 
-    _sweep_stale_reviews(hub)
     out = []
     qs = (
         Candidate.objects.filter(hub=hub, selfie_status=SelfieStatus.REVIEW)

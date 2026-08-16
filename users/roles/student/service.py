@@ -1198,30 +1198,14 @@ def list_for_staff(*, hub_external_id=None, status=None, limit=200) -> list[dict
     return out
 
 
-def _sweep_stale_reviews(hub) -> None:
-    """Resiliência (Victor 2026-06-17): worker da IA morto → documento do student fica PENDING
-    calado e some da fila de todos (só db-edit destrava, o que o Victor não quer em prod). Ao
-    montar a fila, PENDING que estourou o TTL VIRA `review` → aparece pro coordenador decidir."""
-    from datetime import timedelta
-
-    from users.roles import _analysis
-
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    StudentDocument.objects.filter(
-        student__hub=hub,
-        validation_status=StudentDocument.Validation.PENDING,
-        updated_at__lt=cutoff,
-    ).update(validation_status=StudentDocument.Validation.REVIEW)
-
-
 def list_document_reviews_for_hub(*, hub) -> list[dict]:
     """Documentos de students do polo parados em REVISÃO (decisão do coordenador — plan/14).
 
     Cada item traz o PAR (student, documento) que o POST de decisão já existente espera
-    (`/students/{ext}/documents/{doc_ext}/decide`). Antes, varre PENDING órfão → review."""
+    (`/students/{ext}/documents/{doc_ext}/decide`). O sweep de PENDING órfão → review saiu do GET
+    (era write numa leitura) pro schedule global `age_stale_review_documents` (auditoria API B4)."""
     from users.profiles import interface as profiles
 
-    _sweep_stale_reviews(hub)
     out = []
     qs = (
         StudentDocument.objects.filter(
