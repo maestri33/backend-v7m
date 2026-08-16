@@ -1,9 +1,10 @@
 """Paridade das 2 guardas anti-race do candidato com o funil do aluno (enrollment):
 
-(a) G11 — re-upload durante a task: a foto do slot troca enquanto a visão roda (~10-60s). O
-    re-upload TAMBÉM re-arma `pending`, então o check de status sozinho não pega — o discriminador
-    é o PATH da foto (`getattr(sub, field) != path`). Sem isso, o veredito da foto velha gravava
-    sobre a nova.
+(a) G11 — re-upload durante a task: a foto do slot troca enquanto a visão roda (~10-60s). O path
+    é FIXO por slot (<ext_id>/<slot>.<ext>), então o discriminador é a VERSÃO do slot
+    (`photo_versions`, uuid novo a cada upload). Sem isso, o veredito da foto velha gravava
+    sobre a nova no mesmo path. O merge roda sob `_lock_doc_sub` (select_for_update) — dois
+    workers em slots diferentes não se sobrescrevem mais (lost update no JSON).
 (b) recheck pós-OCR: OCR + extração levam ~15s; se o TTL-sweep ou o coordenador decidirem nesse
     meio, o veredito velho NÃO pode sobrescrever a decisão já gravada.
 """
@@ -15,7 +16,7 @@ import pytest
 pytestmark = pytest.mark.django_db
 
 
-# ---------------------------------------------------------------- (a) G11 path guard
+# ---------------------------------------------------------------- (a) G11 version guard
 def _run_photo(monkeypatch, tmp_path, *, reupload: bool):
     from users.roles import _document_ai as doc_ai
     from users.roles.candidate import service as cs
@@ -26,19 +27,13 @@ def _run_photo(monkeypatch, tmp_path, *, reupload: bool):
     saved = []
 
     class _Sub:
+        pk = 1
         validation_status = doc_ai.PENDING
-        validation_result = {}
+        validation_result = {"photo_versions": {"cnh_full": "v1"}}
         full_photo = "a.jpg"
         front_photo = None
         back_photo = None
         number = None
-
-        def refresh_from_db(self, fields=None):
-            # simula o que aconteceu no DB enquanto a visão rodava
-            if reupload:
-                self.full_photo = (
-                    "b.jpg"  # outro upload trocou a foto (re-arma pending também)
-                )
 
         def save(self, **kw):
             saved.append((self.validation_status, kw.get("update_fields")))
@@ -56,6 +51,14 @@ def _run_photo(monkeypatch, tmp_path, *, reupload: bool):
     mgr.select_related.return_value.filter.return_value.first.return_value = _Cand()
     monkeypatch.setattr(cs.Candidate, "objects", mgr)
     monkeypatch.setattr(cs.documents_iface, "get_doc_sub", lambda *a, **k: sub)
+
+    def _lock(current):
+        # simula o que aconteceu no DB enquanto a visão rodava: re-upload bumpa a versão
+        if reupload:
+            current.validation_result = {"photo_versions": {"cnh_full": "v2"}}
+        return current
+
+    monkeypatch.setattr(cs, "_lock_doc_sub", _lock)
     monkeypatch.setattr(doc_ai, "fix_orientation", lambda *a, **k: None)
     monkeypatch.setattr(
         doc_ai, "check_photo", lambda *a, **k: (doc_ai.REJECTED, "foto borrada")
@@ -67,8 +70,10 @@ def _run_photo(monkeypatch, tmp_path, *, reupload: bool):
     return saved
 
 
-def test_g11_reupload_descarta_veredito_da_foto_velha(monkeypatch, tmp_path):
-    """A foto trocou no meio tempo (re-upload) → o veredito da foto velha NÃO é gravado."""
+def test_g11_reupload_no_mesmo_path_descarta_veredito_da_foto_velha(
+    monkeypatch, tmp_path
+):
+    """A versão do slot trocou no meio tempo (re-upload no MESMO path) → veredito velho fora."""
     saved = _run_photo(monkeypatch, tmp_path, reupload=True)
     assert saved == [], "veredito da foto velha gravou sobre a nova (race G11)"
 
@@ -79,6 +84,79 @@ def test_g11_sem_reupload_grava_normal(monkeypatch, tmp_path):
 
     saved = _run_photo(monkeypatch, tmp_path, reupload=False)
     assert saved and saved[0][0] == doc_ai.REJECTED
+
+
+def test_merge_da_frente_preserva_resultado_do_verso(monkeypatch, tmp_path):
+    """Lost update (P0 da auditoria): o veredito do verso, gravado pelo outro worker enquanto a
+    visão da frente rodava, tem que SOBREVIVER ao merge da frente — e a seção completa extrai."""
+    from users.roles import _document_ai as doc_ai
+    from users.roles.candidate import service as cs
+
+    (tmp_path / "front.jpg").write_bytes(b"front")
+    (tmp_path / "back.jpg").write_bytes(b"back")
+    monkeypatch.setattr(cs.settings, "MEDIA_ROOT", str(tmp_path))
+
+    class _Sub:
+        pk = 1
+        validation_status = doc_ai.PENDING
+        # estado do DB no momento do LOCK: o worker do verso já gravou o slot dele
+        validation_result = {
+            "photo_versions": {"cnh_front": "f1", "cnh_back": "b1"},
+            "photos": {"cnh_back": {"status": doc_ai.APPROVED, "reason": "ok"}},
+        }
+        front_photo = "front.jpg"
+        back_photo = "back.jpg"
+        full_photo = None
+        number = "123"
+
+        def save(self, **kw):
+            return None
+
+    sub = _Sub()
+
+    class _Cand:
+        id = 1
+        doc_type = "cnh"
+        external_id = "c1"
+        user = type("U", (), {"external_id": "u1"})()
+        hub = None
+
+    mgr = MagicMock()
+    mgr.select_related.return_value.filter.return_value.first.return_value = _Cand()
+    monkeypatch.setattr(cs.Candidate, "objects", mgr)
+    # a leitura INICIAL (sem lock) vê o estado ANTIGO — sem o veredito do verso ainda
+    stale = type(
+        "S",
+        (),
+        {
+            "pk": 1,
+            "validation_status": doc_ai.PENDING,
+            "validation_result": {
+                "photo_versions": {"cnh_front": "f1", "cnh_back": "b1"}
+            },
+            "front_photo": "front.jpg",
+            "back_photo": "back.jpg",
+            "full_photo": None,
+            "number": "123",
+        },
+    )()
+    monkeypatch.setattr(cs.documents_iface, "get_doc_sub", lambda *a, **k: stale)
+    monkeypatch.setattr(cs, "_lock_doc_sub", lambda current: sub)
+    monkeypatch.setattr(doc_ai, "fix_orientation", lambda *a, **k: None)
+    monkeypatch.setattr(
+        doc_ai, "check_photo", lambda *a, **k: (doc_ai.APPROVED, "ok")
+    )
+    merged = []
+    monkeypatch.setattr(
+        cs,
+        "_doc_extract_and_finish",
+        lambda cand, current, result, images: merged.append(result),
+    )
+
+    cs.run_document_validation(1, "cnh_front")
+
+    assert merged, "seção completa não extraiu (veredito do verso foi perdido no merge)"
+    assert set(merged[0]["photos"]) == {"cnh_front", "cnh_back"}
 
 
 # ---------------------------------------------------------------- (b) recheck pós-OCR

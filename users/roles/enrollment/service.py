@@ -12,6 +12,8 @@ Provado real fim-a-fim (RG/selfie reais, plan/13 2026-06-11; student→veteran 2
 
 from __future__ import annotations
 
+import uuid as _uuid
+
 import structlog
 from django.conf import settings
 from django.db import transaction
@@ -576,11 +578,16 @@ def upload_rg_photo(*, user_external_id: str, slot: str, upload) -> dict:
     # accept-first: RG aceito em qualquer etapa pré-completion (re-upload após rejeição funciona
     # mesmo depois de avançar pro endereço/escolaridade).
     enr = _require(user_external_id, _S.RG, _S.ADDRESS, _S.EDUCATION, _S.SELFIE)
-    path = documents_iface.upload_photo(user_external_id, slot, upload)
-    _reset_rg_validation(user_external_id, slot)
     from django_q.tasks import async_task
 
-    async_task("users.roles.enrollment.tasks.validate_rg", enr.id, slot)
+    # Path novo + reset num commit só; task via on_commit (mesma blindagem do candidate —
+    # kill entre upload e reset deixava foto nova com veredito da velha).
+    with transaction.atomic():
+        path = documents_iface.upload_photo(user_external_id, slot, upload)
+        _reset_rg_validation(user_external_id, slot)
+        transaction.on_commit(
+            lambda: async_task("users.roles.enrollment.tasks.validate_rg", enr.id, slot)
+        )
     # ack de polling (proposta #2): a análise acabou de (re)começar → started_at = agora.
     rg = documents_iface.get_rg(user_external_id)
     return {"stored": path, **_analysis.ack(_analysis.PENDING, _rg_started_at(rg))}
@@ -631,21 +638,36 @@ def _reset_rg_validation(user_external_id: str, slot: str) -> None:
         return
     from django.utils import timezone
 
-    result = rg.validation_result or {}
-    photos = dict(result.get("photos") or {})
-    photos.pop(slot, None)
-    for key in ("extracted", "name_match", "reason", "human"):
-        result.pop(key, None)
-    result["photos"] = photos
-    # marca o INÍCIO da análise (proposta #2): o re-upload reinicia o relógio do TTL. Guardado no
-    # JSON (sem migração); só vale enquanto `pending` (o `_finish_rg` reescreve o result ao concluir).
-    result["analysis_started_at"] = timezone.now().isoformat()
-    rg.validation_status = doc_ai.PENDING
-    rg.validation_result = result
-    rg.validated_at = None
-    rg.save(update_fields=["validation_status", "validation_result", "validated_at"])
+    with transaction.atomic():
+        rg = _lock_rg(rg)
+        result = rg.validation_result or {}
+        photos = dict(result.get("photos") or {})
+        photos.pop(slot, None)
+        # Versão por slot: o path é FIXO (<ext_id>/<slot>.<ext>) — comparar path não detecta
+        # re-upload comum. O discriminador da G11 é esta versão (uuid novo a cada upload).
+        versions = dict(result.get("photo_versions") or {})
+        versions[slot] = _uuid.uuid4().hex
+        for key in ("extracted", "name_match", "reason", "human"):
+            result.pop(key, None)
+        result["photos"] = photos
+        result["photo_versions"] = versions
+        # marca o INÍCIO da análise (proposta #2): o re-upload reinicia o relógio do TTL. Guardado no
+        # JSON (sem migração); só vale enquanto `pending` (o `_finish_rg` reescreve o result ao concluir).
+        result["analysis_started_at"] = timezone.now().isoformat()
+        rg.validation_status = doc_ai.PENDING
+        rg.validation_result = result
+        rg.validated_at = None
+        rg.save(
+            update_fields=["validation_status", "validation_result", "validated_at"]
+        )
     # ponytail: re-upload resolve o bloco imediatamente — nova análise roda em background
     blocks.resolve_for_source(user=rg.document.user, source_type="rg_photo")
+
+
+def _lock_rg(rg):
+    """Re-lê o RG sob select_for_update — TODO write em validation_result passa por aqui
+    (dois workers em slots diferentes se sobrescreviam no read-modify-write do JSON)."""
+    return type(rg).objects.select_for_update().get(pk=rg.pk)
 
 
 def run_rg_validation(enrollment_id: int, slot: str) -> None:
@@ -673,6 +695,7 @@ def run_rg_validation(enrollment_id: int, slot: str) -> None:
 
     result = rg.validation_result or {}
     photos = dict(result.get("photos") or {})
+    slot_version = (result.get("photo_versions") or {}).get(slot)
 
     field = _RG_SLOT_FIELD.get(slot)
     path = getattr(rg, field, None) if field else None
@@ -690,30 +713,40 @@ def run_rg_validation(enrollment_id: int, slot: str) -> None:
             mime_type=mime,
             caller="enrollment.rg",
         )
-        # merge FRESCO: a visão leva 10–60s e frente+verso viram 2 tasks em workers paralelos —
-        # re-lê antes de gravar pra não perder o veredito que o outro worker salvou no meio tempo.
-        rg.refresh_from_db()
-        if rg.validation_status != doc_ai.PENDING:
-            return  # outro worker (ou re-upload) já mudou o estado — não sobrescrever
-        # G11: a foto deste slot trocou no meio tempo (re-upload) → o veredito é da foto velha,
-        # descarta. `path` foi capturado no início; comparar com o atual identifica a troca (o
-        # check de status sozinho não pega um re-upload que re-arma PENDING).
-        if getattr(rg, field, None) != path:
+        # Merge sob LOCK (visão 10-60s; frente+verso em 2 workers paralelos): o refresh sem lock
+        # fechava só a corrida do MESMO slot — dois slots diferentes ainda se sobrescreviam (lost
+        # update no JSON), a extração nunca via a seção completa e o TTL jogava tudo em review.
+        with transaction.atomic():
+            rg = _lock_rg(rg)
+            if rg.validation_status != doc_ai.PENDING:
+                return  # outro worker (ou re-upload) já mudou o estado — não sobrescrever
+            result = rg.validation_result or {}
+            # G11 por VERSÃO do slot (path é fixo, só a extensão muda): versão trocou no meio
+            # tempo = este veredito é da foto velha, descarta.
+            current_version = (result.get("photo_versions") or {}).get(slot)
+            if getattr(rg, field, None) != path or current_version != slot_version:
+                return
+            photos = dict(result.get("photos") or {})
+            was_complete = _rg_approved_images(rg, photos) is not None
+            photos[slot] = {"status": status, "reason": reason}
+            result["photos"] = photos
+            if status != doc_ai.APPROVED:
+                _finish_rg(enr, rg, status, reason, result)
+                return
+            images = _rg_approved_images(rg, photos)
+            rg.validation_result = result
+            rg.save(update_fields=["validation_result"])
+            # só extrai quem COMPLETOU a seção agora — o worker que commitou depois vê o slot
+            # do outro já gravado (was_complete) e não duplica a extração.
+            should_extract = not was_complete and images is not None
+        if not should_extract:
             return
-        result = rg.validation_result or {}
-        photos = dict(result.get("photos") or {})
-        photos[slot] = {"status": status, "reason": reason}
-        result["photos"] = photos
-        if status != doc_ai.APPROVED:
-            _finish_rg(enr, rg, status, reason, result)
+    else:
+        images = _rg_approved_images(rg, photos)
+        if images is None:
+            # nada mudou nesta passada — NÃO regrava `result` (o write cego daqui clobberava
+            # um veredito concorrente gravado entre a leitura lá em cima e este ponto).
             return
-
-    images = _rg_approved_images(rg, photos)
-    if images is None:
-        # esta foto passou, mas falta a outra — guarda o veredito e espera o resto da seção
-        rg.validation_result = result
-        rg.save(update_fields=["validation_result"])
-        return
     _rg_extract_and_finish(enr, rg, result, images)
 
 

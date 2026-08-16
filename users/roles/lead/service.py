@@ -255,17 +255,16 @@ def fill_checkout_from_provider(checkout: Checkout) -> None:
     """Cria a cobrança no GATEWAY e preenche o Checkout (URL/QR/payment_id). FAZ REDE — nunca dentro
     do request do register (task async ou lazy no clique do link curto).
 
-    Idempotente: já preenchido → no-op. Mutex curto no cache evita task × clique criarem DUAS
-    cobranças no provider ao mesmo tempo."""
-    from django.core.cache import cache
-
+    Idempotente: já preenchido → no-op. O mutex é a LINHA do Checkout sob select_for_update —
+    atravessa processos. O `cache.add` de antes era LocMem POR PROCESSO (sem CACHES configurado):
+    task no qcluster × clique no gunicorn tinham caches separados, os dois passavam e nasciam
+    DUAS cobranças no gateway — o pagador pagava a que não ficou gravada e o webhook caía em
+    `no_matching_charge`. O segundo builder bloqueia no lock, re-checa e sai. Custo consciente:
+    o lock (1 linha) fica seguro durante o HTTP do gateway — só disputa quem quer o MESMO checkout."""
     if checkout.checkout_url:
         return
-    lock_key = f"checkout_build:{checkout.pk}"
-    if not cache.add(lock_key, 1, 30):  # outro builder em andamento
-        return
-    try:
-        checkout.refresh_from_db()
+    with transaction.atomic():
+        checkout = Checkout.objects.select_for_update().get(pk=checkout.pk)
         if checkout.checkout_url:
             return
         profile = profiles.get(checkout.lead.user)
@@ -275,8 +274,6 @@ def fill_checkout_from_provider(checkout: Checkout) -> None:
             _fill_pix(checkout, profile)
         else:
             _fill_card(checkout, profile)
-    finally:
-        cache.delete(lock_key)
     logger.info(
         "lead.checkout_filled",
         external_id=str(checkout.lead.external_id),
@@ -684,11 +681,16 @@ def mark_paid(*, provider: str, provider_payment_id: str, receipt_url=None) -> b
     if checkout is None:
         return False
 
-    lead = checkout.lead
-    if lead.status == Lead.Status.PAID:
-        return True  # idempotente (webhook re-tentou)
-
     with transaction.atomic():
+        # Lock no Lead ANTES do check de idempotência: CONFIRMED+RECEIVED do mesmo pagamento
+        # chegam em paralelo (2 workers gunicorn) e ambos passavam no check-then-act — matrícula
+        # criada em dobro (IntegrityError → 500 → retry do gateway) e notify duplicada no caminho
+        # bolsista. SEM select_related aqui de propósito: o join faria o FOR UPDATE travar
+        # também User/Promoter (e `of=` não existe no SQLite dos testes).
+        lead = Lead.objects.select_for_update().get(pk=checkout.lead_id)
+        if lead.status == Lead.Status.PAID:
+            return True  # idempotente (webhook re-tentou / evento gêmeo em paralelo)
+
         fields = ["is_paid", "updated_at"]
         checkout.is_paid = True
         if receipt_url:

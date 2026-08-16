@@ -1,8 +1,12 @@
-# ponytail: fixtures mínimos — db + client. SQLite em memória para testes.
+# ponytail: fixtures mínimos — db + client. SQLite em memória por default.
 import os
 
-# Força SQLite ANTES do Django ler settings (sobrescreve o .env).
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Default SQLite ANTES do Django ler settings — mas RESPEITA um TEST_DATABASE_URL exportado:
+# no SQLite todo select_for_update é NO-OP, então os locks de concorrência (KYC, mark_paid,
+# checkout) só são exercitados de verdade quando o CI aponta pra um Postgres de serviço.
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL", "sqlite:///:memory:"
+)
 
 import pytest
 from django.test import Client

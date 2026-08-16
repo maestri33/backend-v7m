@@ -6,6 +6,7 @@ Payment.status (só altera estado DENTRO do app Asaas). O payload bruto permanec
 """
 
 import structlog
+from django.db import transaction
 from django.utils import timezone
 
 from core import hooks as core_hooks
@@ -130,28 +131,33 @@ def _apply_charge(payload, event):
     if row is None:
         return None, f"no_matching_charge: ext_ref={ext_ref} asaas_id={asaas_id}"
 
-    if asaas_id and row.asaas_id != asaas_id:
-        row.asaas_id = asaas_id
-    if new_status is None:  # PAYMENT_UPDATED -> só refresh, sem mudar status
+    # Lock na linha: CONFIRMED e RECEIVED do MESMO pagamento chegam em paralelo (2 workers
+    # gunicorn) e os dois passavam nas guardas lendo o mesmo estado velho. Sob lock, o segundo
+    # evento enxerga o PAID do primeiro e vira `already_paid_redispatch` (que é o G4 desejado).
+    with transaction.atomic():
+        row = Payment.objects.select_for_update().get(pk=row.pk)
+        if asaas_id and row.asaas_id != asaas_id:
+            row.asaas_id = asaas_id
+        if new_status is None:  # PAYMENT_UPDATED -> só refresh, sem mudar status
+            row.save()
+            return None, "payment_updated_noop"
+        # G5: não rebaixa estado terminal por evento tardio/fora de ordem. REFUNDED é final; PAID só
+        # aceita ir pra PAID/REFUNDED. Pagamento tardio legítimo (PENDING/EXPIRED -> PAID) continua. Sem
+        # isso, um PAYMENT_OVERDUE reentregue sobre um PAID gravava EXPIRED e travava o reembolso depois.
+        if row.status == "REFUNDED" or (
+            row.status == "PAID" and new_status not in ("PAID", "REFUNDED")
+        ):
+            return None, f"terminal_{row.status}_ignora_{new_status}"
+        if row.status == new_status:
+            # G4: PAID já-pago ainda RE-dispatcha (retorna o row). No retry após uma falha de efeito, o
+            # Payment já está PAID; sem isso, `status_unchanged` pulava o re-dispatch e o efeito
+            # (comissão/matrícula) nunca reprocessava. O handler é idempotente → re-dispatch de sucesso
+            # é no-op seguro. Só PAID (terminal de cobrança) re-dispatcha; os demais seguem no-op.
+            if new_status == "PAID":
+                return row, "already_paid_redispatch"
+            return None, "status_unchanged"
+        row.status = new_status
         row.save()
-        return None, "payment_updated_noop"
-    # G5: não rebaixa estado terminal por evento tardio/fora de ordem. REFUNDED é final; PAID só
-    # aceita ir pra PAID/REFUNDED. Pagamento tardio legítimo (PENDING/EXPIRED -> PAID) continua. Sem
-    # isso, um PAYMENT_OVERDUE reentregue sobre um PAID gravava EXPIRED e travava o reembolso depois.
-    if row.status == "REFUNDED" or (
-        row.status == "PAID" and new_status not in ("PAID", "REFUNDED")
-    ):
-        return None, f"terminal_{row.status}_ignora_{new_status}"
-    if row.status == new_status:
-        # G4: PAID já-pago ainda RE-dispatcha (retorna o row). No retry após uma falha de efeito, o
-        # Payment já está PAID; sem isso, `status_unchanged` pulava o re-dispatch e o efeito
-        # (comissão/matrícula) nunca reprocessava. O handler é idempotente → re-dispatch de sucesso
-        # é no-op seguro. Só PAID (terminal de cobrança) re-dispatcha; os demais seguem no-op.
-        if new_status == "PAID":
-            return row, "already_paid_redispatch"
-        return None, "status_unchanged"
-    row.status = new_status
-    row.save()
     logger.info(
         "charge_status_changed",
         payment_id=row.payment_id,

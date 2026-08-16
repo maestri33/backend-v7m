@@ -7,6 +7,8 @@ selfie(IA) → `COMPLETED` (aguarda o coordenador aprovar → vira PROMOTOR). �
 
 from __future__ import annotations
 
+import uuid
+
 import structlog
 from django.conf import settings
 from django.db import transaction
@@ -440,12 +442,21 @@ def upload_document_photo(*, user_external_id, slot: str, upload) -> dict:
         )
     if cand.status in (_S.STARTED, _S.PROFILE, _S.ADDRESS):
         _set_status(cand, _S.DOCUMENTS)
-    path = documents_iface.upload_photo(user_external_id, slot, upload)
-    # pipeline IA async (visão → OCR → extração → biometria) — plan/12+15 B3
-    _reset_doc_validation(user_external_id, cand.doc_type, slot)
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_document", cand.id, slot)
+    # Path novo + reset da validação num commit SÓ (P1 da auditoria): kill entre os dois deixava
+    # a foto NOVA no campo com o veredito `approved` da VELHA — imagem nunca analisada entrava no
+    # KYC como aprovada. A task só enfileira depois do commit (on_commit) — nem task órfã de
+    # rollback, nem task correndo antes do estado existir.
+    with transaction.atomic():
+        path = documents_iface.upload_photo(user_external_id, slot, upload)
+        # pipeline IA async (visão → OCR → extração → biometria) — plan/12+15 B3
+        _reset_doc_validation(user_external_id, cand.doc_type, slot)
+        transaction.on_commit(
+            lambda: async_task(
+                "users.roles.candidate.tasks.validate_document", cand.id, slot
+            )
+        )
     sub = documents_iface.get_doc_sub(user_external_id, cand.doc_type)
     return {"stored": path, **_analysis.ack(_analysis.PENDING, _doc_started_at(sub))}
 
@@ -653,17 +664,32 @@ def _reset_doc_validation(user_external_id: str, doc_type: str, slot: str) -> No
     sub = documents_iface.get_doc_sub(user_external_id, doc_type)
     if sub is None:
         return
-    result = sub.validation_result or {}
-    photos = dict(result.get("photos") or {})
-    photos.pop(slot, None)
-    for key in ("extracted", "name_match", "reason", "human"):
-        result.pop(key, None)
-    result["photos"] = photos
-    result["analysis_started_at"] = timezone.now().isoformat()
-    sub.validation_status = doc_ai.PENDING
-    sub.validation_result = result
-    sub.validated_at = None
-    sub.save(update_fields=["validation_status", "validation_result", "validated_at"])
+    with transaction.atomic():
+        sub = _lock_doc_sub(sub)
+        result = sub.validation_result or {}
+        photos = dict(result.get("photos") or {})
+        photos.pop(slot, None)
+        # Versão por slot: o path é FIXO (<ext_id>/<slot>.<ext>) — comparar path não detecta
+        # re-upload comum. O discriminador da G11 é esta versão (uuid novo a cada upload).
+        versions = dict(result.get("photo_versions") or {})
+        versions[slot] = uuid.uuid4().hex
+        for key in ("extracted", "name_match", "reason", "human"):
+            result.pop(key, None)
+        result["photos"] = photos
+        result["photo_versions"] = versions
+        result["analysis_started_at"] = timezone.now().isoformat()
+        sub.validation_status = doc_ai.PENDING
+        sub.validation_result = result
+        sub.validated_at = None
+        sub.save(
+            update_fields=["validation_status", "validation_result", "validated_at"]
+        )
+
+
+def _lock_doc_sub(sub):
+    """Re-lê o sub-doc sob select_for_update — TODO write em validation_result passa por aqui
+    (dois workers em slots diferentes se sobrescreviam no read-modify-write do JSON)."""
+    return type(sub).objects.select_for_update().get(pk=sub.pk)
 
 
 def _advance_documents(cand: Candidate, user_external_id: str) -> None:
@@ -705,6 +731,7 @@ def run_document_validation(candidate_id: int, slot: str) -> None:
 
     result = sub.validation_result or {}
     photos = dict(result.get("photos") or {})
+    slot_version = (result.get("photo_versions") or {}).get(slot)
 
     field = _DOC_SLOT_FIELD.get(slot)
     path = getattr(sub, field, None) if field else None
@@ -721,28 +748,41 @@ def run_document_validation(candidate_id: int, slot: str) -> None:
             mime_type=mime,
             caller="candidate.document",
         )
-        # merge FRESCO (visão 10-60s; frente+verso em 2 workers paralelos — não perder o outro)
-        sub.refresh_from_db()
-        if sub.validation_status != doc_ai.PENDING:
+        # Merge sob LOCK (visão 10-60s; frente+verso em 2 workers paralelos): o refresh sem lock
+        # fechava só a corrida do MESMO slot — dois slots diferentes ainda se sobrescreviam (lost
+        # update no JSON), a extração nunca via a seção completa e o TTL jogava tudo em review.
+        with transaction.atomic():
+            sub = _lock_doc_sub(sub)
+            if sub.validation_status != doc_ai.PENDING:
+                return
+            result = sub.validation_result or {}
+            # G11 por VERSÃO do slot (path é fixo, só a extensão muda): versão trocou no meio
+            # tempo = este veredito é da foto velha, descarta. O check de path fica pro caso
+            # da extensão trocar (jpg→png reusa outro nome).
+            current_version = (result.get("photo_versions") or {}).get(slot)
+            if getattr(sub, field, None) != path or current_version != slot_version:
+                return
+            photos = dict(result.get("photos") or {})
+            was_complete = _doc_approved_images(sub, photos, cand.doc_type) is not None
+            photos[slot] = {"status": status, "reason": reason}
+            result["photos"] = photos
+            if status != doc_ai.APPROVED:
+                _finish_doc(cand, sub, status, reason, result)
+                return
+            images = _doc_approved_images(sub, photos, cand.doc_type)
+            sub.validation_result = result
+            sub.save(update_fields=["validation_result"])
+            # só extrai quem COMPLETOU a seção agora — o worker que commitou depois vê o slot
+            # do outro já gravado (was_complete) e não duplica a extração.
+            should_extract = not was_complete and images is not None
+        if not should_extract:
             return
-        # G11: a foto deste slot trocou no meio tempo (re-upload) → o veredito é da foto velha,
-        # descarta. `path` foi capturado no início; comparar com o atual identifica a troca (o
-        # check de status sozinho não pega um re-upload que re-arma PENDING).
-        if getattr(sub, field, None) != path:
+    else:
+        images = _doc_approved_images(sub, photos, cand.doc_type)
+        if images is None:
+            # nada mudou nesta passada — NÃO regrava `result` (o write cego daqui clobberava
+            # um veredito concorrente gravado entre a leitura lá em cima e este ponto).
             return
-        result = sub.validation_result or {}
-        photos = dict(result.get("photos") or {})
-        photos[slot] = {"status": status, "reason": reason}
-        result["photos"] = photos
-        if status != doc_ai.APPROVED:
-            _finish_doc(cand, sub, status, reason, result)
-            return
-
-    images = _doc_approved_images(sub, photos, cand.doc_type)
-    if images is None:
-        sub.validation_result = result
-        sub.save(update_fields=["validation_result"])
-        return
     _doc_extract_and_finish(cand, sub, result, images)
 
 
