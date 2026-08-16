@@ -946,7 +946,14 @@ def veteran_me(request):
     histórico + foto da retirada). Read-only. Paths de mídia relativos; o front prefixa /media/.
 
     A composição student × enrollment mora aqui (e não no `student.service`) porque `enrollment`
-    já importa `student` no `conclude` — cruzar de volta lá dentro fecharia ciclo de import."""
+    já importa `student` no `conclude` — cruzar de volta lá dentro fecharia ciclo de import.
+
+    SEM `response=` DE PROPÓSITO (auditoria API C3): o payload é montado campo a campo em
+    `student.veteran_detail` + `enrollment.me_dict` (allow-list explícita, NUNCA dump de model), e
+    os sub-blocos de enrollment já são tipados. Um Schema estrito aqui teria que re-enumerar toda a
+    árvore aninhada e, ao esquecer um campo, o `response=` o DROPARIA silenciosamente da tela do
+    veterano (view real do aluno). O risco de dropar supera o de vazar: a fronteira de exposição é
+    a própria allow-list dos dois `*_dict`, revisável onde os campos são escolhidos."""
     external_id = _veteran_guard(request)
     data = student_iface.veteran_detail(user_external_id=external_id)
 

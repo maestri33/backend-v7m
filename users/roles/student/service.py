@@ -1207,15 +1207,17 @@ def list_document_reviews_for_hub(*, hub) -> list[dict]:
     from users.profiles import interface as profiles
 
     out = []
-    qs = (
+    docs = list(
         StudentDocument.objects.filter(
             student__hub=hub, validation_status=StudentDocument.Validation.REVIEW
         )
         .select_related("student", "student__user")
         .order_by("updated_at")
     )
-    for doc in qs:
-        p = profiles.get(doc.student.user)
+    # 1 query de Profile pra todos (era 1/documento — auditoria API C2).
+    pmap = profiles.get_map([doc.student.user_id for doc in docs])
+    for doc in docs:
+        p = pmap.get(doc.student.user_id)
         out.append(
             {
                 "student_external_id": str(doc.student.external_id),

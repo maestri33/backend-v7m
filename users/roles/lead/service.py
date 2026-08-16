@@ -860,10 +860,13 @@ def list_leads(*, hub=None, status=None, created_after=None, limit=None) -> list
     return list(qs)
 
 
-def lead_to_dict(lead: Lead) -> dict:
-    """Lead pra listagem do hub/staff: dados + LINK de pagamento + COMPROVANTE (Victor)."""
+def lead_to_dict(lead: Lead, pmap: dict | None = None) -> dict:
+    """Lead pra listagem do hub/staff: dados + LINK de pagamento + COMPROVANTE (Victor).
+
+    `pmap` (opcional): `{user_id: Profile}` pré-carregado (leads_to_dicts) — sem ele, 1 query de
+    Profile por lead (N+1 nas listagens grandes de /leads)."""
     c = getattr(lead, "checkout", None)
-    p = profiles.get(lead.user)
+    p = pmap.get(lead.user_id) if pmap is not None else profiles.get(lead.user)
     return {
         "external_id": str(lead.external_id),
         "status": lead.status,
@@ -874,6 +877,14 @@ def lead_to_dict(lead: Lead) -> dict:
         "receipt_url": c.receipt_url if c else None,
         "created_at": lead.created_at.isoformat(),
     }
+
+
+def leads_to_dicts(leads: list) -> list[dict]:
+    """Serializa uma LISTA de leads com 1 query de Profile pra todos (auditoria API C2 — era 1 por
+    lead em /leadership/leads, /staff/leads e /tools/leads)."""
+    leads = list(leads)
+    pmap = profiles.get_map([lead.user_id for lead in leads])
+    return [lead_to_dict(lead, pmap) for lead in leads]
 
 
 def get_lead_for_hub(*, external_id: str, hub) -> Lead | None:

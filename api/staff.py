@@ -338,7 +338,7 @@ def list_all_leads(request, hub: str | None = None, status: str | None = None):
         if hub_obj is None:
             raise NotFound("Polo não encontrado.", code="HUB_NOT_FOUND")
     leads = lead_iface.list_leads(hub=hub_obj, status=status)
-    return [lead_iface.lead_to_dict(lead) for lead in leads]
+    return lead_iface.leads_to_dicts(leads)
 
 
 # ── resgate de lead sem pagamento ────────────────────────────────────────────────

@@ -673,7 +673,7 @@ def list_hub_leads(request, status: str | None = None):
     coordinator = _coordinator(request)
     hub = _coordinator_hub(coordinator)
     leads = lead_iface.list_leads(hub=hub, status=status)
-    return [lead_iface.lead_to_dict(lead) for lead in leads]
+    return lead_iface.leads_to_dicts(leads)
 
 
 @api.get("/leads/{external_id}", response=HubLeadDetailOut, tags=["lead"])

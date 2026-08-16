@@ -2018,27 +2018,32 @@ def list_reviews_for_hub(*, hub) -> dict:
     `age_stale_enrollment_selfies` (selfie) e `age_stale_review_documents` (RG). Auditoria API B4."""
     from users.roles import _analysis, _selfie
 
-    def _item(enr: Enrollment) -> dict:
-        p = profiles.get(enr.user)
+    def _item(enr: Enrollment, pmap: dict) -> dict:
+        p = pmap.get(enr.user_id)
         return {
             "external_id": str(enr.external_id),
             "name": p.name if p else None,
             "since": enr.updated_at.isoformat(),
         }
 
-    rg_qs = (
+    rg_list = list(
         Enrollment.objects.filter(
             hub=hub, user__document__rg__validation_status=_analysis.REVIEW
         )
         .select_related("user")
         .order_by("updated_at")
     )
-    selfie_qs = (
+    selfie_list = list(
         Enrollment.objects.filter(hub=hub, selfie_status=_selfie.SelfieStatus.REVIEW)
         .select_related("user")
         .order_by("updated_at")
     )
-    return {"rg": [_item(e) for e in rg_qs], "selfie": [_item(e) for e in selfie_qs]}
+    # 1 query de Profile pros dois baldes juntos (era 1/matrícula por balde — auditoria API C2).
+    pmap = profiles.get_map([e.user_id for e in rg_list + selfie_list])
+    return {
+        "rg": [_item(e, pmap) for e in rg_list],
+        "selfie": [_item(e, pmap) for e in selfie_list],
+    }
 
 
 def _notify_released(enr: Enrollment) -> None:

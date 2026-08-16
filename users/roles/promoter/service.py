@@ -382,6 +382,8 @@ def list_for_hub(hub) -> list[dict]:
         Promoter.objects.filter(hub=hub).select_related("user").order_by("created_at")
     )
     pmap = profiles.get_map([pr.user for pr in promoters])
+    # trava de treino de TODOS numa query só (era 1 COUNT por promotor — auditoria API C2).
+    locked = training_iface.locked_user_ids([pr.user_id for pr in promoters])
     out = []
     for promoter in promoters:
         p = pmap.get(promoter.user_id)
@@ -390,7 +392,7 @@ def list_for_hub(hub) -> list[dict]:
                 "external_id": str(promoter.user.external_id),
                 "name": p.name if p else None,
                 "status": promoter.status,
-                "locked": training_iface.is_locked(promoter.user),
+                "locked": promoter.user_id in locked,
             }
         )
     return out
