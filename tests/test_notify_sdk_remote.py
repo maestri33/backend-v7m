@@ -93,7 +93,9 @@ def test_sdk_erro_explicito(monkeypatch):
     from notify.sdk import client
 
     monkeypatch.setattr(
-        client, "_request", lambda *a, **k: Response(status=503, data={"detail": "down"})
+        client,
+        "_request",
+        lambda *a, **k: Response(status=503, data={"detail": "down"}),
     )
     with pytest.raises(client.NotifyServerError) as caught:
         client.post_send({"text": "oi"})

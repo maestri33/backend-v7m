@@ -68,6 +68,7 @@ def staff_check(request, payload: StaffCheckIn):
         cpf=payload.cpf, phone=payload.phone, external_id=payload.external_id
     )
 
+
 @auth_router.post("/login", response=TokenOut, auth=None)
 def staff_login(request, payload: StaffLoginIn):
     """Login passwordless (OTP) do STAFF — exige is_superuser (não role de funil) e emite JWT.

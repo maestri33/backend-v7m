@@ -24,11 +24,13 @@ jobs:
       IA_TEST_BASE_URL: http://127.0.0.1:9
       IA_TEST_API_KEY: ci-dummy
       IA_FALLBACK_CHAIN: test:test-model
-      WHATSAPP_API_BASE_URL: http://127.0.0.1:9
-      WHATSAPP_GLOBAL_API_KEY: ci-dummy
-      MAIL_SMTP_HOST: localhost
-      MAIL_SMTP_USER: ci@invalid.test
-      MAIL_SMTP_PASSWORD: ci-dummy
+      # notify-server externo (espelha o .env.ci). NOTIFY_API_KEY não tem default em
+      # core/settings.py, então sem ele o notify.E001 derruba o system check. E o
+      # NOTIFY_SERVER_URL tem como default o host REAL — apontar o CI pra ele seria pior
+      # que não setar. Os WHATSAPP_*/MAIL_SMTP_* que viviam aqui saíram: o 6815d9b apagou
+      # o código que os lia.
+      NOTIFY_SERVER_URL: http://127.0.0.1:9
+      NOTIFY_API_KEY: ci-dummy
     steps:
       - uses: actions/checkout@v4
 

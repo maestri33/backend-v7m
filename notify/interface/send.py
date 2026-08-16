@@ -54,7 +54,8 @@ def send(
         "email_channel": email_channel,
         "tts": tts,
         "media_url": media_url,
-        "media_type": media_type or (_guess_media_type(media_url) if media_url else None),
+        "media_type": media_type
+        or (_guess_media_type(media_url) if media_url else None),
         "gender": gender,
         "mail_template": mail_template,
         "external_id": idempotency_key or client_uuid,
@@ -101,7 +102,9 @@ def send_adhoc(
     want_whatsapp = "whatsapp" in requested and bool(phone)
     want_email = "email" in requested and bool(email)
     if not want_whatsapp and not want_email:
-        raise ValidationError("Nenhum canal possui destino válido.", code="MISSING_FIELD")
+        raise ValidationError(
+            "Nenhum canal possui destino válido.", code="MISSING_FIELD"
+        )
     return send(
         text=message,
         caller=caller,
