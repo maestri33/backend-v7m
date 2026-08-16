@@ -1612,14 +1612,16 @@ def run_selfie_validation(candidate_id: int) -> None:
 
 
 def _save_selfie(cand: Candidate, image_bytes: bytes, content_type: str) -> str:
-    from pathlib import Path
+    # Prefixo `selfie/` (PRIVADO, gate de dono em core/media_views) com token aleatório —
+    # o caminho `candidate/<external_id>/selfie.jpg` de antes era PÚBLICO (candidate não está
+    # em MEDIA_PRIVATE_PREFIXES) E enumerável pelo external_id. Espelha o enrollment; o resolver
+    # de dono (core/media.py) já casa Candidate.selfie_image. G13: re-upload apaga a anterior.
+    from core.media import replace_media
 
     ext = _SELFIE_EXT.get(content_type, "jpg")
-    rel = f"candidate/{cand.external_id}/selfie.{ext}"
-    fp = Path(settings.MEDIA_ROOT) / rel
-    fp.parent.mkdir(parents=True, exist_ok=True)
-    fp.write_bytes(image_bytes)
-    return rel
+    return replace_media(
+        old=cand.selfie_image, prefix="selfie", data=image_bytes, ext=ext
+    )
 
 
 def _resolve_selfie(cand: Candidate) -> None:

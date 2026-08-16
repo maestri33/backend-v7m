@@ -22,10 +22,9 @@ senão 403. Revisores (role `coordinator`, ou superuser) veem qualquer arquivo (
 
 LIMITAÇÕES CONHECIDAS (documentadas, fora do que dá pra fechar sem migration):
 - `receipt/` (comprovante de payout a terceiro livre) NÃO tem dono-usuário no DB (`PaymentRequest.
-  payee` é null no fluxo manual) → só REVISOR (superuser/coordenador) acessa; ninguém mais.
-- Coordenador NÃO é escopado por hub aqui — qualquer coordenador vê mídia privada de qualquer hub
-  (revisores são poucos e confiáveis; o IDOR crítico era usuário-de-funil vendo PII alheia, e esse
-  fica fechado). Escopar por hub exigiria cruzar dono→hub e coordenador→hub.
+  payee` é null no fluxo manual) → só SUPERUSER acessa (coordenador não coordena "dono nenhum").
+- Coordenador é ESCOPADO por polo (2026-08-16): vê só a mídia dos alunos do(s) polo(s) que ele
+  coordena AGORA no banco (`hub.interface.is_hub_reviewer_for`, cruza dono→hub × coordenador→hub).
 - Arquivos privados órfãos (crop biométrico `documents/` de `enrollment/service.py`, que não é
   gravado em campo nenhum) não resolvem dono → só REVISOR acessa. Não são servidos a nenhum front.
 - Selfies de auditoria (`audit/`, recorte de rosto do RG/selfie): `audit` ENTROU em
@@ -92,13 +91,26 @@ def _is_superuser(external_id: str) -> bool:
 
 
 def _authorized_for_private(external_id: str, roles: list[str], path: str) -> bool:
-    """Requisitante pode ver este arquivo privado? Dono OU revisor (coordenador/superuser)."""
-    if any(r in _REVIEWER_ROLES for r in roles):  # revisor por claim: sem tocar o DB
-        return True
+    """Requisitante pode ver este arquivo privado? Dono, coordenador DO POLO dele, ou superuser.
+
+    O claim `coordinator` do JWT NÃO é mais aceito sozinho (P0 da auditoria): ele ficava para
+    sempre no token do ex-coordenador (a role não era revogada) e não tinha escopo de polo — um
+    coordenador via a PII de TODOS os polos. Agora a decisão vem do banco: dono exato, OU
+    `is_hub_reviewer_for` (coordena, AGORA, um polo do dono), OU superuser."""
+    from hub.interface import is_active_coordinator, is_hub_reviewer_for
+
     owner = owner_external_id_for_path(path)
     if owner is not None and owner == external_id:
         return True
-    return _is_superuser(external_id)  # fallback só p/ não-dono não-coordenador (raro)
+    if _is_superuser(external_id):  # staff nativo revisa qualquer polo
+        return True
+    if owner is not None:
+        # mídia COM dono: coordenador ESCOPADO — só o(s) polo(s) que ele coordena de fato.
+        return is_hub_reviewer_for(external_id, owner)
+    # mídia ÓRFÃ (audit/ crop biométrico, receipt/ payout a terceiro): sem dono→polo pra escopar,
+    # exige ser coordenador ativo (banco). Mais frouxo que o dono-escopado, mas ainda mata o
+    # claim-fantasma e é estritamente mais apertado que o claim antigo.
+    return is_active_coordinator(external_id)
 
 
 def media_serve(request: HttpRequest, path: str) -> HttpResponse:

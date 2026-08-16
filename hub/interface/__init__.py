@@ -213,10 +213,26 @@ def set_coordinator(*, hub_external_id: str, coordinator_external_id: str) -> Hu
     if hub is None:
         raise HubError("hub_not_found")
     coordinator = _coordinator_by_external_id(coordinator_external_id)
+    previous = hub.coordinator
     with transaction.atomic():
         hub.coordinator = coordinator
         hub.save(update_fields=["coordinator", "updated_at"])
         _ensure_coordinator_role(coordinator)
+        # Revoga a role do coordenador ANTERIOR se ele não coordena mais NENHUM polo — senão o
+        # claim/role `coordinator` ficava eterno e (antes do gate por banco) abria a mídia de
+        # todos os polos. Não revoga de staff (a role dele é overlay de resgate, não vínculo).
+        if (
+            previous is not None
+            and previous.pk != coordinator.pk
+            and not previous.is_superuser
+            and not Hub.objects.filter(coordinator=previous).exists()
+        ):
+            roles.revoke(previous, "coordinator")
+            logger.info(
+                "hub.coordinator_revoked_previous",
+                external_id=str(hub.external_id),
+                previous=str(previous.external_id),
+            )
     logger.info(
         "hub.coordinator_set",
         external_id=str(hub.external_id),
@@ -255,3 +271,51 @@ def coordinated_by(user):
     Diferente do `hub_of` (que resolve o polo de um PROMOTOR com fallback pro padrão): aqui é o
     gate duro do coordenador (plan/14) — sem hub coordenado, não há login de coordenador."""
     return Hub.objects.filter(coordinator=user).order_by("created_at").first()
+
+
+def coordinated_hub_ids(coordinator_external_id: str) -> set[int]:
+    """PKs dos polos que `coordinator_external_id` coordena DE FATO no banco (FK Hub.coordinator).
+
+    Fonte de verdade do gate de revisor (mídia + decisões): NÃO depende do claim `coordinator` do
+    JWT — que ficava para sempre no token de um ex-coordenador (a role não era revogada). Vazio =
+    não coordena nada agora (ex-coordenador, ou coordenador removido)."""
+    return set(
+        Hub.objects.filter(
+            coordinator__external_id=coordinator_external_id
+        ).values_list("pk", flat=True)
+    )
+
+
+def _funnel_hub_ids_for_user(owner_external_id: str) -> set[int]:
+    """PKs dos polos a que o dono da mídia pertence no funil (candidate/enrollment/student). Um
+    usuário pode ter passado por mais de uma etapa; devolve todos os hubs vinculados a ele."""
+    from users.roles.candidate.models import Candidate
+    from users.roles.enrollment.models import Enrollment
+    from users.roles.student.models import Student
+
+    ids: set[int] = set()
+    for model in (Candidate, Enrollment, Student):
+        ids.update(
+            model.objects.filter(
+                user__external_id=owner_external_id
+            ).values_list("hub_id", flat=True)
+        )
+    ids.discard(None)
+    return ids
+
+
+def is_hub_reviewer_for(reviewer_external_id: str, owner_external_id: str) -> bool:
+    """True se `reviewer_external_id` coordena (no banco) algum polo do dono da mídia. É o gate de
+    revisor ESCOPADO por polo: o coordenador do polo A não revisa mídia de aluno do polo B, e um
+    ex-coordenador (que não coordena mais nada) não revisa nada — mesmo com o claim velho no JWT."""
+    coordinated = coordinated_hub_ids(reviewer_external_id)
+    if not coordinated:
+        return False
+    return bool(coordinated & _funnel_hub_ids_for_user(owner_external_id))
+
+
+def is_active_coordinator(external_id: str) -> bool:
+    """True se coordena ALGUM polo agora (banco). Gate de mídia ÓRFÃ (audit/receipt — sem dono→polo
+    resolvível): não dá pra escopar, então exige ser coordenador de fato. Mata o claim-fantasma
+    (ex-coordenador coordena nada → False) sem quebrar a revisão de crop biométrico."""
+    return bool(coordinated_hub_ids(external_id))

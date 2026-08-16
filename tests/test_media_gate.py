@@ -104,12 +104,51 @@ def test_logado_nao_dono_recebe_403(media_root):
     assert _serve_as(_RG_PATH, intruso_token).status_code == 403
 
 
+def _mk_hub(coordinator=None):
+    """Cria um Hub mínimo (com Address vazio) e opcionalmente amarra o coordenador."""
+    from hub.models import Hub
+    from users.address.models import Address
+
+    addr = Address.objects.create()
+    return Hub.objects.create(brand="standard", address=addr, coordinator=coordinator)
+
+
+def _own_rg_in_hub(owner, hub):
+    """Amarra _RG_PATH a `owner` E coloca `owner` como candidato do `hub` (o resolver dono→polo lê isso)."""
+    from users.roles.candidate.models import Candidate
+
+    _own_rg(owner)
+    Candidate.objects.create(user=owner, hub=hub)
+
+
 @pytest.mark.django_db
-def test_coordenador_revisa_qualquer_rg_200(media_root):
+def test_coordenador_do_polo_revisa_rg_do_seu_aluno_200(media_root):
+    """Coordenador DO POLO do dono baixa o RG dele (revisão legítima)."""
+    coord, _ec, coord_token = _mk_user()
+    hub = _mk_hub(coordinator=coord)
+    owner, _eo, _to = _mk_user()
+    _own_rg_in_hub(owner, hub)
+    assert _serve_as(_RG_PATH, coord_token).status_code == 200
+
+
+@pytest.mark.django_db
+def test_coordenador_de_outro_polo_nao_ve_403(media_root):
+    """P0 cross-polo: coordenador do polo B NÃO baixa o RG de aluno do polo A."""
+    coord_b, _ec, coord_b_token = _mk_user()
+    _mk_hub(coordinator=coord_b)  # coordena o polo B
+    owner, _eo, _to = _mk_user()
+    _own_rg_in_hub(owner, _mk_hub())  # aluno vive no polo A (sem coordenador)
+    assert _serve_as(_RG_PATH, coord_b_token).status_code == 403
+
+
+@pytest.mark.django_db
+def test_ex_coordenador_com_claim_no_jwt_nao_ve_403(media_root):
+    """P0 claim-fantasma: JWT com claim `coordinator` mas que não coordena nada no banco → 403."""
     owner, _ext, _tok = _mk_user()
     _own_rg(owner)
-    _coord, _ext2, coord_token = _mk_user(roles=["coordinator"])
-    assert _serve_as(_RG_PATH, coord_token).status_code == 200
+    # token TEM o claim antigo, mas o user não é coordenador de nenhum hub no DB
+    _ex, _ext2, ex_token = _mk_user(roles=["coordinator"])
+    assert _serve_as(_RG_PATH, ex_token).status_code == 403
 
 
 @pytest.mark.django_db
@@ -125,6 +164,41 @@ def test_privado_sem_dono_no_db_nega_nao_revisor_403(media_root):
     """Path privado que não resolve dono (órfão/receipt): não-revisor autenticado → 403 (fail-closed)."""
     _u, _ext, token = _mk_user()  # ninguém amarrou _RG_PATH
     assert _serve_as(_RG_PATH, token).status_code == 403
+
+
+# ── Selfie do candidato: era servida PÚBLICA (candidate/<id>/selfie), agora selfie/ privado ──
+
+_SELFIE_PATH = "selfie/tok_selfie_cand.jpg"
+
+
+def _write_selfie(media_root):
+    os.makedirs(f"{media_root}/selfie", exist_ok=True)
+    with open(f"{media_root}/{_SELFIE_PATH}", "wb") as fh:
+        fh.write(b"SELFIE BIOMETRICA")
+
+
+def _own_candidate_selfie(user):
+    """Amarra _SELFIE_PATH a `user` via Candidate.selfie_image (o que o resolver de dono consulta)."""
+    from users.roles.candidate.models import Candidate
+
+    Candidate.objects.create(user=user, hub=_mk_hub(), selfie_image=_SELFIE_PATH)
+
+
+@pytest.mark.django_db
+def test_selfie_candidato_sem_token_401(media_root):
+    """A selfie do candidato agora está sob prefixo privado — sem JWT → 401 (antes: pública)."""
+    _write_selfie(media_root)
+    assert _status(_SELFIE_PATH) == 401
+
+
+@pytest.mark.django_db
+def test_selfie_candidato_nao_dono_403(media_root):
+    """IDOR: outro usuário autenticado NÃO baixa a selfie do candidato alheio."""
+    _write_selfie(media_root)
+    owner, _e, _t = _mk_user()
+    _own_candidate_selfie(owner)
+    _intruso, _e2, intruso_token = _mk_user()
+    assert _serve_as(_SELFIE_PATH, intruso_token).status_code == 403
 
 
 def _write_audit_selfie(media_root):
@@ -149,7 +223,17 @@ def test_audit_selfie_nao_revisor_403(media_root):
 
 
 @pytest.mark.django_db
-def test_audit_selfie_coordenador_200(media_root):
+def test_audit_selfie_coordenador_ativo_200(media_root):
+    """Mídia órfã (crop biométrico): coordenador ATIVO (coordena um polo no banco) revisa."""
     path = _write_audit_selfie(media_root)
-    _c, _ext, coord_token = _mk_user(roles=["coordinator"])
+    coord, _ext, coord_token = _mk_user()
+    _mk_hub(coordinator=coord)
     assert _serve_as(path, coord_token).status_code == 200
+
+
+@pytest.mark.django_db
+def test_audit_selfie_ex_coordenador_claim_403(media_root):
+    """Mídia órfã: JWT com claim `coordinator` mas sem coordenar nada no banco → 403 (claim-fantasma)."""
+    path = _write_audit_selfie(media_root)
+    _c, _ext, ex_token = _mk_user(roles=["coordinator"])
+    assert _serve_as(path, ex_token).status_code == 403
