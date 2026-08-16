@@ -42,8 +42,12 @@ def current_version(external_id: str) -> int:
 
 
 def version_matches(external_id: str, claims_version) -> bool:
-    """True se a versão dos claims bate com a do User (token não foi invalidado por troca de role)."""
-    return int(claims_version or 0) == current_version(external_id)
+    """True se a versão dos claims bate com a do User (token não foi invalidado por troca de role).
+
+    O sentinela -1 NUNCA valida: sem o `current >= 0`, um token emitido já-inativo carimbava -1
+    nos claims e -1 == -1 aprovava — o mecanismo anti-banido virava chave-mestra."""
+    current = current_version(external_id)
+    return current >= 0 and int(claims_version or 0) == current
 
 
 def issue(external_id: str, roles: list[str]) -> dict:

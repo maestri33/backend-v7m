@@ -345,14 +345,16 @@ def change_phone(*, user_external_id: str, new_phone: str) -> dict:
 def _find_user(
     *, cpf: str | None = None, phone: str | None = None, external_id: str | None = None
 ):
+    """Usuário desativado (`is_active=False`, o único ban) NÃO existe para check/recover/login:
+    não recebe OTP nem confirma que a conta existe — banido re-entrando era o furo do G2."""
     if external_id:
-        return User.objects.filter(external_id=external_id).first()
+        return User.objects.filter(external_id=external_id, is_active=True).first()
     if cpf:
         p = profiles.find_by_cpf(cpf)
-        return p.user if p else None
+        return p.user if p and p.user.is_active else None
     if phone:
         p = profiles.find_by_phone(phone)
-        return p.user if p else None
+        return p.user if p and p.user.is_active else None
     return None
 
 
@@ -678,7 +680,8 @@ def issue_tokens_for_user(user: User) -> dict:
 
 def login(*, external_id: str, role: str, otp: str) -> dict:
     """Confere role ativa → valida OTP → emite JWT com TODAS as roles ativas (passwordless)."""
-    user = User.objects.filter(external_id=external_id).first()
+    # is_active: banido não loga (e não descobre que foi banido — mesmo 404 de inexistente).
+    user = User.objects.filter(external_id=external_id, is_active=True).first()
     if user is None:
         raise NotFound("Usuário não encontrado.", code="USER_NOT_FOUND")
 

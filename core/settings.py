@@ -450,6 +450,11 @@ Q_CLUSTER = {
     # biometria. O default do Django-Q (= nº de CPUs) sobe 14 workers e OOM-ava neste host (16GB,
     # ~1GB livre) durante o teste real (Victor 2026-06-16). Prod sobe via Q_WORKERS no .env.
     "workers": env.int("Q_WORKERS", default=2),
+    # Todos os nossos Schedules são de ESTADO-ATUAL (process_payouts varre a fila inteira; os TTLs
+    # de selfie idem) — repetir ocorrência perdida não recupera nada, só duplica trabalho. Com o
+    # default (True), qcluster 6h fora = 360 process_payouts enfileirados de uma vez na volta
+    # (tempestade + rate-limit no Asaas). False = ao religar, agenda só a PRÓXIMA ocorrência futura.
+    "catch_up": False,
 }
 
 

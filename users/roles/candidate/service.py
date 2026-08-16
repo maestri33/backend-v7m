@@ -1162,11 +1162,13 @@ def list_document_reviews_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
+    cands = list(qs)
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
         sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
         if sub is None or sub.validation_status != doc_ai.REVIEW:
             continue
-        p = profiles.get(cand.user)
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -1968,8 +1970,10 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    cands = list(qs)
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -1995,8 +1999,10 @@ def list_selfie_reviews_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    cands = list(qs)
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),

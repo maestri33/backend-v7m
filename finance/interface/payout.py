@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import structlog
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -33,6 +34,10 @@ _ACTIVE = (
 _BACKOFF_BASE_S = 60  # backoff = base * (attempts+1), com teto
 _BACKOFF_MAX_S = 3600
 _CLAIM_LOCK_S = 120  # janela do claim (evita re-pick na mesma volta do cluster)
+# Teto por passada: cada item custa 1-2 HTTPs síncronos ao Asaas; sem teto, um fechamento com 80+
+# itens estoura o Q_TIMEOUT (240s), o worker morre no meio e a task re-entra do zero. O resto da
+# fila sai na próxima passada (o schedule roda a cada 1 min).
+_BATCH_PER_PASS = 50
 
 
 def _backoff(attempts: int) -> timedelta:
@@ -109,8 +114,10 @@ def _notify_commission_paid(pr: PaymentRequest) -> None:
 def process_payment_requests() -> dict:
     """Uma passada do worker: envia as filas prontas e reconcilia as enviadas. Devolve um resumo."""
     now = timezone.now()
-    ready = PaymentRequest.objects.filter(status__in=_ACTIVE).filter(
-        Q(next_attempt_at__isnull=True) | Q(next_attempt_at__lte=now)
+    ready = (
+        PaymentRequest.objects.filter(status__in=_ACTIVE)
+        .filter(Q(next_attempt_at__isnull=True) | Q(next_attempt_at__lte=now))
+        .order_by("id")[:_BATCH_PER_PASS]
     )
     summary = {"submitted": 0, "paid": 0, "failed": 0, "awaiting": 0, "skipped": 0}
     for pr in list(ready):
@@ -213,11 +220,14 @@ def _submit(pr: PaymentRequest, summary: dict) -> None:
                     error=reason,
                 )
                 return
-            # recusa definitiva do asaas: falha terminal, cascateia.
-            pr.status = PaymentRequest.Status.FAILED
-            pr.last_error = reason
-            pr.save(update_fields=["status", "last_error", "attempts", "updated_at"])
-            _cascade(pr, Commission.Status.FAILED)
+            # recusa definitiva do asaas: falha terminal, cascateia (atômico com o status).
+            with transaction.atomic():
+                pr.status = PaymentRequest.Status.FAILED
+                pr.last_error = reason
+                pr.save(
+                    update_fields=["status", "last_error", "attempts", "updated_at"]
+                )
+                _cascade(pr, Commission.Status.FAILED)
             _dispatch_fee_hook(
                 pr, "fee.problem", detail=f"recusado pelo Asaas: {reason}"
             )
@@ -229,10 +239,13 @@ def _submit(pr: PaymentRequest, summary: dict) -> None:
         # incerto (submit_uncertain/pix_key_required transitório): mantém na fila com backoff,
         # a menos que estoure max_attempts.
         if pr.attempts >= pr.max_attempts:
-            pr.status = PaymentRequest.Status.FAILED
-            pr.last_error = f"max_attempts: {reason}"
-            pr.save(update_fields=["status", "last_error", "attempts", "updated_at"])
-            _cascade(pr, Commission.Status.FAILED)
+            with transaction.atomic():
+                pr.status = PaymentRequest.Status.FAILED
+                pr.last_error = f"max_attempts: {reason}"
+                pr.save(
+                    update_fields=["status", "last_error", "attempts", "updated_at"]
+                )
+                _cascade(pr, Commission.Status.FAILED)
             _dispatch_fee_hook(
                 pr, "fee.problem", detail=f"esgotou as tentativas: {reason}"
             )
@@ -293,9 +306,12 @@ def _reconcile(pr: PaymentRequest, summary: dict) -> None:
     pr.asaas_status = payment.status
     status = (payment.status or "").upper()
     if status == "PAID":
-        pr.status = PaymentRequest.Status.PAID
-        pr.save(update_fields=["status", "asaas_status", "updated_at"])
-        _cascade(pr, Commission.Status.PAID)
+        # status + cascade num commit só: kill entre os dois deixava a PR fora de _ACTIVE com as
+        # Commissions eternamente em `processed` — o relatório de comissões mentia pra sempre.
+        with transaction.atomic():
+            pr.status = PaymentRequest.Status.PAID
+            pr.save(update_fields=["status", "asaas_status", "updated_at"])
+            _cascade(pr, Commission.Status.PAID)
         _dispatch_fee_hook(pr, "fee.paid")
         _notify_commission_paid(
             pr
@@ -305,10 +321,13 @@ def _reconcile(pr: PaymentRequest, summary: dict) -> None:
             "finance.payout_paid", ref=pr.external_reference, amount=str(pr.amount)
         )
     elif status in ("FAILED", "CANCELLED"):
-        pr.status = PaymentRequest.Status.FAILED
-        pr.last_error = f"asaas {status}"
-        pr.save(update_fields=["status", "asaas_status", "last_error", "updated_at"])
-        _cascade(pr, Commission.Status.FAILED)
+        with transaction.atomic():
+            pr.status = PaymentRequest.Status.FAILED
+            pr.last_error = f"asaas {status}"
+            pr.save(
+                update_fields=["status", "asaas_status", "last_error", "updated_at"]
+            )
+            _cascade(pr, Commission.Status.FAILED)
         _dispatch_fee_hook(pr, "fee.problem", detail=f"pagamento {status} no Asaas")
         summary["failed"] += 1
     elif status == "AWAITING_BALANCE":
