@@ -1617,9 +1617,7 @@ def _enrollment_for_coordinator(
     if enr is None:
         raise NotFound("Matrícula não encontrada.", code="ENROLLMENT_NOT_FOUND")
     if enr.hub.coordinator_id != coordinator.id:
-        raise EnrollmentError(
-            "Você não coordena o polo desta matrícula.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Matrícula não encontrada.", code="ENROLLMENT_NOT_FOUND")
     if allowed_status and enr.status not in allowed_status:
         # visão do coordenador → status REAL (sem máscara).
         raise Conflict(

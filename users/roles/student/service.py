@@ -622,7 +622,7 @@ def decide_document(
         student=student, external_id=document_external_id
     ).first()
     if doc is None:
-        raise StudentError("Documento não encontrado.", code="DOCUMENT_NOT_FOUND")
+        raise NotFound("Documento não encontrado.", code="DOCUMENT_NOT_FOUND")
     if doc.validation_status != StudentDocument.Validation.REVIEW:
         raise StudentError(
             "O documento não está em revisão.",
@@ -804,11 +804,9 @@ def resolve_pendency(*, pendency_external_id: str, coordinator) -> StudentPenden
         .first()
     )
     if pend is None:
-        raise StudentError("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
+        raise NotFound("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
     if pend.student.hub.coordinator_id != coordinator.id:
-        raise StudentError(
-            "Você não coordena o polo deste aluno.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
     # lock no aluno: a checagem "sem pendência aberta → avança" não pode correr com um open_pendency
     # concorrente (senão o aluno avançaria com pendência aberta). select_for_update trava no Postgres.
     with transaction.atomic():
@@ -1040,9 +1038,7 @@ def _coordinated(student_external_id: str, coordinator) -> Student:
     """Carrega o aluno e exige que `coordinator` seja o coordenador do hub dele."""
     student = _by_external_id(student_external_id)
     if student.hub.coordinator_id != coordinator.id:
-        raise StudentError(
-            "Você não coordena o polo deste aluno.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Aluno não encontrado.", code="STUDENT_NOT_FOUND")
     return student
 
 

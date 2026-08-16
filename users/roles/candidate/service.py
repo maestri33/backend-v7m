@@ -1092,11 +1092,9 @@ def decide_document(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if not cand.doc_type:
         raise CandidateError("Documento ainda não enviado.", code="DOC_TYPE_NOT_SET")
     sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
@@ -1718,11 +1716,9 @@ def decide_selfie(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.selfie_status != _selfie.REVIEW:
         raise CandidateError(
             "A selfie não está em revisão.",
@@ -1800,11 +1796,9 @@ def reset_doc_type(*, candidate_external_id: str, coordinator) -> dict:
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.status in (_S.COMPLETED, _S.APPROVED, _S.REJECTED):
         raise Conflict(
             "O candidato já saiu da coleta — não dá pra trocar o tipo de documento.",
@@ -1856,11 +1850,9 @@ def approve_candidate(*, candidate_external_id: str, coordinator) -> Candidate:
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     # rejeição é SOFT: um candidato REJEITADO continua aguardando e pode ser aprovado depois. Só barra
     # quem ainda está na coleta (não concluiu). `SELFIE` entra: a selfie em review deixa o candidato
     # nessa etapa e o coordenador aprova por aqui.
@@ -1888,11 +1880,9 @@ def reject_candidate(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     # G10: mesmo conjunto de status que `approve_candidate` aceita. Antes exigia COMPLETED — estado
     # que o fluxo atual NUNCA atinge (a selfie aprovada auto-promove; a em review deixa em SELFIE),
     # então rejeitar dava 409 sempre. O candidato aguardando decisão está em SELFIE (selfie review).
@@ -1972,11 +1962,9 @@ def candidate_detail_for_coordinator(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     p = profiles.get(cand.user)
     return {
         "document": _candidate_document_dict(cand),
@@ -2086,11 +2074,9 @@ def candidate_selfie_for_coordinator(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     p = profiles.get(cand.user)
     return {
         "external_id": str(cand.external_id),

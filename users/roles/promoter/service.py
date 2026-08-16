@@ -330,9 +330,7 @@ def _coordinated_promoter(user_external_id: str, coordinator) -> Promoter:
     if promoter is None:
         raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     if promoter.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste promotor.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     return promoter
 
 
