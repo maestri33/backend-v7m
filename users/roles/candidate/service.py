@@ -19,7 +19,7 @@ from users.auth import service as auth_iface
 from users.auth.models import User
 from users.blocks import service as blocks
 from users.documents import service as documents_iface
-from users.exceptions import Conflict, DomainError, Forbidden, NotFound
+from users.exceptions import Conflict, DomainError, NotFound
 from users.profiles import interface as profiles
 from users.roles import interface as roles
 from users.roles.candidate.models import Candidate

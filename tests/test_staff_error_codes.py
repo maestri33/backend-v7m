@@ -45,3 +45,17 @@ def test_code_nunca_e_fallback(client, staff_headers, data):
     code = resp.json().get("code")
     assert code not in (None, "ERROR")
     assert code == data["code"]
+
+
+def test_pagamento_avulso_sem_idempotency_key_tem_code(client, staff_headers):
+    """DINHEIRO (auditoria A5): POST /finance/payments sem o header Idempotency-Key → 422 com code
+    estável IDEMPOTENCY_KEY_REQUIRED (era HttpError cru → code `ERROR`, e o front repetia a ação)."""
+    resp = client.post(
+        "/api/v1/staff/finance/payments",
+        data={"kind": "pix", "amount": "10.00", "pix_key": "x@y.z"},
+        **staff_headers,
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body.get("code") == "IDEMPOTENCY_KEY_REQUIRED"
+    assert body.get("code") != "ERROR"

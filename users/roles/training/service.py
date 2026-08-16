@@ -24,7 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from users.blocks import service as blocks
-from users.exceptions import Conflict, DomainError, Forbidden, NotFound
+from users.exceptions import Conflict, DomainError, NotFound
 from users.roles import interface as roles
 from users.roles.training.config import pass_score
 from users.roles.training.models import Material, MaterialAssignment, Submission

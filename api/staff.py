@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from ninja import File, Form, Header, Router, Schema
-from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from api.auth import require_superuser
@@ -96,6 +95,7 @@ def staff_check(request, payload: StaffCheckIn):
     return auth_iface.check_staff(
         cpf=payload.cpf, phone=payload.phone, external_id=payload.external_id
     )
+
 
 @auth_router.post("/login", response=TokenOut, auth=None)
 def staff_login(request, payload: StaffLoginIn):
@@ -441,7 +441,12 @@ def create_manual_payment(
     PIX. Sem a key → 422 `IDEMPOTENCY_KEY_REQUIRED` (fail-closed)."""
     require_superuser(request.auth)
     if not (idempotency_key or "").strip():
-        raise HttpError(422, "IDEMPOTENCY_KEY_REQUIRED")
+        # ValidationError (não HttpError cru): o handler de HttpError põe code="ERROR" no envelope,
+        # e o front faz switch(code) — numa tela que move DINHEIRO, "erro desconhecido" faz o
+        # operador repetir a ação. Com code estável ele vê "informe a chave de idempotência".
+        raise ValidationError(
+            "Informe o header Idempotency-Key.", code="IDEMPOTENCY_KEY_REQUIRED"
+        )
 
     receipt_path = None
     if receipt is not None:

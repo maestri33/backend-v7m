@@ -281,6 +281,17 @@ class EnrollmentFeesOut(Schema):
     second_scheduled: bool = False
 
 
+class EnrollmentFeeActionOut(Schema):
+    """Resultado de pay_fee/schedule_fee: o que o service devolve de verdade — external_id + status
+    novo da matrícula + o bloco `fees`. Antes as rotas declaravam EnrollmentFeesOut (só os 4 campos
+    de `fees`) e o Ninja, não achando esses campos no dict, caía nos defaults → envelope VAZIO
+    (first_paid:false mesmo após pagar). Auditoria API P1."""
+
+    external_id: str
+    status: str
+    fees: EnrollmentFeesOut
+
+
 class EnrollmentProfileOut(Schema):
     """Campos de identidade extraídos dos documentos (CPFHub é autoridade)."""
 
@@ -789,7 +800,7 @@ class ConcludeIn(Schema):
 
 @api.post(
     "/enrollments/{external_id}/fee/pay",
-    response=EnrollmentFeesOut,
+    response=EnrollmentFeeActionOut,
     tags=["enrollment"],
 )
 def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
@@ -808,7 +819,7 @@ def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
 
 @api.post(
     "/enrollments/{external_id}/fee/schedule",
-    response=EnrollmentFeesOut,
+    response=EnrollmentFeeActionOut,
     tags=["enrollment"],
 )
 def schedule_enrollment_fee(request, external_id: str, payload: FeeIn):

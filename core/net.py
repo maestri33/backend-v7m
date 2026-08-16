@@ -62,7 +62,10 @@ def require_internal_ip(request) -> None:
     arquivo só. Se virarem muitas, promova a um `auth=` callable do Ninja (401, não 403).
     """
     from django.conf import settings
-    from ninja.errors import HttpError
 
+    from users.exceptions import Forbidden
+
+    # Forbidden (não HttpError cru): o handler de HttpError põe code="ERROR" no envelope do grupo
+    # tools (build_group). Com code estável o chamador distingue "IP barrado" de erro genérico.
     if not ip_allowed(client_ip(request), settings.TOOLS_ALLOWED_IPS):
-        raise HttpError(403, "IP não autorizado.")
+        raise Forbidden("IP não autorizado.", code="IP_NOT_ALLOWED")
