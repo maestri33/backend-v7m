@@ -41,6 +41,24 @@ def test_check_anonimo_estoura_o_teto_por_ip(monkeypatch):
     assert last.json().get("code") == "RATE_LIMITED"
 
 
+def test_throttle_cobre_collaborators_check(monkeypatch):
+    """Verificação adversarial: o throttle é default do build_group, então cobre TODOS os grupos —
+    não só clients. collaborators/auth/check (anônimo, dispara OTP) também é limitado por IP."""
+    from django.conf import settings
+
+    monkeypatch.setattr(settings, "THROTTLE_ANON_RATE", "3/m")
+    c = Client(REMOTE_ADDR="203.0.113.9")
+    codes = [
+        c.post(
+            "/api/v1/collaborators/auth/check",
+            data={"phone": "11999990000", "send_otp": False},
+            content_type="application/json",
+        ).status_code
+        for _ in range(6)
+    ]
+    assert codes.count(429) >= 1, f"collaborators/check sem throttle: {codes}"
+
+
 def test_ips_diferentes_nao_compartilham_o_teto(monkeypatch):
     """O teto é POR IP: um IP estourado não bloqueia outro cliente."""
     from django.conf import settings

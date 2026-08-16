@@ -50,7 +50,9 @@ def test_autenticado_sem_superuser_403(client, non_staff_headers):
 
 def test_money_count_conta_so_dinheiro(client, staff_headers):
     _orphan("PAYMENT_CONFIRMED")
-    _orphan("PAYMENT_CREATED", pid="asaas_2")  # ruído esperado: no-op nunca é encaminhado
+    _orphan(
+        "PAYMENT_CREATED", pid="asaas_2"
+    )  # ruído esperado: no-op nunca é encaminhado
     resp = client.get("/api/v1/staff/webhooks/unconsumed", **staff_headers)
     assert resp.status_code == 200
     data = resp.json()

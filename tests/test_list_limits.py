@@ -76,7 +76,10 @@ def test_capped_trunca_e_loga(caplog):
     with caplog.at_level(logging.WARNING):
         out = capped(_FakeQS(10), event="x.truncated", cap=3)
     assert len(out) == 3  # cortou no teto
-    assert any("truncated" in r.message or "x.truncated" in str(r) for r in caplog.records) or True
+    assert (
+        any("truncated" in r.message or "x.truncated" in str(r) for r in caplog.records)
+        or True
+    )
 
 
 def test_capped_nao_loga_quando_cabe():

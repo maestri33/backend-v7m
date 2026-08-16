@@ -107,10 +107,13 @@ def _authorized_for_private(external_id: str, roles: list[str], path: str) -> bo
     if owner is not None:
         # mídia COM dono: coordenador ESCOPADO — só o(s) polo(s) que ele coordena de fato.
         return is_hub_reviewer_for(external_id, owner)
-    # mídia ÓRFÃ (audit/ crop biométrico, receipt/ payout a terceiro): sem dono→polo pra escopar,
-    # exige ser coordenador ativo (banco). Mais frouxo que o dono-escopado, mas ainda mata o
-    # claim-fantasma e é estritamente mais apertado que o claim antigo.
-    return is_active_coordinator(external_id)
+    # mídia ÓRFÃ (sem dono→polo pra escopar). Só o superuser (checado acima) já passou; aqui só o
+    # `audit/` (crop biométrico que o coordenador revisa) libera pra coordenador ativo. `receipt/`
+    # (comprovante de payout a TERCEIRO — mais sensível) fica superuser-only, como a doc promete.
+    prefix = path.strip("/").split("/", 1)[0]
+    if prefix == "audit":
+        return is_active_coordinator(external_id)
+    return False  # receipt/ e qualquer outro órfão: só superuser (já barrado acima)
 
 
 def media_serve(request: HttpRequest, path: str) -> HttpResponse:

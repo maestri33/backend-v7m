@@ -51,12 +51,14 @@ class ClientIpAnonThrottle(AnonRateThrottle):
 
 
 def check_daily_quota(*, scope: str, ident: str, limit: int) -> bool:
-    """True se AINDA há cota hoje para (scope, ident); False se estourou. Incrementa ao conceder.
+    """True se AINDA há cota hoje para (scope, ident); False se estourou. Incrementa ATOMICAMENTE.
 
     Cota diária por chave (ex.: convites por promotor) — o throttle do ninja é por-request/IP;
     esta é por-entidade/dia. Store = mesmo Django cache (DatabaseCache cross-worker em prod).
-    Falha-ABERTO se o cache cair (não é gate de segurança, é anti-abuso): melhor deixar passar do
-    que travar o promotor legítimo por um cache indisponível."""
+
+    `incr` é atômico (evita a race TOCTOU do get→compara→set: N requests concorrentes liam o mesmo
+    `used` e todas passavam). Falha-ABERTO se o cache cair (anti-abuso, não gate de segurança):
+    melhor deixar passar do que travar o promotor legítimo por cache indisponível."""
     if limit <= 0:
         return True
     from django.utils import timezone
@@ -64,11 +66,9 @@ def check_daily_quota(*, scope: str, ident: str, limit: int) -> bool:
     day = timezone.localdate().isoformat()
     key = f"daily_quota:{scope}:{ident}:{day}"
     try:
-        used = cache.get(key, 0)
-        if used >= limit:
-            return False
-        # TTL 25h: cobre o dia inteiro + fuso, e expira sozinho (sem limpeza).
-        cache.set(key, used + 1, 60 * 60 * 25)
-        return True
+        # add() só cria se ausente (não zera um contador em curso); depois incr() atômico.
+        cache.add(key, 0, 60 * 60 * 25)  # TTL 25h: cobre o dia + fuso, expira sozinho
+        used = cache.incr(key)  # atômico: retorna o valor DEPOIS de somar 1
+        return used <= limit
     except Exception:  # noqa: BLE001 — cache indisponível não pode travar o fluxo legítimo
         return True

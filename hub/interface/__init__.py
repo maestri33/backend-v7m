@@ -296,9 +296,9 @@ def _funnel_hub_ids_for_user(owner_external_id: str) -> set[int]:
     ids: set[int] = set()
     for model in (Candidate, Enrollment, Student):
         ids.update(
-            model.objects.filter(
-                user__external_id=owner_external_id
-            ).values_list("hub_id", flat=True)
+            model.objects.filter(user__external_id=owner_external_id).values_list(
+                "hub_id", flat=True
+            )
         )
     ids.discard(None)
     return ids

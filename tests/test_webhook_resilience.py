@@ -19,7 +19,11 @@ pytestmark = pytest.mark.django_db
 
 def _paid_charge(pid="pay_x1", asaas_id="asaas_x1"):
     return Payment.objects.create(
-        payment_id=pid, kind=Payment.Kind.CHARGE, amount=Decimal("10.00"), status="PENDING", asaas_id=asaas_id
+        payment_id=pid,
+        kind=Payment.Kind.CHARGE,
+        amount=Decimal("10.00"),
+        status="PENDING",
+        asaas_id=asaas_id,
     )
 
 
@@ -56,7 +60,9 @@ def test_valvula_quarentena_na_enesima_falha(monkeypatch):
     # entrega N: válvula abre — retorna o row sem levantar (view responde 200)
     row = webhooks.handle_event(_payload())
     assert row is not None
-    assert row.forwarded_ok is False  # quarentenado no ledger, visível no /webhooks/unconsumed
+    assert (
+        row.forwarded_ok is False
+    )  # quarentenado no ledger, visível no /webhooks/unconsumed
 
 
 def test_refresh_payout_done_vira_paid(monkeypatch):

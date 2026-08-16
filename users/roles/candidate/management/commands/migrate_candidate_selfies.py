@@ -39,7 +39,9 @@ class Command(BaseCommand):
             if not old_fp.exists():
                 # registro aponta pra arquivo que não existe mais — só limpa o caminho público
                 missing += 1
-                self.stdout.write(f"  SEM ARQUIVO {old_rel} (candidate={cand.external_id})")
+                self.stdout.write(
+                    f"  SEM ARQUIVO {old_rel} (candidate={cand.external_id})"
+                )
                 if not dry:
                     cand.selfie_image = ""
                     cand.save(update_fields=["selfie_image"])

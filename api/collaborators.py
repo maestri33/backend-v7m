@@ -106,20 +106,22 @@ class CandidateOut(Schema):
 
 
 class ProfileIn(Schema):
-    mother_name: str | None = None
-    father_name: str | None = None
-    marital_status: str | None = None
-    birthplace: str | None = None
-    nationality: str | None = None
+    # max_length espelha o Profile (auditoria B3): sem isso, string longa → DataError(varchar) → 500.
+    mother_name: str | None = Field(None, max_length=255)
+    father_name: str | None = Field(None, max_length=255)
+    marital_status: str | None = Field(None, max_length=32)
+    birthplace: str | None = Field(None, max_length=128)
+    nationality: str | None = Field(None, max_length=64)
 
 
 class DocumentsIn(Schema):
-    doc_type: str  # rg | cnh
-    number: str
-    issuing_agency: str | None = None
+    # max_length espelha RG/CNH (number=30, issuing_agency=50, category=5, national_register=30).
+    doc_type: str = Field(max_length=8)  # rg | cnh
+    number: str = Field(max_length=30)
+    issuing_agency: str | None = Field(None, max_length=50)
     issue_date: str | None = None
-    category: str | None = None
-    national_register: str | None = None
+    category: str | None = Field(None, max_length=5)
+    national_register: str | None = Field(None, max_length=30)
     date_of_birth: str | None = None
     expires_on: str | None = None
 
@@ -144,7 +146,8 @@ class EducationIn(Schema):
 
 
 class KinshipIn(Schema):
-    relation: str  # quem é o titular do comprovante + grau de parentesco
+    # espelha AddressProof.kinship_relation (200) — texto livre que vai direto pro .save().
+    relation: str = Field(max_length=200)  # titular do comprovante + grau de parentesco
 
 
 class SubmissionIn(Schema):

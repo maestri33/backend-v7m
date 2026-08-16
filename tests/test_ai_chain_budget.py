@@ -70,7 +70,5 @@ def test_deadline_estourado_nao_tenta_o_proximo_provider(monkeypatch):
 
     monkeypatch.setattr(service.time, "monotonic", _clock)
     with pytest.raises(LLMError):
-        service._run(
-            "json", "test", _failing_attempt(), [("p1", "m1"), ("p2", "m2")]
-        )
+        service._run("json", "test", _failing_attempt(), [("p1", "m1"), ("p2", "m2")])
     assert calls == ["p1"], "cadeia continuou depois do deadline estourado"

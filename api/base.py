@@ -18,6 +18,7 @@ from ninja.errors import ValidationError as NinjaValidationError
 
 from api.auth import JWTAuth
 from api.schemas import LoginIn, RefreshIn, TokenOut
+from core.throttling import ClientIpAnonThrottle
 from users.exceptions import DomainError
 
 logger = structlog.get_logger()
@@ -52,6 +53,12 @@ def build_group(name: str, description: str, auth_override=_DEFAULT_AUTH) -> Nin
         title=f"API {name}",
         description=description,
         auth=JWTAuth() if auth_override is _DEFAULT_AUTH else auth_override,
+        # Throttle por IP em TODA rota anônima do grupo (auditoria B1 — verificação adversarial):
+        # AnonRateThrottle.get_cache_key devolve None quando request.auth existe, então é no-op nas
+        # rotas autenticadas e só limita as `auth=None` (check/register/join de TODOS os grupos —
+        # clients, collaborators, leadership, staff). Default no grupo, não por-rota, pra não
+        # esquecer a próxima rota anônima que criar conta/disparar OTP.
+        throttle=[ClientIpAnonThrottle()],
     )
 
     @api.exception_handler(DomainError)

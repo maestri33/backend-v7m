@@ -60,4 +60,6 @@ def test_get_reviews_nao_escreve_mais():
     hub, _cand, rg = _mk_candidate_with_pending_rg(started_ago_seconds=1)  # fresco
     cs.list_document_reviews_for_hub(hub=hub)  # o GET
     rg.refresh_from_db()
-    assert rg.validation_status == _analysis.PENDING, "o GET mutou o documento (write numa leitura)"
+    assert rg.validation_status == _analysis.PENDING, (
+        "o GET mutou o documento (write numa leitura)"
+    )

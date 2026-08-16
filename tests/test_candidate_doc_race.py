@@ -143,9 +143,7 @@ def test_merge_da_frente_preserva_resultado_do_verso(monkeypatch, tmp_path):
     monkeypatch.setattr(cs.documents_iface, "get_doc_sub", lambda *a, **k: stale)
     monkeypatch.setattr(cs, "_lock_doc_sub", lambda current: sub)
     monkeypatch.setattr(doc_ai, "fix_orientation", lambda *a, **k: None)
-    monkeypatch.setattr(
-        doc_ai, "check_photo", lambda *a, **k: (doc_ai.APPROVED, "ok")
-    )
+    monkeypatch.setattr(doc_ai, "check_photo", lambda *a, **k: (doc_ai.APPROVED, "ok"))
     merged = []
     monkeypatch.setattr(
         cs,

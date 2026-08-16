@@ -237,3 +237,22 @@ def test_audit_selfie_ex_coordenador_claim_403(media_root):
     path = _write_audit_selfie(media_root)
     _c, _ext, ex_token = _mk_user(roles=["coordinator"])
     assert _serve_as(path, ex_token).status_code == 403
+
+
+@pytest.mark.django_db
+def test_receipt_orfao_e_superuser_only(media_root):
+    """`receipt/` (comprovante de payout a terceiro) é mais sensível que o crop biométrico: NEM o
+    coordenador ativo baixa — só superuser. Fecha a divergência doc×código da verificação."""
+    import os
+
+    os.makedirs(f"{media_root}/receipt", exist_ok=True)
+    rel = "receipt/tok_payout.jpg"
+    with open(f"{media_root}/{rel}", "wb") as fh:
+        fh.write(b"COMPROVANTE PAYOUT")
+    # coordenador ATIVO → 403 (diferente de audit/, que ele revisa)
+    coord, _e, coord_token = _mk_user()
+    _mk_hub(coordinator=coord)
+    assert _serve_as(rel, coord_token).status_code == 403
+    # superuser → 200
+    _su, _e2, su_token = _mk_user(is_superuser=True)
+    assert _serve_as(rel, su_token).status_code == 200

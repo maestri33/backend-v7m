@@ -442,9 +442,7 @@ if env("CACHE_BACKEND", default="locmem") == "db":
         }
     }
 else:
-    CACHES = {
-        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
-    }
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 # Prefixos de mídia que exigem autorização (dono do recurso). O resto (training/IA) é público.
 # `audit`: recortes de rosto (selfie/RG) da auditoria da IA (enrollment/service.py) — PII de rosto;
 # são internos (nenhum front os consome), então sem dono resolvível caem em revisor-only (fail-closed).

@@ -40,3 +40,42 @@ def test_rg_patch_valido_passa():
 
     ok = RgPatchIn(number="12.345.678-9", mother_name="Maria da Silva")
     assert ok.number == "12.345.678-9"
+
+
+@pytest.mark.parametrize(
+    "field,col_max",
+    [("birthplace", 128), ("marital_status", 32), ("nationality", 64)],
+)
+def test_rg_patch_campos_de_profile_tambem_limitados(field, col_max):
+    """Os 3 campos que iam pro Profile (varchar 128/32/64) e escaparam do 1º fix — string longa
+    tem que ser rejeitada no schema, não estourar DataError no banco (500)."""
+    from api.clients import RgPatchIn
+
+    with pytest.raises(PydanticValidationError):
+        RgPatchIn(**{field: "X" * (col_max + 50)})
+
+
+@pytest.mark.parametrize(
+    "schema_path,field,col_max",
+    [
+        ("api.collaborators.ProfileIn", "birthplace", 128),
+        ("api.collaborators.ProfileIn", "marital_status", 32),
+        ("api.collaborators.DocumentsIn", "national_register", 30),
+        ("api.collaborators.KinshipIn", "relation", 200),
+    ],
+)
+def test_funil_candidate_schemas_limitados(schema_path, field, col_max):
+    """O funil candidate (ProfileIn/DocumentsIn/KinshipIn) também precisa dos limites — mesmo 500."""
+    import importlib
+
+    mod_name, cls_name = schema_path.rsplit(".", 1)
+    cls = getattr(importlib.import_module(mod_name), cls_name)
+    kwargs = {field: "X" * (col_max + 50)}
+    # DocumentsIn/KinshipIn têm campos obrigatórios; preenche os mínimos
+    if cls_name == "DocumentsIn":
+        kwargs.setdefault("doc_type", "rg")
+        kwargs.setdefault("number", "123")
+    if cls_name == "KinshipIn" and field != "relation":
+        kwargs.setdefault("relation", "mãe")
+    with pytest.raises(PydanticValidationError):
+        cls(**kwargs)

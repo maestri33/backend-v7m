@@ -28,9 +28,7 @@ def age_stale_review_documents() -> int:
 
     aged = 0
     for model in (RG, CNH):
-        before = model.objects.filter(
-            validation_status=_analysis.REVIEW
-        ).count()
+        before = model.objects.filter(validation_status=_analysis.REVIEW).count()
         _analysis.sweep_stale_documents(model.objects.all(), _started_at)
         aged += (
             model.objects.filter(validation_status=_analysis.REVIEW).count() - before

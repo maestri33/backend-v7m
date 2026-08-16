@@ -137,7 +137,9 @@ def refresh_payout(payment_id: str) -> Payment:
         return row
     status = (data.get("status") or "").upper()
     mapped = _TRANSFER_TO_STATUS.get(status)
-    if mapped is None or mapped == row.status:  # PENDING/BANK_PROCESSING → segue esperando
+    if (
+        mapped is None or mapped == row.status
+    ):  # PENDING/BANK_PROCESSING → segue esperando
         return row
     fail_reason = data.get("failReason") or ""
     if mapped == "FAILED" and is_insufficient_balance_reason(fail_reason):

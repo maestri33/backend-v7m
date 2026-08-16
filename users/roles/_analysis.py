@@ -88,7 +88,9 @@ def age_stale_selfies(model, notify) -> int:
         if not is_stale(obj.selfie_status, obj.selfie_taken_at):
             continue
         obj.selfie_status = REVIEW
-        obj.selfie_description = (obj.selfie_description or "").strip() or stale_reason()
+        obj.selfie_description = (
+            obj.selfie_description or ""
+        ).strip() or stale_reason()
         obj.save(update_fields=["selfie_status", "selfie_description", "updated_at"])
         notify(obj)
         aged += 1

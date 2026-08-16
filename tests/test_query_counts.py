@@ -21,9 +21,7 @@ def _promoter_in_hub(hub, *, locked_material=None):
     from users.profiles.models import Profile
 
     # phone único por promotor (o model tem unique em phone) — 11 dígitos derivados do pk.
-    Profile.objects.create(
-        user=u, name=f"Promotor {u.pk}", phone=f"11{u.pk:09d}"
-    )
+    Profile.objects.create(user=u, name=f"Promotor {u.pk}", phone=f"11{u.pk:09d}")
     pr = Promoter.objects.create(user=u, hub=hub, status=Promoter.Status.ACTIVE)
     if locked_material is not None:
         MaterialAssignment.objects.create(
@@ -63,7 +61,9 @@ def test_list_for_hub_nao_faz_n_mais_1(django_assert_num_queries=None):
     assert len(out) == 5
     assert all(item["locked"] for item in out), "trava não detectada em lote"
     # teto folgado mas CONSTANTE: promoters + profiles(get_map) + locked(2 queries). Sem N+1.
-    assert len(ctx) <= 6, f"N+1 no painel de promotores: {len(ctx)} queries pra 5 promotores"
+    assert len(ctx) <= 6, (
+        f"N+1 no painel de promotores: {len(ctx)} queries pra 5 promotores"
+    )
 
 
 def test_locked_user_ids_bate_com_is_locked():
@@ -83,9 +83,7 @@ def test_locked_user_ids_bate_com_is_locked():
     )
     livre = _promoter_in_hub(hub)  # sem atribuição obrigatória
 
-    ids = training.locked_user_ids(
-        [travado.user_id, respondeu.user_id, livre.user_id]
-    )
+    ids = training.locked_user_ids([travado.user_id, respondeu.user_id, livre.user_id])
     assert ids == {travado.user_id}
     # espelha o per-user
     assert training.is_locked(travado.user) is True

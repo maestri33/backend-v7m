@@ -30,7 +30,6 @@ from api.schemas import (
     StudentPlatformFields,
 )
 from core.net import source_ip
-from core.throttling import ClientIpAnonThrottle
 from users.auth import service as auth_iface
 from users.blocks import service as blocks_svc
 from users.consent import STUDENT_CONTRACT
@@ -289,12 +288,7 @@ auth_router = Router(tags=["auth"])
 lead_router = Router(tags=["lead"])
 
 
-@auth_router.post(
-    "/register",
-    response={201: LeadOut},
-    auth=None,
-    throttle=[ClientIpAnonThrottle()],  # cria conta+cobrança → teto por IP (auditoria B1)
-)
+@auth_router.post("/register", response={201: LeadOut}, auth=None)
 def register(request, payload: LeadCreateIn):
     """Cadastro do cliente: **TODO cliente entra OBRIGATORIAMENTE como `lead`.** Cria o lead (cpf/phone/
     email + método) + o checkout e devolve o pagamento na hora.
@@ -311,12 +305,7 @@ def register(request, payload: LeadCreateIn):
     return 201, result
 
 
-@auth_router.post(
-    "/check",
-    response=CheckOut,
-    auth=None,
-    throttle=[ClientIpAnonThrottle()],  # cria conta+OTP+WhatsApp → teto por IP (auditoria B1)
-)
+@auth_router.post("/check", response=CheckOut, auth=None)
 def check(request, payload: CheckIn):
     """**O check NORMAL: dispara OTP** por cpf/phone e **VAZA existência** (CONVENTION §5): devolve
     `found`+`roles` honestos — o front decide login × captura e pra qual fase do funil mandar.
@@ -569,15 +558,16 @@ class RgSectionOut(Schema):
 
 
 class RgPatchIn(Schema):
-    # limites espelham os models: RG.number=30, RG.issuing_agency=50; Profile.{mother,father}_name=255.
+    # limites espelham os models: RG.number=30/issuing_agency=50; Profile.{mother,father}_name=255,
+    # birthplace=128, marital_status=32, nationality=64 (todos vão pro Profile via update_identity).
     number: str | None = Field(None, max_length=30)
     issuing_agency: str | None = Field(None, max_length=50)
     issue_date: str | None = None  # AAAA-MM-DD
     mother_name: str | None = Field(None, max_length=255)
     father_name: str | None = Field(None, max_length=255)
-    birthplace: str | None = None
-    marital_status: str | None = None
-    nationality: str | None = None
+    birthplace: str | None = Field(None, max_length=128)
+    marital_status: str | None = Field(None, max_length=32)
+    nationality: str | None = Field(None, max_length=64)
 
 
 class SelfieOut(Schema):
