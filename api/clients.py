@@ -457,7 +457,8 @@ api.add_router("/lead", lead_router)
 # endereço (POST só com CEP) → educação → selfie (= ASSINATURA da matrícula) → liberação.
 # Convenção: as seções devolvem `missing_fields` — o front renderiza input SÓ do que falta.
 class KinshipIn(Schema):
-    relation: str  # quem é o titular do comprovante + grau de parentesco
+    # max_length espelha AddressProof.kinship_relation (200) — texto livre que ia direto pro .save().
+    relation: str = Field(max_length=200)  # titular do comprovante + grau de parentesco
 
 
 class EducationIn(Schema):
@@ -557,11 +558,12 @@ class RgSectionOut(Schema):
 
 
 class RgPatchIn(Schema):
-    number: str | None = None
-    issuing_agency: str | None = None
+    # limites espelham os models: RG.number=30, RG.issuing_agency=50; Profile.{mother,father}_name=255.
+    number: str | None = Field(None, max_length=30)
+    issuing_agency: str | None = Field(None, max_length=50)
     issue_date: str | None = None  # AAAA-MM-DD
-    mother_name: str | None = None
-    father_name: str | None = None
+    mother_name: str | None = Field(None, max_length=255)
+    father_name: str | None = Field(None, max_length=255)
     birthplace: str | None = None
     marital_status: str | None = None
     nationality: str | None = None
@@ -728,11 +730,15 @@ def enrollment_document_classify(request, file: UploadedFile = File(...)):
     minuciosa (autenticidade + extração) segue assíncrona no upload da foto."""
     _enr_guard(request)  # só cliente do funil (não vaza o classificador pra fora)
     from integrations.ai import service as ai
+    from users.documents import service as documents_iface
 
+    # read_image_upload: valida tipo + tamanho ANTES de ler (sem OOM) + decode real (não confia no
+    # Content-Type do cliente). Antes ia file.read() cru pra IA paga, sem teto de tamanho.
+    data, mime = documents_iface.read_image_upload(file)
     return ai.classify_document(
-        file.read(),
+        data,
         caller="enrollment.classify",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime,
     )
 
 
