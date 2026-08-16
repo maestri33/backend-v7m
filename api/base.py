@@ -13,7 +13,7 @@ from __future__ import annotations
 import structlog
 from django.http import JsonResponse
 from ninja import Field, NinjaAPI, Schema
-from ninja.errors import AuthenticationError, HttpError
+from ninja.errors import AuthenticationError, HttpError, Throttled
 from ninja.errors import ValidationError as NinjaValidationError
 
 from api.auth import JWTAuth
@@ -77,6 +77,19 @@ def build_group(name: str, description: str, auth_override=_DEFAULT_AUTH) -> Nin
         """Body/query fora do schema → 422. `detail` mantém a lista do pydantic (aditivo)."""
         return JsonResponse(
             {"detail": exc.errors, "code": "VALIDATION_ERROR"}, status=422
+        )
+
+    @api.exception_handler(Throttled)
+    def throttled(request, exc: Throttled):
+        """Rate-limit estourado (auditoria B1) → 429 com code estável RATE_LIMITED (não o fallback
+        ERROR do HttpError cru) + `retry_after` em segundos pro front esperar antes de re-tentar."""
+        return JsonResponse(
+            {
+                "detail": "Muitas requisições. Tente novamente em instantes.",
+                "code": "RATE_LIMITED",
+                "retry_after": getattr(exc, "wait", None),
+            },
+            status=429,
         )
 
     @api.exception_handler(HttpError)

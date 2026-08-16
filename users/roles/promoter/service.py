@@ -205,6 +205,23 @@ def invite_lead(*, promoter: Promoter, phone: str, cpf: str | None = None) -> di
             code="PROMOTER_TRAINING_LOCKED",
         )
 
+    # Cota DIÁRIA por promotor (auditoria B1): o convite dispara WhatsApp do número oficial pra um
+    # número ARBITRÁRIO; sem teto, um promotor (ou conta comprometida) manda milhares/dia — risco
+    # de ban do provedor. A idempotência (digest+dia) só barra repetir o MESMO número.
+    from django.conf import settings
+
+    from core.throttling import check_daily_quota
+
+    if not check_daily_quota(
+        scope="promoter_invite",
+        ident=str(promoter.user.external_id),
+        limit=settings.INVITE_DAILY_QUOTA,
+    ):
+        raise Forbidden(
+            "Limite diário de convites atingido. Tente novamente amanhã.",
+            code="INVITE_QUOTA_EXCEEDED",
+        )
+
     if cpf:
         try:
             normalized_cpf = validation.validate_cpf(cpf)

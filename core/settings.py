@@ -424,6 +424,27 @@ TOOLS_ALLOWED_IPS = env.list(
 # esse tanto de hops a partir da DIREITA do X-Forwarded-For — o XFF esquerdo é forjável pelo cliente
 # e NUNCA decide acesso. Default 1 (um reverse-proxy). Ajuste se houver cadeia de proxies confiáveis.
 TRUSTED_PROXY_COUNT = env.int("TRUSTED_PROXY_COUNT", default=1)
+
+# Throttling das rotas públicas (auditoria API B1). Store = Django cache abaixo.
+# THROTTLE_ANON_RATE: teto por IP das rotas anônimas que criam conta/OTP (formato "N/period").
+THROTTLE_ANON_RATE = env("THROTTLE_ANON_RATE", default="20/h")
+# Cota DIÁRIA de convites por promotor (0 = sem cota). Anti-abuso do WhatsApp do número oficial.
+INVITE_DAILY_QUOTA = env.int("INVITE_DAILY_QUOTA", default=50)
+
+# Cache: em PROD, DatabaseCache no próprio Postgres (cross-worker, sem Redis — CONVENTION §8;
+# roda `manage.py createcachetable` no deploy 1×). Em dev/test, LocMemCache (por processo, zero
+# setup). O throttle e a cota diária usam este cache. CACHE_BACKEND=db liga o DatabaseCache.
+if env("CACHE_BACKEND", default="locmem") == "db":
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": env("CACHE_DB_TABLE", default="django_cache"),
+        }
+    }
+else:
+    CACHES = {
+        "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}
+    }
 # Prefixos de mídia que exigem autorização (dono do recurso). O resto (training/IA) é público.
 # `audit`: recortes de rosto (selfie/RG) da auditoria da IA (enrollment/service.py) — PII de rosto;
 # são internos (nenhum front os consome), então sem dono resolvível caem em revisor-only (fail-closed).

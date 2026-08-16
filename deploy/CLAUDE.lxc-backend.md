@@ -16,6 +16,13 @@
   = cópia do `backend-qcluster.service` com `Environment=Q_CLUSTER_NAME=slow`. Enquanto o unit não
   existir, exporte `Q_SLOW_CLUSTER=` (vazio) no `.env` — tudo volta pra fila única (rollout-safe).
   Sintoma de worker slow FALTANDO: análises de documento/selfie presas em `pending` até o TTL.
+- **Cache/throttle (2026-08-16):** o throttle das rotas públicas e a cota diária de convites usam
+  o Django cache. Em prod, aponte pro Postgres (cross-worker, sem Redis): `.env` com
+  `CACHE_BACKEND=db` e rode UMA vez `manage.py createcachetable`. Sem isso (default `locmem`) o
+  throttle é POR PROCESSO gunicorn — funciona, mas cada worker tem seu contador. Taxa em
+  `THROTTLE_ANON_RATE` (default 20/h), cota de convite em `INVITE_DAILY_QUOTA` (default 50).
+- **Schedules (rodar 1× no deploy):** `manage.py selfie_schedules` (agora também registra o sweep
+  global de documento parado → review) e `manage.py finance_schedules`.
 
 ## ✅ PODE (diagnóstico read-only)
 - `cd /opt/dmz-backend-supletivo && .venv/bin/python manage.py check`

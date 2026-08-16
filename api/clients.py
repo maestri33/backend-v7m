@@ -30,6 +30,7 @@ from api.schemas import (
     StudentPlatformFields,
 )
 from core.net import source_ip
+from core.throttling import ClientIpAnonThrottle
 from users.auth import service as auth_iface
 from users.blocks import service as blocks_svc
 from users.consent import STUDENT_CONTRACT
@@ -288,7 +289,12 @@ auth_router = Router(tags=["auth"])
 lead_router = Router(tags=["lead"])
 
 
-@auth_router.post("/register", response={201: LeadOut}, auth=None)
+@auth_router.post(
+    "/register",
+    response={201: LeadOut},
+    auth=None,
+    throttle=[ClientIpAnonThrottle()],  # cria conta+cobrança → teto por IP (auditoria B1)
+)
 def register(request, payload: LeadCreateIn):
     """Cadastro do cliente: **TODO cliente entra OBRIGATORIAMENTE como `lead`.** Cria o lead (cpf/phone/
     email + método) + o checkout e devolve o pagamento na hora.
@@ -305,7 +311,12 @@ def register(request, payload: LeadCreateIn):
     return 201, result
 
 
-@auth_router.post("/check", response=CheckOut, auth=None)
+@auth_router.post(
+    "/check",
+    response=CheckOut,
+    auth=None,
+    throttle=[ClientIpAnonThrottle()],  # cria conta+OTP+WhatsApp → teto por IP (auditoria B1)
+)
 def check(request, payload: CheckIn):
     """**O check NORMAL: dispara OTP** por cpf/phone e **VAZA existência** (CONVENTION §5): devolve
     `found`+`roles` honestos — o front decide login × captura e pra qual fase do funil mandar.
