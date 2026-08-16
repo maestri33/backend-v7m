@@ -38,6 +38,10 @@ _CLAIM_LOCK_S = 120  # janela do claim (evita re-pick na mesma volta do cluster)
 # itens estoura o Q_TIMEOUT (240s), o worker morre no meio e a task re-entra do zero. O resto da
 # fila sai na próxima passada (o schedule roda a cada 1 min).
 _BATCH_PER_PASS = 50
+# Plano B do webhook (auditoria R1): depois de N tentativas OU esta idade sem TRANSFER_DONE,
+# perguntamos o status DIRETO na API do Asaas em vez de reler o próprio banco pra sempre.
+_API_RECONCILE_MIN_ATTEMPTS = 3
+_API_RECONCILE_MIN_AGE = timedelta(minutes=10)
 
 
 def _backoff(attempts: int) -> timedelta:
@@ -290,7 +294,16 @@ def _reconcile(pr: PaymentRequest, summary: dict) -> None:
         elif pr.method == PaymentRequest.Method.BOLETO:
             payment = asaas_billpay.refresh_boleto(pr.external_reference)
         else:
+            # get_payout lê só o BANCO local — que só muda via webhook. Sem o plano B, webhook
+            # morto = PIX que SAIU da conta com a PR em backoff eterno e a Commission presa em
+            # `processed`. QR-pay e boleto acima já leem a API; aqui espelha.
             payment = asaas_payout.get_payout(pr.external_reference)
+            stale = (
+                pr.attempts >= _API_RECONCILE_MIN_ATTEMPTS
+                or timezone.now() - pr.created_at >= _API_RECONCILE_MIN_AGE
+            )
+            if stale and payment.status not in ("PAID", "FAILED", "CANCELLED"):
+                payment = asaas_payout.refresh_payout(pr.external_reference)
     except (
         asaas_payout.PayoutError,
         asaas_qrpay.QrPayError,

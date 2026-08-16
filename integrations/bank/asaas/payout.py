@@ -103,6 +103,59 @@ def get_payout(payment_id: str) -> Payment:
     return row
 
 
+# Transfer.status do Asaas -> Payment.status local (mesmo mapa do webhook TRANSFER_*).
+_TRANSFER_TO_STATUS = {
+    "DONE": "PAID",
+    "FAILED": "FAILED",
+    "BLOCKED": "FAILED",
+    "CANCELLED": "CANCELLED",
+}
+
+
+def refresh_payout(payment_id: str) -> Payment:
+    """Lê a transferência NA API do Asaas e sincroniza o Payment local (reconciliação ativa).
+
+    O webhook TRANSFER_DONE é o caminho normal; este é o plano B pra quando ele NÃO chega
+    (desativado/interrompido no gateway): sem isso, o PIX saía da conta e a PaymentRequest
+    ficava em backoff eterno lendo o próprio banco. Espelha o mapa do webhook, inclusive o
+    caso saldo-insuficiente (retryable, não terminal). Falha de rede → devolve o local como
+    está (a próxima passada tenta de novo)."""
+    from .webhooks import is_insufficient_balance_reason
+
+    row = get_payout(payment_id)
+    if not row.asaas_id or row.status in ("PAID", "FAILED", "CANCELLED"):
+        return row
+    try:
+        data = asyncio.run(get_client().get_transfer(row.asaas_id))
+    except AsaasError as e:
+        logger.warning(
+            "payout_refresh_failed",
+            payment_id=payment_id,
+            asaas_id=row.asaas_id,
+            error=str(e.body)[:160] if getattr(e, "body", None) else str(e),
+        )
+        return row
+    status = (data.get("status") or "").upper()
+    mapped = _TRANSFER_TO_STATUS.get(status)
+    if mapped is None or mapped == row.status:  # PENDING/BANK_PROCESSING → segue esperando
+        return row
+    fail_reason = data.get("failReason") or ""
+    if mapped == "FAILED" and is_insufficient_balance_reason(fail_reason):
+        mapped = "AWAITING_BALANCE"  # retryable — a fila re-tenta quando o saldo voltar
+    row.status = mapped
+    if fail_reason:
+        row.last_error = fail_reason[:255]
+    row.save(update_fields=["status", "last_error", "updated_at"])
+    logger.info(
+        "payout_refreshed_from_api",
+        payment_id=payment_id,
+        asaas_id=row.asaas_id,
+        status=mapped,
+        asaas_transfer_status=status,
+    )
+    return row
+
+
 def to_dict(row: Payment) -> dict:
     return {
         "payment_id": row.payment_id,

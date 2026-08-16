@@ -55,6 +55,25 @@ def is_insufficient_balance_reason(reason: str | None) -> bool:
     return any(hint in reason for hint in _INSUFFICIENT_BALANCE_HINTS)
 
 
+# Válvula anti-veneno (auditoria R2): a fila de webhook do Asaas é SEQUENCIAL — um handler que
+# falha SEMPRE pro mesmo pagamento (erro persistente, ex.: hub sem seed) 500ava em todo retry,
+# atrasava todos os eventos seguintes e podia levar o gateway a desativar a sincronização.
+# Depois deste nº de entregas falhadas do MESMO (event, payment.id), engolimos com 200 e
+# deixamos o evento QUARENTENADO no ledger (forwarded_ok=False + logger.error → Sentry).
+_QUARANTINE_AFTER = 5
+
+
+def _delivery_attempts(event: str, payload: dict) -> int:
+    """Quantas entregas deste MESMO evento/pagamento já falharam (linhas não-encaminhadas do
+    ledger — cada retry do Asaas cria uma linha nova, então o próprio ledger é o contador)."""
+    pid = ((payload.get("payment") or {}).get("id")) or ""
+    if not pid:
+        return 0
+    return WebhookEvent.objects.filter(
+        event=event, forwarded_ok=False, payload__payment__id=pid
+    ).count()
+
+
 def handle_event(payload, source_ip=None, user_agent=None):
     """Persiste o evento bruto e roteia. Retorna o WebhookEvent.
 
@@ -88,15 +107,33 @@ def handle_event(payload, source_ip=None, user_agent=None):
         # NÃO é marcado forwarded_ok se o dispatch levantar (a linha abaixo não executa).
         consumed = False
         if payment.status == "PAID" and payment.kind == Payment.Kind.CHARGE:
-            consumed = core_hooks.dispatch(
-                "payment.paid",
-                reraise=True,
-                provider="asaas",
-                provider_payment_id=payment.payment_id,
-                amount_cents=int(payment.amount * 100),
-                # comprovante PIX (Asaas) → o lead manda pro aluno na notify de pago.
-                receipt_url=(payload.get("payment") or {}).get("transactionReceiptUrl"),
-            )
+            try:
+                consumed = core_hooks.dispatch(
+                    "payment.paid",
+                    reraise=True,
+                    provider="asaas",
+                    provider_payment_id=payment.payment_id,
+                    amount_cents=int(payment.amount * 100),
+                    # comprovante PIX (Asaas) → o lead manda pro aluno na notify de pago.
+                    receipt_url=(payload.get("payment") or {}).get(
+                        "transactionReceiptUrl"
+                    ),
+                )
+            except Exception as exc:
+                # G4 continua: erro TRANSITÓRIO propaga (500 → Asaas re-tenta). A válvula só
+                # abre pro erro PERSISTENTE: na _QUARANTINE_AFTER-ésima entrega falhada do
+                # mesmo pagamento, responde 200 (destrava a esteira sequencial do gateway) e
+                # deixa o evento em quarentena no ledger — retry manual sai de lá.
+                if _delivery_attempts(event, payload) >= _QUARANTINE_AFTER:
+                    logger.error(
+                        "webhook_quarantined",
+                        provider="asaas",
+                        provider_event=event or "",
+                        payment_id=payment.payment_id,
+                        error=str(exc)[:200],
+                    )
+                    return row
+                raise
         row.forwarded_ok = True
         row.forwarded_at = timezone.now()
         row.save(update_fields=["forwarded_ok", "forwarded_at"])
@@ -108,7 +145,15 @@ def handle_event(payload, source_ip=None, user_agent=None):
                 reason=f"applied_no_consumer: {reason}",
             )
     else:
-        logger.warning(
+        # Vigia do ledger (auditoria R4): órfão de evento de DINHEIRO (pagamento confirmado sem
+        # efeito — ex.: link antigo pago após troca de checkout) é ERROR (vira evento no Sentry),
+        # não warning-breadcrumb que ninguém vê. O resto segue warning.
+        log = (
+            logger.error
+            if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED")
+            else logger.warning
+        )
+        log(
             "webhook_unconsumed",
             provider="asaas",
             provider_event=event or "",

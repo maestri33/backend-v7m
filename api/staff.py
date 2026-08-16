@@ -35,6 +35,35 @@ api = build_group(
 )
 
 
+@api.get("/webhooks/unconsumed", tags=["health"])
+def webhooks_unconsumed(request, limit: int = 50):
+    """Ledger de webhooks NÃO encaminhados (auditoria R4). `money_count` é o número que importa:
+    PAYMENT_CONFIRMED/RECEIVED sem efeito = dinheiro recebido que ninguém processou. O resto do
+    ledger tem ruído esperado (PAYMENT_CREATED/UPDATED são no-op e nunca marcam forwarded_ok)."""
+    require_superuser(request.auth)
+    from integrations.bank.asaas.models import WebhookEvent
+
+    _MONEY = ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED")
+    qs = WebhookEvent.objects.filter(forwarded_ok=False)
+    money = qs.filter(event__in=_MONEY).order_by("-received_at")
+    return {
+        "money_count": money.count(),
+        "total_unconsumed": qs.count(),
+        "money_events": [
+            {
+                "id": e.id,
+                "event": e.event,
+                "received_at": e.received_at.isoformat(),
+                "asaas_payment_id": ((e.payload.get("payment") or {}).get("id")),
+                "external_reference": (
+                    (e.payload.get("payment") or {}).get("externalReference")
+                ),
+            }
+            for e in money[:limit]
+        ],
+    }
+
+
 # ── staff/auth — login do STAFF (superuser puro, sem role de funil — Victor 2026-06-30) ──
 # O login do cliente (clients/auth) EXIGE uma role de funil → um superuser PURO tomava
 # NOT_IN_FUNNEL. Aqui o gate é is_superuser (não role): espelha o check/login do cliente, mas só
