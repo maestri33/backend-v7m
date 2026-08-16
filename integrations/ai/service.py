@@ -117,9 +117,24 @@ def _run(
     (auditoria determinística). `attempt` é uma corrotina `attempt(client, model) -> ChatResult`.
     Falha retryável => próximo; não-retryável (4xx/inesperada) => levanta na hora. Cadeia esgotada =>
     levanta a última falha."""
+    # Orçamento de TEMPO da operação (auditoria R5): cada provider morto custava até 3×timeout
+    # antes do fallback; uma cadeia com 2 ruins estourava o Q_TIMEOUT do worker — task morta,
+    # re-entregue 3×, crédito queimado em triplicata e o funil inteiro em review por TTL. Com
+    # fallback na cadeia, o retry É o próximo provider (1 tentativa intra-provider) e a cadeia
+    # inteira respeita o deadline (< Q_TIMEOUT).
+    deadline = time.monotonic() + float(settings.IA_CHAIN_DEADLINE_S)
+    intra_attempts = 1 if len(chain) > 1 else 3
     last_err: Exception | None = None
     for provider, model in chain:
-        client = providers.get_client(provider)
+        if last_err is not None and time.monotonic() >= deadline:
+            logger.error(
+                "ai.chain_deadline_exhausted",
+                operation=operation,
+                caller=caller,
+                budget_s=settings.IA_CHAIN_DEADLINE_S,
+            )
+            raise last_err
+        client = providers.get_client(provider, attempts=intra_attempts)
         started = time.monotonic()
         try:
             result: ChatResult = async_to_sync(attempt)(client, model)

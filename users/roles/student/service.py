@@ -389,7 +389,11 @@ def upload_document(
     def _queue():
         from django_q.tasks import async_task
 
-        async_task("users.roles.student.tasks.validate_document", doc.id)
+        async_task(
+            "users.roles.student.tasks.validate_document",
+            doc.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
 
     transaction.on_commit(_queue)
     logger.info(

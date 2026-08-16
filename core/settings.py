@@ -344,6 +344,10 @@ for _ia_item in env.list("IA_FALLBACK_CHAIN", default=[]):
 IA_DEFAULT_TEMPERATURE = env.float("IA_DEFAULT_TEMPERATURE", default=0.3)
 IA_MAX_TOKENS = env.int("IA_MAX_TOKENS", default=0)
 IA_TIMEOUT = env.float("IA_TIMEOUT", default=60.0)
+# Orçamento TOTAL da cadeia de fallback por operação — precisa caber no Q_TIMEOUT (240s) com
+# folga: estourou e ainda há falha, a operação erra em vez de o worker ser morto no meio (task
+# re-entregue queimava crédito de IA em triplicata e jogava o funil em review por TTL).
+IA_CHAIN_DEADLINE_S = env.float("IA_CHAIN_DEADLINE_S", default=150.0)
 # Modelo multimodal do gateway OmniRoute para VISÃO (describe_image via /v1/chat/completions). Vazio
 # => o primário OmniRoute é pulado e a visão vai direto pro MiniMax-M3 (fallback sempre presente).
 IA_OMNIROUTE_VISION_MODEL = env("IA_OMNIROUTE_VISION_MODEL", default="")
@@ -455,7 +459,21 @@ Q_CLUSTER = {
     # default (True), qcluster 6h fora = 360 process_payouts enfileirados de uma vez na volta
     # (tempestade + rate-limit no Asaas). False = ao religar, agenda só a PRÓXIMA ocorrência futura.
     "catch_up": False,
+    # Fila FAST (esta, default) × SLOW: OTP/notify/checkout não podem esperar atrás de visão de
+    # 35s (o gotcha do deploy prova: reiniciar o qcluster despejava OTPs represados). O worker
+    # slow sobe com `Q_CLUSTER_NAME=slow python manage.py qcluster` (2º unit systemd/serviço) e
+    # herda este dict com os overrides abaixo. As tasks pesadas roteiam via Q_SLOW_CLUSTER.
+    "ALT_CLUSTERS": {
+        "slow": {
+            "timeout": env.int("Q_SLOW_TIMEOUT", default=240),
+            "retry": env.int("Q_SLOW_RETRY", default=300),
+            "workers": env.int("Q_SLOW_WORKERS", default=2),
+        }
+    },
 }
+# Nome da fila das tasks PESADAS (visão/OCR/biometria/IA). Rollout-safe: enquanto o worker slow
+# não existir num ambiente, `Q_SLOW_CLUSTER=` (vazio) roteia tudo de volta pra fila única.
+Q_SLOW_CLUSTER = env("Q_SLOW_CLUSTER", default="slow") or None
 
 
 # users — auth (jwt, otp) · profiles · roles (CONVENTION §2/§4/§9). Config via .env (§10).

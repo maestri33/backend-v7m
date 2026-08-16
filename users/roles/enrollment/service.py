@@ -390,7 +390,11 @@ def upload_address_proof(*, user_external_id: str, upload) -> dict:
         ap.save(update_fields=["validation_status", "validation_result"])
     from django_q.tasks import async_task
 
-    async_task("users.roles.enrollment.tasks.validate_address_proof", enr.id)
+    async_task(
+        "users.roles.enrollment.tasks.validate_address_proof",
+        enr.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return me_dict(enr)
 
 
@@ -586,7 +590,12 @@ def upload_rg_photo(*, user_external_id: str, slot: str, upload) -> dict:
         path = documents_iface.upload_photo(user_external_id, slot, upload)
         _reset_rg_validation(user_external_id, slot)
         transaction.on_commit(
-            lambda: async_task("users.roles.enrollment.tasks.validate_rg", enr.id, slot)
+            lambda: async_task(
+                "users.roles.enrollment.tasks.validate_rg",
+                enr.id,
+                slot,
+                cluster=settings.Q_SLOW_CLUSTER,  # visão/OCR não fura fila do OTP
+            )
         )
     # ack de polling (proposta #2): a análise acabou de (re)começar → started_at = agora.
     rg = documents_iface.get_rg(user_external_id)
@@ -1038,7 +1047,11 @@ def decide_rg(
         # a revisão veio da visão/IA fora do ar — extração roda best-effort em 2º plano
         from django_q.tasks import async_task
 
-        async_task("users.roles.enrollment.tasks.fill_rg_data", enr.id)
+        async_task(
+            "users.roles.enrollment.tasks.fill_rg_data",
+            enr.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
     _rg_post_approval(enr, rg)
     return {
         "external_id": str(enr.external_id),
@@ -1264,7 +1277,11 @@ def set_selfie(
     enr.save()
     from django_q.tasks import async_task
 
-    async_task("users.roles.enrollment.tasks.validate_selfie", enr.id)
+    async_task(
+        "users.roles.enrollment.tasks.validate_selfie",
+        enr.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return enr
 
 

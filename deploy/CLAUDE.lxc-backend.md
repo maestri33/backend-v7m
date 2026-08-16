@@ -11,6 +11,11 @@
 - **Serve:** Caddy (CT 200) → nginx (`:80`, este LXC) → gunicorn (`127.0.0.1:8000`) → Django; + qcluster.
 - **Banco:** Postgres `dmz` no CT 2100 (`10.1.20.100:5432`). **NÃO** é o banco `v7m` (casca legada, vazia).
 - **systemd:** `backend-web.service`, `backend-qcluster.service`, `actions.runner.*backend-v7m*`.
+- **Fila slow (2026-08-16):** as tasks pesadas (visão/OCR/biometria/IA) roteiam pra fila `slow`
+  (`Q_SLOW_CLUSTER` no settings). Precisa de um **2º worker**: unit `backend-qcluster-slow.service`
+  = cópia do `backend-qcluster.service` com `Environment=Q_CLUSTER_NAME=slow`. Enquanto o unit não
+  existir, exporte `Q_SLOW_CLUSTER=` (vazio) no `.env` — tudo volta pra fila única (rollout-safe).
+  Sintoma de worker slow FALTANDO: análises de documento/selfie presas em `pending` até o TTL.
 
 ## ✅ PODE (diagnóstico read-only)
 - `cd /opt/dmz-backend-supletivo && .venv/bin/python manage.py check`

@@ -454,7 +454,10 @@ def upload_document_photo(*, user_external_id, slot: str, upload) -> dict:
         _reset_doc_validation(user_external_id, cand.doc_type, slot)
         transaction.on_commit(
             lambda: async_task(
-                "users.roles.candidate.tasks.validate_document", cand.id, slot
+                "users.roles.candidate.tasks.validate_document",
+                cand.id,
+                slot,
+                cluster=settings.Q_SLOW_CLUSTER,  # visão/OCR não fura fila do OTP
             )
         )
     sub = documents_iface.get_doc_sub(user_external_id, cand.doc_type)
@@ -480,7 +483,11 @@ def upload_address_proof(*, user_external_id, upload) -> dict:
         ap.save(update_fields=["validation_status"])
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_address_proof", cand.id)
+    async_task(
+        "users.roles.candidate.tasks.validate_address_proof",
+        cand.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return me_dict(cand)
 
 
@@ -1128,7 +1135,11 @@ def decide_document(
     else:
         from django_q.tasks import async_task
 
-        async_task("users.roles.candidate.tasks.fill_document_data", cand.id)
+        async_task(
+            "users.roles.candidate.tasks.fill_document_data",
+            cand.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
     _doc_post_approval(cand, sub)
     return me_dict(cand)
 
@@ -1467,7 +1478,11 @@ def set_selfie(
     cand.save()
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_candidate_selfie", cand.id)
+    async_task(
+        "users.roles.candidate.tasks.validate_candidate_selfie",
+        cand.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return _selfie_ack(cand)
 
 

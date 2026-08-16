@@ -387,9 +387,15 @@ def _check_can_submit(user_external_id: str, material_external_id: str):
 
 def _queue_grade(sub: Submission) -> None:
     def _queue():
+        from django.conf import settings
         from django_q.tasks import async_task
 
-        async_task("users.roles.training.tasks.grade_submission", sub.id)
+        # correção por LLM = task lenta → fila slow (não fura OTP/notify)
+        async_task(
+            "users.roles.training.tasks.grade_submission",
+            sub.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
 
     transaction.on_commit(_queue)
 
