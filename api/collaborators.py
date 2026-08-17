@@ -12,7 +12,7 @@ wizard sem re-fetch).
 
 from __future__ import annotations
 
-from ninja import Field, File, Form, Router, Schema
+from ninja import Field, File, Form, Router, Schema, Status
 from ninja.files import UploadedFile
 
 from api.auth import require_roles
@@ -455,8 +455,11 @@ def register(request, payload: CandidateCreateIn):
     `hub` = `?ref=` da landing: aceita external_id de POLO **ou** de PROMOTOR (resolvido pro hub dele).
     Ref ausente/inválido/sem-coordenador cai no polo padrão — tolerante, não bloqueia o cadastro
     (`resolve_capture_hub`). Devolve o external_id do CANDIDATO e do USER (este o /auth/login consome)."""
-    return 201, candidate_iface.create_candidate(
-        cpf=payload.cpf, phone=payload.phone, email=payload.email, hub=payload.hub
+    return Status(
+        201,
+        candidate_iface.create_candidate(
+            cpf=payload.cpf, phone=payload.phone, email=payload.email, hub=payload.hub
+        ),
     )
 
 

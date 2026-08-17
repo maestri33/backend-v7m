@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ninja import Field, File, Router, Schema
+from ninja import Field, File, Router, Schema, Status
 from ninja.files import UploadedFile
 
 from api.auth import require_roles
@@ -302,7 +302,7 @@ def register(request, payload: LeadCreateIn):
         payment_method=payload.payment_method,
         ref=payload.ref,
     )
-    return 201, result
+    return Status(201, result)
 
 
 @auth_router.post("/check", response=CheckOut, auth=None)
