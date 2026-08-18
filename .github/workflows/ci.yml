@@ -26,6 +26,10 @@ jobs:
       IA_FALLBACK_CHAIN: test:test-model
       WHATSAPP_API_BASE_URL: http://127.0.0.1:9
       WHATSAPP_GLOBAL_API_KEY: ci-dummy
+      # notify-server saiu do repo (6815d9b) e virou dependência externa obrigatória
+      # (notify.E001) — desde então todo CI falhava no `manage.py check`.
+      NOTIFY_SERVER_URL: http://127.0.0.1:9
+      NOTIFY_API_KEY: ci-dummy
       MAIL_SMTP_HOST: localhost
       MAIL_SMTP_USER: ci@invalid.test
       MAIL_SMTP_PASSWORD: ci-dummy
