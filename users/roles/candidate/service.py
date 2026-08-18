@@ -1968,8 +1968,10 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    rows = list(qs)
+    pmap = profiles.get_map([cand.user for cand in rows])
+    for cand in rows:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -1995,8 +1997,10 @@ def list_selfie_reviews_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    rows = list(qs)
+    pmap = profiles.get_map([cand.user for cand in rows])
+    for cand in rows:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),

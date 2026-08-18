@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ninja import Router
+from ninja.responses import Status
 
 from api.base import add_auth_refresh, add_funnel_login
 from api.collaborators.schemas import CandidateCreateIn, CandidateJoinIn, CandidateOut
@@ -19,8 +20,11 @@ FUNNEL_ROLES = ("coordinator", "promoter", "training", "candidate")
 @router.post("/register", response={201: CandidateOut}, auth=None, summary="Cadastro do candidato")
 def register(request, payload: CandidateCreateIn):
     """Cadastro do candidato: cria o user + Candidate ligado a um polo."""
-    return 201, candidate_iface.create_candidate(
-        cpf=payload.cpf, phone=payload.phone, email=payload.email, hub=payload.hub
+    return Status(
+        201,
+        candidate_iface.create_candidate(
+            cpf=payload.cpf, phone=payload.phone, email=payload.email, hub=payload.hub
+        ),
     )
 
 

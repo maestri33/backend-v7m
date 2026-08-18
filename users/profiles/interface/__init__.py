@@ -310,6 +310,7 @@ __all__ = [
     "find_by_phone",
     "find_by_external_id",
     "get",
+    "get_map",
     "create",
     "set_email",
     "set_cpf_identity",

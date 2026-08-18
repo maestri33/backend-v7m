@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ninja import Router
+from ninja.responses import Status
 
 from api.base import add_auth_refresh, add_funnel_login
 from api.clients.schemas import LeadCreateIn, LeadOut
@@ -25,7 +26,7 @@ def register(request, payload: LeadCreateIn):
         payment_method=payload.payment_method,
         ref=payload.ref,
     )
-    return 201, result
+    return Status(201, result)
 
 
 @router.post("/check", response=CheckOut, auth=None, summary="Verificação e disparo de OTP ou captura")

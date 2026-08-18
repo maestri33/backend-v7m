@@ -55,5 +55,8 @@ def age_stale_selfies() -> None:
 
     Antes rodava DENTRO do `GET /candidate/selfie` (mutava/notificava numa leitura — viola a
     idempotência HTTP). Registrado por `manage.py selfie_schedules`. Idempotente."""
-    aged = service.age_stale_selfies()
-    logger.info("candidate.task_selfies_aged", aged=aged)
+    try:
+        aged = service.age_stale_selfies()
+        logger.info("candidate.task_selfies_aged", aged=aged)
+    except Exception as exc:  # noqa: BLE001 — Django-Q silenciaria
+        logger.exception("candidate.age_stale_selfies_failed", error=str(exc))

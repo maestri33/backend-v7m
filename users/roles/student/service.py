@@ -1230,8 +1230,10 @@ def list_document_reviews_for_hub(*, hub) -> list[dict]:
         .select_related("student", "student__user")
         .order_by("updated_at")
     )
-    for doc in qs:
-        p = profiles.get(doc.student.user)
+    rows = list(qs)
+    pmap = profiles.get_map([doc.student.user for doc in rows])
+    for doc in rows:
+        p = pmap.get(doc.student.user_id)
         out.append(
             {
                 "student_external_id": str(doc.student.external_id),

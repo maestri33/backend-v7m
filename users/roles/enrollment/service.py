@@ -1856,8 +1856,8 @@ def _notify_fee_event(
 # ── visão do COORDENADOR: listagem/detalhe do polo + análises pendentes (plan/14) ───────────
 
 
-def _hub_item_dict(enr: Enrollment) -> dict:
-    p = profiles.get(enr.user)
+def _hub_item_dict(enr: Enrollment, profile=None) -> dict:
+    p = profile if profile is not None else profiles.get(enr.user)
     return {
         "external_id": str(enr.external_id),
         "name": p.name if p else None,
@@ -1904,7 +1904,9 @@ def list_for_hub(*, hub, status: str | None = None) -> list[dict]:
     )
     if status:
         qs = qs.filter(status=status)
-    return [_hub_item_dict(enr) for enr in qs]
+    rows = list(qs)
+    pmap = profiles.get_map([enr.user for enr in rows])
+    return [_hub_item_dict(enr, pmap.get(enr.user_id)) for enr in rows]
 
 
 def coordinated_user_ext(*, enrollment_external_id: str, coordinator) -> str:
@@ -1984,26 +1986,29 @@ def list_reviews_for_hub(*, hub) -> dict:
 
     _sweep_stale_reviews(hub)
 
-    def _item(enr: Enrollment) -> dict:
-        p = profiles.get(enr.user)
-        return {
-            "external_id": str(enr.external_id),
-            "name": p.name if p else None,
-            "since": enr.updated_at.isoformat(),
-        }
-
-    rg_qs = (
+    rg_qs = list(
         Enrollment.objects.filter(
             hub=hub, user__document__rg__validation_status=_analysis.REVIEW
         )
         .select_related("user")
         .order_by("updated_at")
     )
-    selfie_qs = (
+    selfie_qs = list(
         Enrollment.objects.filter(hub=hub, selfie_status=_selfie.SelfieStatus.REVIEW)
         .select_related("user")
         .order_by("updated_at")
     )
+    all_users = [e.user for e in rg_qs] + [e.user for e in selfie_qs]
+    pmap = profiles.get_map(all_users)
+
+    def _item(enr: Enrollment) -> dict:
+        p = pmap.get(enr.user_id)
+        return {
+            "external_id": str(enr.external_id),
+            "name": p.name if p else None,
+            "since": enr.updated_at.isoformat(),
+        }
+
     return {"rg": [_item(e) for e in rg_qs], "selfie": [_item(e) for e in selfie_qs]}
 
 
