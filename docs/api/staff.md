@@ -169,7 +169,6 @@ valor do secret) + fluxo declarado + último resultado do ledger `ValidationChec
 |---|---|
 | `GET /system` | `{db_ok, migrations_pending, qcluster_alive, qcluster_count, queued_tasks, debug, external_url}` — DB vivo, migrações pendentes, se o worker Django-Q está de pé e quantas tasks na fila. |
 | `GET /health/full` (auth JWT) | Ping ao vivo de asaas/infinitepay/omniroute/notify-server + migrações pendentes + info de deploy. Rota separada de `/health` porque `GET /api/v1/staff/health` puro é a liveness PÚBLICA (`build_group`) — registrar aqui a versão autenticada seria sombreada por ela. |
-| `POST /health/run-tests` (auth JWT) | Dispara a Actions workflow `ci.yml` no GitHub (via `GH_PAT`/`GITHUB_TOKEN`) para rodar a suíte de testes. Sem token configurado → `{"ok": false, "error": "..."}`. |
 | `GET /logs/ai-calls?status=&limit=` | Ledger de chamadas de IA: provider/modelo/operação/custo/latência/erro. |
 | `GET /logs/checks?scope=&limit=` | Histórico do ledger de validação (`ValidationCheck`). |
 

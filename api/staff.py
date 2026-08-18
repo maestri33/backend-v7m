@@ -68,6 +68,7 @@ def staff_check(request, payload: StaffCheckIn):
         cpf=payload.cpf, phone=payload.phone, external_id=payload.external_id
     )
 
+
 @auth_router.post("/login", response=TokenOut, auth=None)
 def staff_login(request, payload: StaffLoginIn):
     """Login passwordless (OTP) do STAFF — exige is_superuser (não role de funil) e emite JWT.
@@ -689,10 +690,10 @@ def list_users(request, role: str | None = None, limit: int = 200):
     return out
 
 
-# ── health check autenticado + run-tests (Wave 2) ──
+# ── health check autenticado (Wave 2) ──
 from api.health import staff_health_router  # noqa: E402
 
-api.add_router("", staff_health_router)  # rotas em /health e /health/run-tests
+api.add_router("", staff_health_router)  # rotas em /health
 
 
 class PhoneIn(Schema):

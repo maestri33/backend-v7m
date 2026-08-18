@@ -61,7 +61,3 @@ def test_e2e_staff_health_full_exige_auth(client_and_media):
     """`/health/full` (os pings de integrações, require_superuser) agora é ALCANÇÁVEL — sem token
     dá 401, provando que o gate do G20 roda (antes ficava sombreado pela liveness pública)."""
     assert client_and_media.get("/api/v1/staff/health/full").status_code == 401
-
-
-def test_e2e_staff_run_tests_exige_auth(client_and_media):
-    assert client_and_media.post("/api/v1/staff/health/run-tests").status_code == 401

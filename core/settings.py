@@ -117,8 +117,6 @@ INSTALLED_APPS = [
     # hub = o POLO (§4 item 5). Hub→Address (FK §4); marca = catálogo no .env. Ações do
     # coordenador entram depois (grupo leadership). Consome users (coordinator/promoter).
     "hub.apps.HubConfig",
-    # Mantido temporariamente só para aplicar a migration que remove as tabelas do bot interno.
-    "bot.apps.BotConfig",
 ]
 
 # User custom (palavra do Victor 2026-06-01; sobrepõe o "User padrão" da CONVENTION §4): a
