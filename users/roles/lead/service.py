@@ -383,6 +383,8 @@ def check_or_capture(
     cpf: str | None = None,
     phone: str | None = None,
     external_id: str | None = None,
+    send_otp: bool = True,
+    service_authed: bool = False,
     ref: str | None = None,
 ) -> dict:
     """`POST clients/auth/check` do funil v2: o check normal E a captura no mesmo passo.
@@ -402,8 +404,10 @@ def check_or_capture(
         cpf=cpf,
         phone=phone,
         external_id=external_id,
+        send_otp=send_otp,
+        service_authed=service_authed,
     )
-    if result["found"] or not phone:
+    if result["found"] or not phone or not send_otp:
         return {**result, "created": False}
     if result.get("whatsapp") is not True:
         return {**result, "created": False}

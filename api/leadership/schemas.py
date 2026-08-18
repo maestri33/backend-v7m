@@ -7,14 +7,8 @@ from typing import Any
 from ninja import Field, Schema
 
 from api.schemas.address import PublicAddressOut
+from api.schemas.auth import CheckIn, LoginIn
 from api.schemas.student import StudentPlatformFields
-
-
-class CheckIn(Schema):
-    cpf: str | None = None
-    phone: str | None = None
-    external_id: str | None = None
-    send_otp: bool = True
 
 
 class HubOut(Schema):
@@ -40,11 +34,6 @@ class CoordinatorCheckOut(Schema):
         None,
         description="presente quando a pessoa existe mas NÃO coordena polo",
     )
-
-
-class LoginIn(Schema):
-    external_id: str = Field(description="external_id do USER (veio do /auth/check)")
-    otp: str
 
 
 class HubLeadRowOut(Schema):
@@ -132,10 +121,6 @@ class CandidateDocumentsOut(Schema):
     military: CandidateDocumentSubOut | None = None
 
 
-class EnrollmentAddressOut(PublicAddressOut):
-    pass
-
-
 class EnrollmentSelfieOut(Schema):
     exists: bool
     photo: str | None = None
@@ -156,7 +141,7 @@ class CandidateMeOut(Schema):
     selfie_verified: bool
     selfie_status: str | None = None
     profile: CandidateProfileOut | None = None
-    address: EnrollmentAddressOut | None = None
+    address: PublicAddressOut | None = None
     documents: CandidateDocumentsOut | None = None
     selfie: EnrollmentSelfieOut | None = None
 
@@ -237,7 +222,7 @@ class HubEnrollmentDetailOut(Schema):
     analysis_status: str | None = None
     profile: EnrollmentProfileOut | None = None
     address_complete: bool = False
-    address: EnrollmentAddressOut | None = None
+    address: PublicAddressOut | None = None
     selfie: EnrollmentSelfieOut | None = None
     rg: EnrollmentRgOut | None = None
     education: EnrollmentEducationOut | None = None
@@ -394,10 +379,6 @@ class CandidateSelfieDecideOut(Schema):
     status: str
 
 
-class StudentPlatformOut(StudentPlatformFields):
-    pass
-
-
 class StudentDocItemOut(Schema):
     external_id: str
     doc_type: str
@@ -436,7 +417,7 @@ class HubStudentDetailOut(Schema):
     hub_external_id: str
     blood_type: str | None = None
     self_study: bool
-    platform: StudentPlatformOut
+    platform: StudentPlatformFields
     documents: list[StudentDocItemOut] = Field(default_factory=list)
     pendencies: list[StudentPendencyOut] = Field(default_factory=list)
     diploma: StudentDiplomaOut | None = None

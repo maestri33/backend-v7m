@@ -9,7 +9,6 @@ from api.auth import require_roles
 from api.collaborators.schemas import (
     AddressProofSectionOut,
     AnalysisAckOut,
-    CandidateAddressOut,
     CandidateDocumentSectionOut,
     CandidateMeOut,
     CandidateSelfieOut,
@@ -21,7 +20,7 @@ from api.collaborators.schemas import (
     PixIn,
     ProfileIn,
 )
-from api.schemas.address import AddressCepIn, AddressDataIn
+from api.schemas.address import AddressCepIn, AddressDataIn, PublicAddressOut
 from core.net import source_ip
 from users.consent import PROMOTER_CONTRACT
 from users.exceptions import NotFound
@@ -53,7 +52,7 @@ def candidate_profile(request, payload: ProfileIn):
     return candidate_iface.set_profile(user_external_id=ext, **payload.dict())
 
 
-@router.get("/candidate/address", response=CandidateAddressOut, summary="Consulta do endereço")
+@router.get("/candidate/address", response=PublicAddressOut, summary="Consulta do endereço")
 def candidate_get_address(request):
     """GET do endereço + missing_fields."""
     ext = _guard(request, "candidate")

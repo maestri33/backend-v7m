@@ -8,7 +8,6 @@ from ninja.files import UploadedFile
 from api.auth import require_roles
 from api.base import resolve_rg_slot
 from api.clients.schemas import (
-    AddressOut,
     ContractOut,
     DocClassifyOut,
     EducationIn,
@@ -20,7 +19,7 @@ from api.clients.schemas import (
     RgUploadAck,
     SelfieOut,
 )
-from api.schemas.address import AddressCepIn, AddressDataIn
+from api.schemas.address import AddressCepIn, AddressDataIn, PublicAddressOut
 from core.net import source_ip
 from users.consent import STUDENT_CONTRACT
 from users.documents import service as documents_iface
@@ -102,7 +101,7 @@ def enrollment_rg_patch(request, payload: RgPatchIn):
     )
 
 
-@router.get("/enrollment/address", response=AddressOut, summary="Consulta do endereço")
+@router.get("/enrollment/address", response=PublicAddressOut, summary="Consulta do endereço")
 def enrollment_get_address(request):
     """GET do endereço + missing_fields."""
     ext = _enr_guard(request)

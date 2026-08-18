@@ -5,7 +5,7 @@ from __future__ import annotations
 from ninja import File, Router
 from ninja.files import UploadedFile
 
-from api.auth import require_roles
+from api.leadership.base import get_coordinator, get_coordinator_hub
 from api.leadership.schemas import (
     DiplomaIssueOut,
     DocDecideIn,
@@ -18,34 +18,9 @@ from api.leadership.schemas import (
     PendencyIn,
     StudentPendencyOut,
 )
-from hub import interface as hub_iface
-from users.auth.models import User
-from users.exceptions import Forbidden
 from users.roles.student import service as student_iface
 
 router = Router(tags=["student"])
-
-NOT_COORDINATOR_DETAIL = (
-    "Você não pode entrar como coordenador: não coordena nenhum polo. "
-    "Faça seu login na área da sua função."
-)
-
-
-def _coordinator(request) -> User:
-    require_roles(request.auth, "coordinator")
-    user = User.objects.filter(
-        external_id=request.auth.external_id, is_active=True
-    ).first()
-    if user is None:
-        raise Forbidden("Coordenador não encontrado.", code="FORBIDDEN_ROLE")
-    return user
-
-
-def _coordinator_hub(coordinator: User):
-    hub = hub_iface.coordinated_by(coordinator)
-    if hub is None:
-        raise Forbidden(NOT_COORDINATOR_DETAIL, code="NOT_HUB_COORDINATOR")
-    return hub
 
 
 def _student_action(external_id: str, coordinator, fn, **kw):
@@ -57,8 +32,8 @@ def list_hub_students(
     request, status: str | None = None, limit: int = 200, offset: int = 0
 ):
     """Alunos do polo com paginação e filtro por status."""
-    coordinator = _coordinator(request)
-    hub = _coordinator_hub(coordinator)
+    coordinator = get_coordinator(request)
+    hub = get_coordinator_hub(coordinator)
     items, total = student_iface.list_for_hub(
         hub=hub, status=status, limit=limit, offset=offset
     )
@@ -68,7 +43,7 @@ def list_hub_students(
 @router.get("/students/{external_id}", response=HubStudentDetailOut, summary="Detalhe completo do aluno")
 def get_student_for_coordinator(request, external_id: str):
     """Detalhe rico do aluno para o coordenador."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     return student_iface.detail_for_coordinator(
         student_external_id=external_id, coordinator=coordinator
     )
@@ -77,7 +52,7 @@ def get_student_for_coordinator(request, external_id: str):
 @router.post("/students/{external_id}/exam/grade", response=ExamOut, summary="Correção de prova do aluno")
 def grade_exam(request, external_id: str, payload: ExamGradeIn):
     """Lança nota da prova do aluno."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     exam = _student_action(
         external_id,
         coordinator,
@@ -97,7 +72,7 @@ def decide_document(
     request, external_id: str, document_external_id: str, payload: DocDecideIn
 ):
     """Decide validação de documento em revisão do aluno."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     doc = _student_action(
         external_id,
         coordinator,
@@ -119,7 +94,7 @@ def decide_document(
 )
 def open_pendency(request, external_id: str, payload: PendencyIn):
     """Lança pendência para o aluno."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     pend = _student_action(
         external_id,
         coordinator,
@@ -144,7 +119,7 @@ def open_pendency(request, external_id: str, payload: PendencyIn):
 )
 def resolve_pendency(request, external_id: str):
     """Marca pendência como resolvida."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     pend = student_iface.resolve_pendency(
         pendency_external_id=external_id, coordinator=coordinator
     )
@@ -164,7 +139,7 @@ def resolve_pendency(request, external_id: str):
 )
 def clear_documentation(request, external_id: str):
     """Confirma documentação e libera emissão do diploma."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     s = _student_action(external_id, coordinator, student_iface.clear_documentation)
     return {"external_id": str(s.external_id), "status": s.status}
 
@@ -181,7 +156,7 @@ def issue_diploma(
     transcript: UploadedFile | None = File(None),
 ):
     """Emite o diploma e histórico do aluno."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     issued = _student_action(
         external_id,
         coordinator,
@@ -206,7 +181,7 @@ def issue_diploma(
 )
 def register_diploma_pickup(request, external_id: str, file: UploadedFile = File(...)):
     """Registra entrega do diploma com foto e promove aluno a veterano."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     s = _student_action(
         external_id,
         coordinator,
@@ -224,7 +199,7 @@ def register_diploma_pickup(request, external_id: str, file: UploadedFile = File
 )
 def register_manual_selfie(request, external_id: str, file: UploadedFile = File(...)):
     """Foto tirada pelo coordenador para destravar aluno presencialmente."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     s = _student_action(
         external_id,
         coordinator,

@@ -5,19 +5,15 @@ from __future__ import annotations
 from ninja import Router
 
 from api.base import add_auth_refresh
-from api.leadership.schemas import CheckIn, CoordinatorCheckOut, LoginIn
-from api.schemas.auth import TokenOut
+from api.leadership.base import NOT_COORDINATOR_DETAIL
+from api.leadership.schemas import CoordinatorCheckOut
+from api.schemas.auth import CheckIn, LoginIn, TokenOut
 from hub import interface as hub_iface
 from users.auth import service as auth_iface
 from users.auth.models import User
 from users.exceptions import Forbidden, NotFound
 
 router = Router(tags=["auth"])
-
-NOT_COORDINATOR_DETAIL = (
-    "Você não pode entrar como coordenador: não coordena nenhum polo. "
-    "Faça seu login na área da sua função."
-)
 
 
 @router.post("/check", response=CoordinatorCheckOut, auth=None, summary="Verificação de coordenador")

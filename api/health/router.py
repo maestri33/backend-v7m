@@ -64,27 +64,14 @@ def _deploy_info() -> dict:
 @health_api.get("/healthz", summary="Health check público")
 def healthz(request):
     """Health check público — sem auth. DB ping + migrations pendentes + build info."""
-    db_ok = False
-    try:
-        with connections["default"].cursor() as c:
-            c.execute("SELECT 1")
-        db_ok = True
-    except Exception:
-        pass
-
-    pending = _pending_migrations()
-
-    sha = None
-    build_file = settings.BASE_DIR / "build.txt"
-    if build_file.exists():
-        sha = build_file.read_text().strip()
-
+    db_ok = _ping_db()["ok"]
+    deploy = _deploy_info()
     return {
         "status": "ok" if db_ok else "degraded",
         "db": db_ok,
-        "migrations_pending": pending,
-        "sha": sha,
-        "built_at": None,
+        "migrations_pending": _pending_migrations(),
+        "sha": deploy["sha"],
+        "built_at": deploy["built_at"],
     }
 
 

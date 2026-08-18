@@ -7,6 +7,7 @@ from typing import Any
 from ninja import Field, Schema
 
 from api.schemas.address import PublicAddressOut
+from api.schemas.documents import ContractOut, DocClassifyOut
 
 
 class CandidateCreateIn(Schema):
@@ -97,10 +98,6 @@ class CandidateProfileOut(Schema):
     locked_fields: list[str] = Field(default_factory=list)
 
 
-class CandidateAddressOut(PublicAddressOut):
-    pass
-
-
 class CandidateDocumentSubOut(Schema):
     number: str | None = None
     issuing_agency: str | None = None
@@ -158,7 +155,7 @@ class CandidateMeOut(Schema):
     selfie_verified: bool
     selfie_status: str | None = None
     profile: CandidateProfileOut | None = None
-    address: CandidateAddressOut | None = None
+    address: PublicAddressOut | None = None
     address_proof: AddressProofSectionOut | None = None
     documents: CandidateDocumentsOut | None = None
     selfie: CandidateSelfieOut | None = None
@@ -317,18 +314,3 @@ class StudyStartOut(Schema):
 
 class StudyStartIn(Schema):
     payment_method: str | None = None
-
-
-class DocClassifyOut(Schema):
-    is_document: bool | None = None
-    doc_type: str | None = None
-    completeness: str | None = None
-    is_legible: bool | None = None
-    reason: str | None = None
-    confidence: float | None = None
-
-
-class ContractOut(Schema):
-    version: str
-    hash: str
-    text: str

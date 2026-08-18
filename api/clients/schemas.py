@@ -7,6 +7,7 @@ from typing import Any, Literal
 from ninja import Field, Schema
 
 from api.schemas.address import PublicAddressOut
+from api.schemas.documents import ContractOut, DocClassifyOut
 from api.schemas.student import StudentPlatformFields
 
 AnalysisStatus = Literal["pending", "approved", "rejected", "review"]
@@ -100,10 +101,6 @@ class LeadMeOut(Schema):
     checkout: LeadSelfCheckoutOut | None = None
 
 
-class AddressOut(PublicAddressOut):
-    pass
-
-
 class AddressProofSectionOut(Schema):
     """Bloco do comprovante de endereço no /me (F1): status da validação IA + parentesco."""
 
@@ -124,10 +121,6 @@ class AddressProofSectionOut(Schema):
         False,
         description="Coordenador rejeitou a justificativa: pede outro documento.",
     )
-
-
-class StudentPlatformOut(StudentPlatformFields):
-    pass
 
 
 class StudentDocumentOut(Schema):
@@ -181,7 +174,7 @@ class StudentMeOut(Schema):
     )
     hub_external_id: str
     blood_type: str | None = None
-    platform: StudentPlatformOut
+    platform: StudentPlatformFields
     documents: list[StudentDocumentOut]
     pendencies: list[StudentPendencyOut]
     diploma: StudentDiplomaOut | None = None
@@ -354,7 +347,7 @@ class EducationOut(Schema):
 class EnrollmentMeOut(EnrollmentOut):
     profile: EnrollmentProfileOut | None = None
     address_complete: bool = False
-    address: AddressOut | None = None
+    address: PublicAddressOut | None = None
     address_proof: AddressProofSectionOut | None = None
     rg: RgOut | None = None
     education: EducationOut | None = None
@@ -369,21 +362,6 @@ class RgUploadAck(Schema):
     poll_after_ms: int
     expires_at: str | None = None
     analysis: str = ""
-
-
-class DocClassifyOut(Schema):
-    is_document: bool | None = None
-    doc_type: str | None = None
-    completeness: str | None = None
-    is_legible: bool | None = None
-    reason: str | None = None
-    confidence: float | None = None
-
-
-class ContractOut(Schema):
-    version: str
-    hash: str
-    text: str
 
 
 class BloodTypeIn(Schema):

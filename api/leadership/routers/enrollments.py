@@ -6,8 +6,8 @@ import structlog
 from ninja import File, Router
 from ninja.files import UploadedFile
 
-from api.auth import require_roles
 from api.base import resolve_rg_slot
+from api.leadership.base import get_coordinator, get_coordinator_hub
 from api.leadership.schemas import (
     ConcludeIn,
     CorrectIdentityIn,
@@ -20,39 +20,14 @@ from api.leadership.schemas import (
     RgPhotoUploadOut,
 )
 from core.net import source_ip
-from hub import interface as hub_iface
-from users.auth.models import User
-from users.exceptions import Forbidden
 from users.roles.enrollment import service as enrollment_iface
 
 router = Router(tags=["enrollment"])
 logger = structlog.get_logger()
 
-NOT_COORDINATOR_DETAIL = (
-    "Você não pode entrar como coordenador: não coordena nenhum polo. "
-    "Faça seu login na área da sua função."
-)
-
-
-def _coordinator(request) -> User:
-    require_roles(request.auth, "coordinator")
-    user = User.objects.filter(
-        external_id=request.auth.external_id, is_active=True
-    ).first()
-    if user is None:
-        raise Forbidden("Coordenador não encontrado.", code="FORBIDDEN_ROLE")
-    return user
-
-
-def _coordinator_hub(coordinator: User):
-    hub = hub_iface.coordinated_by(coordinator)
-    if hub is None:
-        raise Forbidden(NOT_COORDINATOR_DETAIL, code="NOT_HUB_COORDINATOR")
-    return hub
-
 
 def _proxy_user(request, external_id: str):
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     user_ext = enrollment_iface.coordinated_user_ext(
         enrollment_external_id=external_id, coordinator=coordinator
     )
@@ -62,15 +37,15 @@ def _proxy_user(request, external_id: str):
 @router.get("/enrollments", response=list[HubEnrollmentRowOut], summary="Listagem de matrículas do polo")
 def list_hub_enrollments(request, status: str | None = None):
     """Matrículas do polo: status real + situação de taxas."""
-    coordinator = _coordinator(request)
-    hub = _coordinator_hub(coordinator)
+    coordinator = get_coordinator(request)
+    hub = get_coordinator_hub(coordinator)
     return enrollment_iface.list_for_hub(hub=hub, status=status)
 
 
 @router.get("/enrollments/{external_id}", response=HubEnrollmentDetailOut, summary="Detalhe de matrícula do polo")
 def get_hub_enrollment(request, external_id: str):
     """Detalhe completo de uma matrícula do polo."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     return enrollment_iface.detail_for_hub(
         enrollment_external_id=external_id, coordinator=coordinator
     )
@@ -79,7 +54,7 @@ def get_hub_enrollment(request, external_id: str):
 @router.post("/enrollments/{external_id}/fee/pay", response=EnrollmentFeesOut, summary="1ª parcela da taxa (à vista)")
 def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
     """1ª parcela da taxa (À VISTA): valida QR e dispara PIX."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     return enrollment_iface.pay_fee(
         enrollment_external_id=external_id,
         coordinator=coordinator,
@@ -91,7 +66,7 @@ def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
 @router.post("/enrollments/{external_id}/fee/schedule", response=EnrollmentFeesOut, summary="2ª parcela da taxa (agendada)")
 def schedule_enrollment_fee(request, external_id: str, payload: FeeIn):
     """2ª parcela da taxa (AGENDADA): programa pagamento no vencimento."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     return enrollment_iface.schedule_fee(
         enrollment_external_id=external_id,
         coordinator=coordinator,
@@ -103,7 +78,7 @@ def schedule_enrollment_fee(request, external_id: str, payload: FeeIn):
 @router.post("/enrollments/{external_id}/conclude", response=EnrollmentActionOut, summary="Conclusão da matrícula")
 def conclude_enrollment(request, external_id: str, payload: ConcludeIn):
     """Conclui a matrícula e cadastra credenciais da instituição."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     enr = enrollment_iface.conclude(
         enrollment_external_id=external_id,
         coordinator=coordinator,
@@ -181,7 +156,7 @@ def coord_proxy_selfie(request, external_id: str, file: UploadedFile = File(...)
 )
 def coord_correct_identity(request, external_id: str, payload: CorrectIdentityIn):
     """Coordenador corrige dados do perfil/documento do aluno."""
-    coordinator = _coordinator(request)
+    coordinator = get_coordinator(request)
     return enrollment_iface.coordinator_correct_identity(
         enrollment_external_id=external_id,
         coordinator=coordinator,

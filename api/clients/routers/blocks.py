@@ -31,18 +31,11 @@ def my_block(request, block_id: int):
     return blocks_svc.to_dict(block)
 
 
-@router.post("/me/blocks/{block_external_id}/resolve", response=BlockOut, summary="Resolução de bloco")
-def resolve_block(request, block_external_id: str):
+@router.post("/me/blocks/{block_id}/resolve", response=BlockOut, summary="Resolução de bloco")
+def resolve_block(request, block_id: int):
     """Resolve manualmente um bloco bloqueante."""
-    try:
-        block_id = int(block_external_id)
-    except ValueError:
-        raise NotFound("Bloco não encontrado.", code="BLOCK_NOT_FOUND")
-
     user = User.objects.filter(external_id=request.auth.external_id).first()
-    if user is None:
-        raise NotFound("Bloco não encontrado.", code="BLOCK_NOT_FOUND")
-    block = blocks_svc.resolve_by_id(user=user, block_id=block_id)
+    block = blocks_svc.resolve_by_id(user=user, block_id=block_id) if user else None
     if block is None:
         raise NotFound("Bloco não encontrado.", code="BLOCK_NOT_FOUND")
     return blocks_svc.to_dict(block)
