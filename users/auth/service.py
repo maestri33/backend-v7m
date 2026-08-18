@@ -388,10 +388,8 @@ def check(
 ) -> dict:
     """Acha o usuário por cpf/phone/external_id. **O NORMAL é disparar OTP** (`send_otp=True`).
 
-    `send_otp=False` = o antigo `check_bot` integrado como parâmetro (Victor 2026-07-04): mesma
-    função, mas NÃO dispara OTP e devolve o `token` (JWT) direto. **Exige `service_authed=True`** —
-    o segredo de serviço interno checado na view (a rota é pública, então o "canal do chamador" NÃO
-    é prova de identidade sozinho). Sem o segredo, recusa com `SERVICE_SECRET_REQUIRED` (fail-closed).
+    `send_otp=False` = modo sem OTP: JWT direto, somente com segredo de serviço (`service_authed=True`).
+    Sem o segredo, recusa com `SERVICE_SECRET_REQUIRED` (fail-closed).
 
     **VAZA existência DE PROPÓSITO (CONVENTION §5):** devolve `found` honesto — se existe, manda OTP e
     retorna `external_id`+`roles`; se NÃO existe, `found:false`+`otp_sent:false`. O front decide cadastro

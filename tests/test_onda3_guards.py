@@ -25,7 +25,7 @@ def test_g20_health_usa_require_superuser():
     is_superuser) — barrava até o superuser. Deve usar require_superuser."""
     import inspect
 
-    import api.health as health
+    from api.health import router as health
 
     src = inspect.getsource(health)
     assert "require_superuser(request.auth)" in src

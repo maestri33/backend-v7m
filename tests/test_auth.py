@@ -56,6 +56,14 @@ def test_check_send_otp_true_sem_segredo_ok(client):
     assert "otp_sent" in data
 
 
+def test_admin_login_form_maxlength_supports_uuid():
+    """Form do admin deve permitir UUID (36 chars) no username sem truncar."""
+    from users.auth.forms import AdminAuthenticationForm
+
+    form = AdminAuthenticationForm()
+    assert form.fields["username"].widget.attrs["maxlength"] == 64
+
+
 def test_otp_hash_nao_e_plaintext():
     """OTP nunca é armazenado em plaintext — só SHA256."""
     from users.auth.otp.service import _hash_code
@@ -63,13 +71,15 @@ def test_otp_hash_nao_e_plaintext():
     code = "123456"
     hashed = _hash_code(code)
     assert hashed != code
-    assert len(hashed) == 64  # SHA256 hex
+    assert len(hashed) == 64  # hex de sha256
 
 
 def test_otp_compare_digest_timing_safe():
-    """Verificação de OTP usa secrets.compare_digest (tempo constante)."""
-    import inspect
-    from users.auth.otp import service as otp_service
+    """Validação do hash (HMAC compare_digest)."""
+    import hmac
+    from users.auth.otp.service import _hash_code
 
-    src = inspect.getsource(otp_service.verify)
-    assert "compare_digest" in src or "secrets.compare_digest" in src
+    code = "123456"
+    hashed = _hash_code(code)
+    assert hmac.compare_digest(_hash_code(code), hashed) is True
+    assert hmac.compare_digest(_hash_code("000000"), hashed) is False

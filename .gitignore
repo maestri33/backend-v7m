@@ -24,5 +24,9 @@ data/
 .env.prod
 .env.prod.*
 
+# env do docker local (recebe chave sandbox do asaas) — nunca commitar
+.env.docker
+
 # limpeza 2026-08-14
 .coverage
+.claude/worktrees/

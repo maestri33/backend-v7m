@@ -19,6 +19,10 @@ from django.http import JsonResponse
 from django.urls import include, path, re_path
 from django.contrib import admin
 
+from users.auth.forms import AdminAuthenticationForm
+
+admin.site.login_form = AdminAuthenticationForm
+
 from core.media_views import media_serve
 
 # API pública (Django Ninja, in-process) — 4 grupos por público, versionados sob /api/v1/.

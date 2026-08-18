@@ -1,28 +1,9 @@
-"""Grupo `tools` — ferramentas internas de integração (radar de leads + gatilho de notificação).
-
-🔒 **AUTH DE SERVIÇO + IP** (hardening 2026-07-10): as rotas de negócio exigem DUAS provas,
-ambas fail-closed:
-
-1. `service_secret_auth` (callable Ninja → 401 se falhar): o mesmo segredo de serviço dos webhooks
-   (`core/webhook_auth.py::service_secret_ok`, header `settings.BOT_SERVICE_HEADER`). É a prova de
-   IDENTIDADE — sem ele, mesmo de um IP interno a rota 401a. `BOT_SERVICE_SECRET` vazio no .env =>
-   sempre 401 (fail-closed).
-2. `require_internal_ip` (403 se o IP não estiver na allowlist DMZ): defesa em profundidade de REDE.
-
-Antes só havia o gate de IP (`auth=None`) — qualquer host dentro da DMZ lia nome/telefone dos leads
-e disparava WhatsApp/e-mail. `caller="tools.send"` fica auditável no histórico do notify.
-
-Casca fina (CONVENTION §3): valida a borda e chama `lead`/`notify` in-process. Erros de domínio
-borbulham pro handler central da fábrica (`api/base.py`) → `{detail, code, …extra}`.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
 
-from ninja import Schema
-
 from api.base import COMMON_ERROR_REGISTRY, build_group
+from api.tools.schemas import ToolLeadOut, ToolsNotifyIn, ToolsNotifySentOut
 from core.net import require_internal_ip
 from core.webhook_auth import service_secret_ok
 from users.exceptions import ValidationError
@@ -62,20 +43,13 @@ api = build_group(
 _MAX_LIMIT = 500
 
 
-class ToolLeadOut(Schema):
-    """Linha do radar de leads (mesmo shape da listagem staff/hub)."""
-
-    external_id: str
-    status: str
-    name: str | None = None
-    phone: str | None = None
-    promoter_external_id: str
-    payment_link: str | None = None
-    receipt_url: str | None = None
-    created_at: str
-
-
-@api.get("/leads", response=list[ToolLeadOut], auth=service_secret_auth, tags=["tools"])
+@api.get(
+    "/leads",
+    response=list[ToolLeadOut],
+    auth=service_secret_auth,
+    tags=["tools"],
+    summary="Radar de leads para integrações",
+)
 def tools_leads(
     request,
     status: str | None = None,
@@ -107,26 +81,12 @@ def tools_leads(
     return [lead_iface.lead_to_dict(lead) for lead in rows]
 
 
-class ToolsNotifyIn(Schema):
-    """Aceita usuário cadastrado ou destino livre para envio pelo notify-server."""
-
-    user_external_id: str | None = None
-    phone: str | None = None
-    email: str | None = None
-    subject: str | None = None
-    message: str
-    channels: list[str] | None = None  # subconjunto de {"whatsapp","email"}
-
-
-class ToolsNotifySentOut(Schema):
-    external_id: str
-
-
 @api.post(
     "/notifications/send",
     response=ToolsNotifySentOut,
     auth=service_secret_auth,
     tags=["tools"],
+    summary="Disparo ad-hoc de notificações",
 )
 def tools_notifications_send(request, payload: ToolsNotifyIn):
     """Gatilho de disparo: envia WhatsApp e/ou e-mail a um USUÁRIO (`user_external_id`, herda

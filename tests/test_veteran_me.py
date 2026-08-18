@@ -75,7 +75,7 @@ def test_chave_ausente_no_me_dict_vira_none(veteran_route):
     assert data["enrollment"]["rg"] is None
 
 
-def test_student_service_nao_monta_mais_o_bloco(veteran_route):
+def test_student_service_nao_monta_mais_o_bloco():
     """Guarda contra reintroduzir a aresta: o service do student não devolve `enrollment`."""
     import inspect
 
