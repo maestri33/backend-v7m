@@ -106,20 +106,22 @@ class CandidateOut(Schema):
 
 
 class ProfileIn(Schema):
-    mother_name: str | None = None
-    father_name: str | None = None
-    marital_status: str | None = None
-    birthplace: str | None = None
-    nationality: str | None = None
+    # max_length espelha o Profile (auditoria B3): sem isso, string longa → DataError(varchar) → 500.
+    mother_name: str | None = Field(None, max_length=255)
+    father_name: str | None = Field(None, max_length=255)
+    marital_status: str | None = Field(None, max_length=32)
+    birthplace: str | None = Field(None, max_length=128)
+    nationality: str | None = Field(None, max_length=64)
 
 
 class DocumentsIn(Schema):
-    doc_type: str  # rg | cnh
-    number: str
-    issuing_agency: str | None = None
+    # max_length espelha RG/CNH (number=30, issuing_agency=50, category=5, national_register=30).
+    doc_type: str = Field(max_length=8)  # rg | cnh
+    number: str = Field(max_length=30)
+    issuing_agency: str | None = Field(None, max_length=50)
     issue_date: str | None = None
-    category: str | None = None
-    national_register: str | None = None
+    category: str | None = Field(None, max_length=5)
+    national_register: str | None = Field(None, max_length=30)
     date_of_birth: str | None = None
     expires_on: str | None = None
 
@@ -144,7 +146,8 @@ class EducationIn(Schema):
 
 
 class KinshipIn(Schema):
-    relation: str  # quem é o titular do comprovante + grau de parentesco
+    # espelha AddressProof.kinship_relation (200) — texto livre que vai direto pro .save().
+    relation: str = Field(max_length=200)  # titular do comprovante + grau de parentesco
 
 
 class SubmissionIn(Schema):
@@ -622,11 +625,15 @@ def candidate_document_classify(request, file: UploadedFile = File(...)):
     segue assíncrona no upload da foto."""
     _guard(request, "candidate")
     from integrations.ai import service as ai
+    from users.documents import service as documents_iface
 
+    # read_image_upload: valida tipo + tamanho ANTES de ler (não materializa 2 GB na RAM do worker)
+    # e faz decode real — o file.read() cru mandava bytes arbitrários pra IA paga, sem teto.
+    data, mime = documents_iface.read_image_upload(file)
     return ai.classify_document(
-        file.read(),
+        data,
         caller="candidate.classify",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime,
     )
 
 
@@ -694,10 +701,14 @@ def candidate_selfie(request, file: UploadedFile = File(...)):
     pelo `GET /candidate/selfie` até virar `approved`/`rejected`/`review`. Aprovada→promove
     training; reprovada→avisa candidato; review→coordenador decide."""
     ext = _guard(request, "candidate")
+    from users.documents import service as documents_iface
+
+    # valida tipo + tamanho ANTES de ler + decode real (espelha /enrollment/selfie e o upload de doc)
+    image_bytes, content_type = documents_iface.read_image_upload(file)
     return candidate_iface.set_selfie(
         user_external_id=ext,
-        image_bytes=file.read(),
-        content_type=getattr(file, "content_type", "image/jpeg"),
+        image_bytes=image_bytes,
+        content_type=content_type,
         consent_ip=source_ip(request),
         consent_user_agent=request.headers.get("user-agent"),
     )
@@ -769,6 +780,17 @@ def training_submit_audio(
     """Resposta em ÁUDIO (multipart, espelha os uploads de documento/selfie): o backend transcreve
     (Gemini STT) e corrige na mesma task assíncrona. mp3/m4a/aac/ogg/webm/wav, até MAX_UPLOAD_MB."""
     ext = _guard(request, "promoter")
+    from django.conf import settings
+
+    from users.exceptions import ValidationError
+
+    # tamanho ANTES do read() — o service re-checa len(data), mas àquela altura os 2 GB já estão na
+    # RAM do worker. `file.size` (do multipart) fecha o OOM na borda. Áudio não é imagem → não passa
+    # por read_image_upload; o tipo é validado no service (_AUDIO_EXT).
+    if getattr(file, "size", 0) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+        raise ValidationError(
+            f"Áudio maior que {settings.MAX_UPLOAD_MB} MB.", code="AUDIO_TOO_LARGE"
+        )
     sub = training_iface.submit_audio(
         user_external_id=ext,
         material_external_id=material_external_id,

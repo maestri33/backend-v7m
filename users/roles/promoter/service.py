@@ -205,6 +205,23 @@ def invite_lead(*, promoter: Promoter, phone: str, cpf: str | None = None) -> di
             code="PROMOTER_TRAINING_LOCKED",
         )
 
+    # Cota DIÁRIA por promotor (auditoria B1): o convite dispara WhatsApp do número oficial pra um
+    # número ARBITRÁRIO; sem teto, um promotor (ou conta comprometida) manda milhares/dia — risco
+    # de ban do provedor. A idempotência (digest+dia) só barra repetir o MESMO número.
+    from django.conf import settings
+
+    from core.throttling import check_daily_quota
+
+    if not check_daily_quota(
+        scope="promoter_invite",
+        ident=str(promoter.user.external_id),
+        limit=settings.INVITE_DAILY_QUOTA,
+    ):
+        raise Forbidden(
+            "Limite diário de convites atingido. Tente novamente amanhã.",
+            code="INVITE_QUOTA_EXCEEDED",
+        )
+
     if cpf:
         try:
             normalized_cpf = validation.validate_cpf(cpf)
@@ -330,9 +347,7 @@ def _coordinated_promoter(user_external_id: str, coordinator) -> Promoter:
     if promoter is None:
         raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     if promoter.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste promotor.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     return promoter
 
 
@@ -367,6 +382,8 @@ def list_for_hub(hub) -> list[dict]:
         Promoter.objects.filter(hub=hub).select_related("user").order_by("created_at")
     )
     pmap = profiles.get_map([pr.user for pr in promoters])
+    # trava de treino de TODOS numa query só (era 1 COUNT por promotor — auditoria API C2).
+    locked = training_iface.locked_user_ids([pr.user_id for pr in promoters])
     out = []
     for promoter in promoters:
         p = pmap.get(promoter.user_id)
@@ -375,7 +392,7 @@ def list_for_hub(hub) -> list[dict]:
                 "external_id": str(promoter.user.external_id),
                 "name": p.name if p else None,
                 "status": promoter.status,
-                "locked": training_iface.is_locked(promoter.user),
+                "locked": promoter.user_id in locked,
             }
         )
     return out

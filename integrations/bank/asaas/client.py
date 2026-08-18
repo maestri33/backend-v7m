@@ -109,6 +109,10 @@ class AsaasClient:
     async def cancel_transfer(self, transfer_id: str) -> Any:
         return await self._request("POST", f"/v3/transfers/{transfer_id}/cancel")
 
+    async def get_transfer(self, transfer_id: str) -> dict:
+        # Status REAL da transferência — reconciliação ativa quando o webhook não chega.
+        return await self._request("GET", f"/v3/transfers/{transfer_id}")
+
     # ---------- PIX QR Code outbound (copia-e-cola, pagando) ----------
     async def decode_qr_code(self, payload: str) -> dict:
         # Decodifica um BR Code no Asaas (resolve o payload dinâmico de cobrança no servidor deles).

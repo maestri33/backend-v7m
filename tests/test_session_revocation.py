@@ -67,3 +67,24 @@ def test_reativar_restaura_a_versao():
     User.objects.filter(pk=u.pk).update(is_active=False)
     User.objects.filter(pk=u.pk).update(is_active=True)
     assert jwt.version_matches(ext, v) is True
+
+
+def test_token_emitido_ja_banido_nao_valida():
+    """O sentinela -1 não pode se auto-validar: `issue()` pra user inativo carimba -1 nos claims,
+    e -1 == -1 aprovava — banido que relogava (OTP) ganhava token válido. O `current >= 0` fecha."""
+    u = _user(active=False)
+    ext = str(u.external_id)
+    claims_version = jwt.current_version(ext)  # -1: o que issue() carimbaria
+    assert jwt.version_matches(ext, claims_version) is False
+
+
+def test_banido_nao_loga():
+    """`login()` nem chega no OTP: banido recebe o MESMO 404 de conta inexistente (não vaza o ban)."""
+    from users.auth import service as auth_service
+    from users.exceptions import NotFound
+
+    u = _user(active=False)
+    with pytest.raises(NotFound):
+        auth_service.login(
+            external_id=str(u.external_id), role="promoter", otp="000000"
+        )

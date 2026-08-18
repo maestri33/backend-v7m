@@ -457,7 +457,8 @@ api.add_router("/lead", lead_router)
 # endereço (POST só com CEP) → educação → selfie (= ASSINATURA da matrícula) → liberação.
 # Convenção: as seções devolvem `missing_fields` — o front renderiza input SÓ do que falta.
 class KinshipIn(Schema):
-    relation: str  # quem é o titular do comprovante + grau de parentesco
+    # max_length espelha AddressProof.kinship_relation (200) — texto livre que ia direto pro .save().
+    relation: str = Field(max_length=200)  # titular do comprovante + grau de parentesco
 
 
 class EducationIn(Schema):
@@ -557,14 +558,16 @@ class RgSectionOut(Schema):
 
 
 class RgPatchIn(Schema):
-    number: str | None = None
-    issuing_agency: str | None = None
+    # limites espelham os models: RG.number=30/issuing_agency=50; Profile.{mother,father}_name=255,
+    # birthplace=128, marital_status=32, nationality=64 (todos vão pro Profile via update_identity).
+    number: str | None = Field(None, max_length=30)
+    issuing_agency: str | None = Field(None, max_length=50)
     issue_date: str | None = None  # AAAA-MM-DD
-    mother_name: str | None = None
-    father_name: str | None = None
-    birthplace: str | None = None
-    marital_status: str | None = None
-    nationality: str | None = None
+    mother_name: str | None = Field(None, max_length=255)
+    father_name: str | None = Field(None, max_length=255)
+    birthplace: str | None = Field(None, max_length=128)
+    marital_status: str | None = Field(None, max_length=32)
+    nationality: str | None = Field(None, max_length=64)
 
 
 class SelfieOut(Schema):
@@ -728,11 +731,15 @@ def enrollment_document_classify(request, file: UploadedFile = File(...)):
     minuciosa (autenticidade + extração) segue assíncrona no upload da foto."""
     _enr_guard(request)  # só cliente do funil (não vaza o classificador pra fora)
     from integrations.ai import service as ai
+    from users.documents import service as documents_iface
 
+    # read_image_upload: valida tipo + tamanho ANTES de ler (sem OOM) + decode real (não confia no
+    # Content-Type do cliente). Antes ia file.read() cru pra IA paga, sem teto de tamanho.
+    data, mime = documents_iface.read_image_upload(file)
     return ai.classify_document(
-        file.read(),
+        data,
         caller="enrollment.classify",
-        mime_type=file.content_type or "application/octet-stream",
+        mime_type=mime,
     )
 
 
@@ -929,7 +936,14 @@ def veteran_me(request):
     histórico + foto da retirada). Read-only. Paths de mídia relativos; o front prefixa /media/.
 
     A composição student × enrollment mora aqui (e não no `student.service`) porque `enrollment`
-    já importa `student` no `conclude` — cruzar de volta lá dentro fecharia ciclo de import."""
+    já importa `student` no `conclude` — cruzar de volta lá dentro fecharia ciclo de import.
+
+    SEM `response=` DE PROPÓSITO (auditoria API C3): o payload é montado campo a campo em
+    `student.veteran_detail` + `enrollment.me_dict` (allow-list explícita, NUNCA dump de model), e
+    os sub-blocos de enrollment já são tipados. Um Schema estrito aqui teria que re-enumerar toda a
+    árvore aninhada e, ao esquecer um campo, o `response=` o DROPARIA silenciosamente da tela do
+    veterano (view real do aluno). O risco de dropar supera o de vazar: a fronteira de exposição é
+    a própria allow-list dos dois `*_dict`, revisável onde os campos são escolhidos."""
     external_id = _veteran_guard(request)
     data = student_iface.veteran_detail(user_external_id=external_id)
 

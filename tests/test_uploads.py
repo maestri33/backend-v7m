@@ -75,3 +75,48 @@ def test_uploads_aceita_imagem_valida():
     out_bytes, ct = read_image_upload(fake)
     assert out_bytes == data
     assert ct == "image/png"
+
+
+# ── endpoints que ANTES faziam file.read() cru (auditoria API B2) ──────────────
+# O gap não era a função read_image_upload (já existia), era os ENDPOINTS que não a usavam:
+# classify (candidate/enrollment) e a selfie do candidato. Agora recusam não-imagem na borda.
+
+
+@pytest.mark.django_db
+def test_endpoint_classify_recusa_nao_imagem_sem_chamar_ia(monkeypatch):
+    """POST /candidate/documents/classify com bytes não-imagem → 422 IMAGE_DECODE_FAILED, e a IA
+    paga NÃO é chamada (antes ia file.read() cru direto pro classify)."""
+    import uuid
+
+    from django.test import Client
+
+    from integrations.ai import service as ai
+    from users.auth.jwt import service as jwt
+    from users.auth.models import User
+    from users.roles import interface as roles
+
+    called = {"n": 0}
+    monkeypatch.setattr(
+        ai, "classify_document", lambda *a, **k: called.__setitem__("n", 1)
+    )
+
+    u = User.objects.create_user(external_id=uuid.uuid4(), is_active=True)
+    roles.assign(u, "candidate")
+    token = jwt.issue(str(u.external_id), ["candidate"])["access_token"]
+
+    # SimpleUploadedFile carrega um content_type real → exercita o decode; sem ele o Django manda
+    # content_type vazio e a checagem de tipo dispara antes (também 422). Ambos provam o gate.
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    resp = Client().post(
+        "/api/v1/collaborators/candidate/documents/classify",
+        data={
+            "file": SimpleUploadedFile(
+                "x.png", b"MZ\x90 nao sou imagem", content_type="image/png"
+            )
+        },
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert resp.status_code == 422
+    assert resp.json().get("code") == "IMAGE_DECODE_FAILED"
+    assert called["n"] == 0, "chamou a IA paga com lixo (não validou antes)"

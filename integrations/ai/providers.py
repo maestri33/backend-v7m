@@ -12,8 +12,10 @@ from django.conf import settings
 from .client import LLMClient, LLMError
 
 
-def get_client(provider: str) -> LLMClient:
-    """Instancia o client de um provider habilitado (com base_url/api_key do .env)."""
+def get_client(provider: str, *, attempts: int | None = None) -> LLMClient:
+    """Instancia o client de um provider habilitado (com base_url/api_key do .env).
+
+    `attempts` = tentativas intra-provider (o service passa 1 quando a cadeia tem fallback)."""
     cfg = settings.IA_PROVIDERS.get(provider)
     if not cfg:
         raise LLMError(
@@ -27,6 +29,7 @@ def get_client(provider: str) -> LLMClient:
         temperature=settings.IA_DEFAULT_TEMPERATURE,
         max_tokens=settings.IA_MAX_TOKENS,
         timeout=settings.IA_TIMEOUT,
+        attempts=attempts if attempts is not None else 3,
     )
 
 

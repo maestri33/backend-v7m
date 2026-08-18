@@ -104,12 +104,15 @@ class AddressCepIn(Schema):
 
 
 class AddressDataIn(Schema):
-    street: str | None = None
-    number: str | None = None
-    complement: str | None = None
-    neighborhood: str | None = None
-    city: str | None = None
-    state: str | None = None
+    # max_length espelha users.address.models.Address — sem isso, uma string longa passava a borda
+    # e estourava DataError (varchar) no Postgres → 500 (contabilizado como falha do servidor) em
+    # vez de 422 de entrada. Invisível nos testes SQLite (que não trunca). Auditoria API B3.
+    street: str | None = Field(None, max_length=200)
+    number: str | None = Field(None, max_length=20)
+    complement: str | None = Field(None, max_length=100)
+    neighborhood: str | None = Field(None, max_length=100)
+    city: str | None = Field(None, max_length=100)
+    state: str | None = Field(None, max_length=2)
 
 
 class PublicAddressOut(Schema):

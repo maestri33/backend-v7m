@@ -6,6 +6,7 @@ Payment.status (só altera estado DENTRO do app Asaas). O payload bruto permanec
 """
 
 import structlog
+from django.db import transaction
 from django.utils import timezone
 
 from core import hooks as core_hooks
@@ -54,6 +55,25 @@ def is_insufficient_balance_reason(reason: str | None) -> bool:
     return any(hint in reason for hint in _INSUFFICIENT_BALANCE_HINTS)
 
 
+# Válvula anti-veneno (auditoria R2): a fila de webhook do Asaas é SEQUENCIAL — um handler que
+# falha SEMPRE pro mesmo pagamento (erro persistente, ex.: hub sem seed) 500ava em todo retry,
+# atrasava todos os eventos seguintes e podia levar o gateway a desativar a sincronização.
+# Depois deste nº de entregas falhadas do MESMO (event, payment.id), engolimos com 200 e
+# deixamos o evento QUARENTENADO no ledger (forwarded_ok=False + logger.error → Sentry).
+_QUARANTINE_AFTER = 5
+
+
+def _delivery_attempts(event: str, payload: dict) -> int:
+    """Quantas entregas deste MESMO evento/pagamento já falharam (linhas não-encaminhadas do
+    ledger — cada retry do Asaas cria uma linha nova, então o próprio ledger é o contador)."""
+    pid = ((payload.get("payment") or {}).get("id")) or ""
+    if not pid:
+        return 0
+    return WebhookEvent.objects.filter(
+        event=event, forwarded_ok=False, payload__payment__id=pid
+    ).count()
+
+
 def handle_event(payload, source_ip=None, user_agent=None):
     """Persiste o evento bruto e roteia. Retorna o WebhookEvent.
 
@@ -87,15 +107,33 @@ def handle_event(payload, source_ip=None, user_agent=None):
         # NÃO é marcado forwarded_ok se o dispatch levantar (a linha abaixo não executa).
         consumed = False
         if payment.status == "PAID" and payment.kind == Payment.Kind.CHARGE:
-            consumed = core_hooks.dispatch(
-                "payment.paid",
-                reraise=True,
-                provider="asaas",
-                provider_payment_id=payment.payment_id,
-                amount_cents=int(payment.amount * 100),
-                # comprovante PIX (Asaas) → o lead manda pro aluno na notify de pago.
-                receipt_url=(payload.get("payment") or {}).get("transactionReceiptUrl"),
-            )
+            try:
+                consumed = core_hooks.dispatch(
+                    "payment.paid",
+                    reraise=True,
+                    provider="asaas",
+                    provider_payment_id=payment.payment_id,
+                    amount_cents=int(payment.amount * 100),
+                    # comprovante PIX (Asaas) → o lead manda pro aluno na notify de pago.
+                    receipt_url=(payload.get("payment") or {}).get(
+                        "transactionReceiptUrl"
+                    ),
+                )
+            except Exception as exc:
+                # G4 continua: erro TRANSITÓRIO propaga (500 → Asaas re-tenta). A válvula só
+                # abre pro erro PERSISTENTE: na _QUARANTINE_AFTER-ésima entrega falhada do
+                # mesmo pagamento, responde 200 (destrava a esteira sequencial do gateway) e
+                # deixa o evento em quarentena no ledger — retry manual sai de lá.
+                if _delivery_attempts(event, payload) >= _QUARANTINE_AFTER:
+                    logger.error(
+                        "webhook_quarantined",
+                        provider="asaas",
+                        provider_event=event or "",
+                        payment_id=payment.payment_id,
+                        error=str(exc)[:200],
+                    )
+                    return row
+                raise
         row.forwarded_ok = True
         row.forwarded_at = timezone.now()
         row.save(update_fields=["forwarded_ok", "forwarded_at"])
@@ -107,7 +145,15 @@ def handle_event(payload, source_ip=None, user_agent=None):
                 reason=f"applied_no_consumer: {reason}",
             )
     else:
-        logger.warning(
+        # Vigia do ledger (auditoria R4): órfão de evento de DINHEIRO (pagamento confirmado sem
+        # efeito — ex.: link antigo pago após troca de checkout) é ERROR (vira evento no Sentry),
+        # não warning-breadcrumb que ninguém vê. O resto segue warning.
+        log = (
+            logger.error
+            if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED")
+            else logger.warning
+        )
+        log(
             "webhook_unconsumed",
             provider="asaas",
             provider_event=event or "",
@@ -130,28 +176,33 @@ def _apply_charge(payload, event):
     if row is None:
         return None, f"no_matching_charge: ext_ref={ext_ref} asaas_id={asaas_id}"
 
-    if asaas_id and row.asaas_id != asaas_id:
-        row.asaas_id = asaas_id
-    if new_status is None:  # PAYMENT_UPDATED -> só refresh, sem mudar status
+    # Lock na linha: CONFIRMED e RECEIVED do MESMO pagamento chegam em paralelo (2 workers
+    # gunicorn) e os dois passavam nas guardas lendo o mesmo estado velho. Sob lock, o segundo
+    # evento enxerga o PAID do primeiro e vira `already_paid_redispatch` (que é o G4 desejado).
+    with transaction.atomic():
+        row = Payment.objects.select_for_update().get(pk=row.pk)
+        if asaas_id and row.asaas_id != asaas_id:
+            row.asaas_id = asaas_id
+        if new_status is None:  # PAYMENT_UPDATED -> só refresh, sem mudar status
+            row.save()
+            return None, "payment_updated_noop"
+        # G5: não rebaixa estado terminal por evento tardio/fora de ordem. REFUNDED é final; PAID só
+        # aceita ir pra PAID/REFUNDED. Pagamento tardio legítimo (PENDING/EXPIRED -> PAID) continua. Sem
+        # isso, um PAYMENT_OVERDUE reentregue sobre um PAID gravava EXPIRED e travava o reembolso depois.
+        if row.status == "REFUNDED" or (
+            row.status == "PAID" and new_status not in ("PAID", "REFUNDED")
+        ):
+            return None, f"terminal_{row.status}_ignora_{new_status}"
+        if row.status == new_status:
+            # G4: PAID já-pago ainda RE-dispatcha (retorna o row). No retry após uma falha de efeito, o
+            # Payment já está PAID; sem isso, `status_unchanged` pulava o re-dispatch e o efeito
+            # (comissão/matrícula) nunca reprocessava. O handler é idempotente → re-dispatch de sucesso
+            # é no-op seguro. Só PAID (terminal de cobrança) re-dispatcha; os demais seguem no-op.
+            if new_status == "PAID":
+                return row, "already_paid_redispatch"
+            return None, "status_unchanged"
+        row.status = new_status
         row.save()
-        return None, "payment_updated_noop"
-    # G5: não rebaixa estado terminal por evento tardio/fora de ordem. REFUNDED é final; PAID só
-    # aceita ir pra PAID/REFUNDED. Pagamento tardio legítimo (PENDING/EXPIRED -> PAID) continua. Sem
-    # isso, um PAYMENT_OVERDUE reentregue sobre um PAID gravava EXPIRED e travava o reembolso depois.
-    if row.status == "REFUNDED" or (
-        row.status == "PAID" and new_status not in ("PAID", "REFUNDED")
-    ):
-        return None, f"terminal_{row.status}_ignora_{new_status}"
-    if row.status == new_status:
-        # G4: PAID já-pago ainda RE-dispatcha (retorna o row). No retry após uma falha de efeito, o
-        # Payment já está PAID; sem isso, `status_unchanged` pulava o re-dispatch e o efeito
-        # (comissão/matrícula) nunca reprocessava. O handler é idempotente → re-dispatch de sucesso
-        # é no-op seguro. Só PAID (terminal de cobrança) re-dispatcha; os demais seguem no-op.
-        if new_status == "PAID":
-            return row, "already_paid_redispatch"
-        return None, "status_unchanged"
-    row.status = new_status
-    row.save()
     logger.info(
         "charge_status_changed",
         payment_id=row.payment_id,

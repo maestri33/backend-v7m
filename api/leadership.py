@@ -16,7 +16,7 @@ sobre o `hub/` (plan/14, Victor 2026-06-12).
 from __future__ import annotations
 
 import structlog
-from ninja import Field, File, Router, Schema
+from ninja import Field, File, Query, Router, Schema
 from ninja.files import UploadedFile
 
 from api.auth import require_roles
@@ -279,6 +279,17 @@ class EnrollmentFeesOut(Schema):
     second: EnrollmentFeeDictOut | None = None
     first_paid: bool = False
     second_scheduled: bool = False
+
+
+class EnrollmentFeeActionOut(Schema):
+    """Resultado de pay_fee/schedule_fee: o que o service devolve de verdade — external_id + status
+    novo da matrícula + o bloco `fees`. Antes as rotas declaravam EnrollmentFeesOut (só os 4 campos
+    de `fees`) e o Ninja, não achando esses campos no dict, caía nos defaults → envelope VAZIO
+    (first_paid:false mesmo após pagar). Auditoria API P1."""
+
+    external_id: str
+    status: str
+    fees: EnrollmentFeesOut
 
 
 class EnrollmentProfileOut(Schema):
@@ -662,7 +673,7 @@ def list_hub_leads(request, status: str | None = None):
     coordinator = _coordinator(request)
     hub = _coordinator_hub(coordinator)
     leads = lead_iface.list_leads(hub=hub, status=status)
-    return [lead_iface.lead_to_dict(lead) for lead in leads]
+    return lead_iface.leads_to_dicts(leads)
 
 
 @api.get("/leads/{external_id}", response=HubLeadDetailOut, tags=["lead"])
@@ -789,7 +800,7 @@ class ConcludeIn(Schema):
 
 @api.post(
     "/enrollments/{external_id}/fee/pay",
-    response=EnrollmentFeesOut,
+    response=EnrollmentFeeActionOut,
     tags=["enrollment"],
 )
 def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
@@ -808,7 +819,7 @@ def pay_enrollment_fee(request, external_id: str, payload: FeeIn):
 
 @api.post(
     "/enrollments/{external_id}/fee/schedule",
-    response=EnrollmentFeesOut,
+    response=EnrollmentFeeActionOut,
     tags=["enrollment"],
 )
 def schedule_enrollment_fee(request, external_id: str, payload: FeeIn):
@@ -1300,10 +1311,16 @@ def reactivate_promoter(request, external_id: str):
 
 @api.get("/students", response=PaginatedStudentsOut, tags=["student"])
 def list_hub_students(
-    request, status: str | None = None, limit: int = 200, offset: int = 0
+    request,
+    status: str | None = None,
+    limit: int = Query(200, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ):
     """Alunos do polo do coordenador (A2 — lista nova, Victor 2026-06-21). Filtro opcional por status,
-    paginação `limit`/`offset` + `total`. Cada item traz o `external_id` pra abrir o detalhe."""
+    paginação `limit`/`offset` + `total`. Cada item traz o `external_id` pra abrir o detalhe.
+
+    limit/offset com Field (ge/le): `offset=-1` ou `limit>200` → 422 do schema, não mais 500 no
+    `qs[offset:offset+limit]` (auditoria API C1)."""
     coordinator = _coordinator(request)
     hub = _coordinator_hub(coordinator)
     items, total = student_iface.list_for_hub(

@@ -26,9 +26,29 @@ jobs:
       IA_FALLBACK_CHAIN: test:test-model
       WHATSAPP_API_BASE_URL: http://127.0.0.1:9
       WHATSAPP_GLOBAL_API_KEY: ci-dummy
+      # notify-server saiu do repo (6815d9b) e virou dependência externa obrigatória
+      # (notify.E001) — desde então todo CI falhava no `manage.py check`.
+      NOTIFY_SERVER_URL: http://127.0.0.1:9
+      NOTIFY_API_KEY: ci-dummy
       MAIL_SMTP_HOST: localhost
       MAIL_SMTP_USER: ci@invalid.test
       MAIL_SMTP_PASSWORD: ci-dummy
+    services:
+      # Postgres de verdade pros testes: no SQLite todo select_for_update é NO-OP — os locks de
+      # concorrência (KYC, mark_paid, checkout) passavam verdes sem nunca terem sido exercitados.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -52,9 +72,12 @@ jobs:
           uvx ruff@0.15.14 check .
           uvx ruff@0.15.14 format --check .
 
-      - name: Pytest (Wave 2 — auth, webhooks, consentimento)
+      - name: Pytest (Wave 2 — auth, webhooks, consentimento) — em Postgres (locks reais)
         run: |
+          # psycopg fica FORA do uv.lock (prod instala por fora); só o passo de teste precisa.
+          uv pip install "psycopg[binary]>=3.2"
           APP_ENV=test TEST_MODE_ALLOWED_HOSTS="$(hostname)" \
+          TEST_DATABASE_URL="postgres://test:test@127.0.0.1:5432/test" \
             uv run pytest tests/ -v --tb=short
 
       - name: pip-audit

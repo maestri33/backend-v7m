@@ -24,7 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from users.blocks import service as blocks
-from users.exceptions import Conflict, DomainError, Forbidden, NotFound
+from users.exceptions import Conflict, DomainError, NotFound
 from users.roles import interface as roles
 from users.roles.training.config import pass_score
 from users.roles.training.models import Material, MaterialAssignment, Submission
@@ -217,6 +217,35 @@ def is_locked(user) -> bool:
     return pending_blocking_count(user) > 0
 
 
+def locked_user_ids(user_ids) -> set[int]:
+    """Dos `user_ids`, quais estão TRAVADOS — em 2 queries flat (evita 1 COUNT por usuário nas
+    listagens do coordenador, auditoria API C2). Mesma régua do `pending_blocking_count`: uma
+    atribuição obrigatória PENDING conta, EXCETO se o mesmo user já tem submissão PENDING (aula
+    respondida, esperando correção). Feito em Python sobre pares (user, material) pra bater exato
+    com a versão per-user, sem exclude-com-F através de join (semântica traiçoeira)."""
+    user_ids = list(user_ids)
+    if not user_ids:
+        return set()
+    # (1) atribuições obrigatórias pendentes desses users
+    assignments = MaterialAssignment.objects.filter(
+        user_id__in=user_ids,
+        status=MaterialAssignment.Status.PENDING,
+        material__blocking=True,
+        material__active=True,
+    ).values_list("user_id", "material_id")
+    # (2) submissões PENDING desses users (aula respondida não trava)
+    answered = set(
+        Submission.objects.filter(
+            user_id__in=user_ids, status=Submission.Status.PENDING
+        ).values_list("user_id", "material_id")
+    )
+    return {
+        user_id
+        for user_id, material_id in assignments
+        if (user_id, material_id) not in answered
+    }
+
+
 def pending_materials(user) -> list[dict]:
     """Matérias ainda PENDENTES do user (pro `/promoter/me`: o front sabe o que falta)."""
     qs = (
@@ -256,13 +285,14 @@ def assigned_materials(
         .select_related("material")
         .order_by("material__order", "material__id")
     )
+    # última submissão por matéria em 1 query só (era 1/matéria — auditoria API C3). Ordenado por
+    # created_at DESC → o PRIMEIRO visto de cada material_id é o mais recente.
+    last_by_material: dict = {}
+    for sub in Submission.objects.filter(user=user).order_by("-created_at"):
+        last_by_material.setdefault(sub.material_id, sub)
     out = []
     for a in qs:
-        last = (
-            Submission.objects.filter(user=user, material=a.material)
-            .order_by("-created_at")
-            .first()
-        )
+        last = last_by_material.get(a.material_id)
         item = {
             "material_external_id": str(a.material.external_id),
             "title": a.material.title,
@@ -387,9 +417,15 @@ def _check_can_submit(user_external_id: str, material_external_id: str):
 
 def _queue_grade(sub: Submission) -> None:
     def _queue():
+        from django.conf import settings
         from django_q.tasks import async_task
 
-        async_task("users.roles.training.tasks.grade_submission", sub.id)
+        # correção por LLM = task lenta → fila slow (não fura OTP/notify)
+        async_task(
+            "users.roles.training.tasks.grade_submission",
+            sub.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
 
     transaction.on_commit(_queue)
 
@@ -533,9 +569,7 @@ def coordinator_approve_material(
     if promoter is None:
         raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     if promoter.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste promotor.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Promotor não encontrado.", code="PROMOTER_NOT_FOUND")
     material = _material(material_external_id)
     if _assignment(user, material) is None:
         raise TrainingError(

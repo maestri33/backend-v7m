@@ -104,7 +104,7 @@ def tools_leads(
     rows = lead_iface.list_leads(
         hub=None, status=status, created_after=parsed_after, limit=limit
     )
-    return [lead_iface.lead_to_dict(lead) for lead in rows]
+    return lead_iface.leads_to_dicts(rows)
 
 
 class ToolsNotifyIn(Schema):

@@ -7,6 +7,8 @@ selfie(IA) → `COMPLETED` (aguarda o coordenador aprovar → vira PROMOTOR). �
 
 from __future__ import annotations
 
+import uuid
+
 import structlog
 from django.conf import settings
 from django.db import transaction
@@ -17,7 +19,7 @@ from users.auth import service as auth_iface
 from users.auth.models import User
 from users.blocks import service as blocks
 from users.documents import service as documents_iface
-from users.exceptions import Conflict, DomainError, Forbidden, NotFound
+from users.exceptions import Conflict, DomainError, NotFound
 from users.profiles import interface as profiles
 from users.roles import interface as roles
 from users.roles.candidate.models import Candidate
@@ -440,12 +442,24 @@ def upload_document_photo(*, user_external_id, slot: str, upload) -> dict:
         )
     if cand.status in (_S.STARTED, _S.PROFILE, _S.ADDRESS):
         _set_status(cand, _S.DOCUMENTS)
-    path = documents_iface.upload_photo(user_external_id, slot, upload)
-    # pipeline IA async (visão → OCR → extração → biometria) — plan/12+15 B3
-    _reset_doc_validation(user_external_id, cand.doc_type, slot)
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_document", cand.id, slot)
+    # Path novo + reset da validação num commit SÓ (P1 da auditoria): kill entre os dois deixava
+    # a foto NOVA no campo com o veredito `approved` da VELHA — imagem nunca analisada entrava no
+    # KYC como aprovada. A task só enfileira depois do commit (on_commit) — nem task órfã de
+    # rollback, nem task correndo antes do estado existir.
+    with transaction.atomic():
+        path = documents_iface.upload_photo(user_external_id, slot, upload)
+        # pipeline IA async (visão → OCR → extração → biometria) — plan/12+15 B3
+        _reset_doc_validation(user_external_id, cand.doc_type, slot)
+        transaction.on_commit(
+            lambda: async_task(
+                "users.roles.candidate.tasks.validate_document",
+                cand.id,
+                slot,
+                cluster=settings.Q_SLOW_CLUSTER,  # visão/OCR não fura fila do OTP
+            )
+        )
     sub = documents_iface.get_doc_sub(user_external_id, cand.doc_type)
     return {"stored": path, **_analysis.ack(_analysis.PENDING, _doc_started_at(sub))}
 
@@ -469,7 +483,11 @@ def upload_address_proof(*, user_external_id, upload) -> dict:
         ap.save(update_fields=["validation_status"])
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_address_proof", cand.id)
+    async_task(
+        "users.roles.candidate.tasks.validate_address_proof",
+        cand.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return me_dict(cand)
 
 
@@ -653,17 +671,32 @@ def _reset_doc_validation(user_external_id: str, doc_type: str, slot: str) -> No
     sub = documents_iface.get_doc_sub(user_external_id, doc_type)
     if sub is None:
         return
-    result = sub.validation_result or {}
-    photos = dict(result.get("photos") or {})
-    photos.pop(slot, None)
-    for key in ("extracted", "name_match", "reason", "human"):
-        result.pop(key, None)
-    result["photos"] = photos
-    result["analysis_started_at"] = timezone.now().isoformat()
-    sub.validation_status = doc_ai.PENDING
-    sub.validation_result = result
-    sub.validated_at = None
-    sub.save(update_fields=["validation_status", "validation_result", "validated_at"])
+    with transaction.atomic():
+        sub = _lock_doc_sub(sub)
+        result = sub.validation_result or {}
+        photos = dict(result.get("photos") or {})
+        photos.pop(slot, None)
+        # Versão por slot: o path é FIXO (<ext_id>/<slot>.<ext>) — comparar path não detecta
+        # re-upload comum. O discriminador da G11 é esta versão (uuid novo a cada upload).
+        versions = dict(result.get("photo_versions") or {})
+        versions[slot] = uuid.uuid4().hex
+        for key in ("extracted", "name_match", "reason", "human"):
+            result.pop(key, None)
+        result["photos"] = photos
+        result["photo_versions"] = versions
+        result["analysis_started_at"] = timezone.now().isoformat()
+        sub.validation_status = doc_ai.PENDING
+        sub.validation_result = result
+        sub.validated_at = None
+        sub.save(
+            update_fields=["validation_status", "validation_result", "validated_at"]
+        )
+
+
+def _lock_doc_sub(sub):
+    """Re-lê o sub-doc sob select_for_update — TODO write em validation_result passa por aqui
+    (dois workers em slots diferentes se sobrescreviam no read-modify-write do JSON)."""
+    return type(sub).objects.select_for_update().get(pk=sub.pk)
 
 
 def _advance_documents(cand: Candidate, user_external_id: str) -> None:
@@ -705,6 +738,7 @@ def run_document_validation(candidate_id: int, slot: str) -> None:
 
     result = sub.validation_result or {}
     photos = dict(result.get("photos") or {})
+    slot_version = (result.get("photo_versions") or {}).get(slot)
 
     field = _DOC_SLOT_FIELD.get(slot)
     path = getattr(sub, field, None) if field else None
@@ -721,28 +755,41 @@ def run_document_validation(candidate_id: int, slot: str) -> None:
             mime_type=mime,
             caller="candidate.document",
         )
-        # merge FRESCO (visão 10-60s; frente+verso em 2 workers paralelos — não perder o outro)
-        sub.refresh_from_db()
-        if sub.validation_status != doc_ai.PENDING:
+        # Merge sob LOCK (visão 10-60s; frente+verso em 2 workers paralelos): o refresh sem lock
+        # fechava só a corrida do MESMO slot — dois slots diferentes ainda se sobrescreviam (lost
+        # update no JSON), a extração nunca via a seção completa e o TTL jogava tudo em review.
+        with transaction.atomic():
+            sub = _lock_doc_sub(sub)
+            if sub.validation_status != doc_ai.PENDING:
+                return
+            result = sub.validation_result or {}
+            # G11 por VERSÃO do slot (path é fixo, só a extensão muda): versão trocou no meio
+            # tempo = este veredito é da foto velha, descarta. O check de path fica pro caso
+            # da extensão trocar (jpg→png reusa outro nome).
+            current_version = (result.get("photo_versions") or {}).get(slot)
+            if getattr(sub, field, None) != path or current_version != slot_version:
+                return
+            photos = dict(result.get("photos") or {})
+            was_complete = _doc_approved_images(sub, photos, cand.doc_type) is not None
+            photos[slot] = {"status": status, "reason": reason}
+            result["photos"] = photos
+            if status != doc_ai.APPROVED:
+                _finish_doc(cand, sub, status, reason, result)
+                return
+            images = _doc_approved_images(sub, photos, cand.doc_type)
+            sub.validation_result = result
+            sub.save(update_fields=["validation_result"])
+            # só extrai quem COMPLETOU a seção agora — o worker que commitou depois vê o slot
+            # do outro já gravado (was_complete) e não duplica a extração.
+            should_extract = not was_complete and images is not None
+        if not should_extract:
             return
-        # G11: a foto deste slot trocou no meio tempo (re-upload) → o veredito é da foto velha,
-        # descarta. `path` foi capturado no início; comparar com o atual identifica a troca (o
-        # check de status sozinho não pega um re-upload que re-arma PENDING).
-        if getattr(sub, field, None) != path:
+    else:
+        images = _doc_approved_images(sub, photos, cand.doc_type)
+        if images is None:
+            # nada mudou nesta passada — NÃO regrava `result` (o write cego daqui clobberava
+            # um veredito concorrente gravado entre a leitura lá em cima e este ponto).
             return
-        result = sub.validation_result or {}
-        photos = dict(result.get("photos") or {})
-        photos[slot] = {"status": status, "reason": reason}
-        result["photos"] = photos
-        if status != doc_ai.APPROVED:
-            _finish_doc(cand, sub, status, reason, result)
-            return
-
-    images = _doc_approved_images(sub, photos, cand.doc_type)
-    if images is None:
-        sub.validation_result = result
-        sub.save(update_fields=["validation_result"])
-        return
     _doc_extract_and_finish(cand, sub, result, images)
 
 
@@ -1045,11 +1092,9 @@ def decide_document(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if not cand.doc_type:
         raise CandidateError("Documento ainda não enviado.", code="DOC_TYPE_NOT_SET")
     sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
@@ -1088,7 +1133,11 @@ def decide_document(
     else:
         from django_q.tasks import async_task
 
-        async_task("users.roles.candidate.tasks.fill_document_data", cand.id)
+        async_task(
+            "users.roles.candidate.tasks.fill_document_data",
+            cand.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
     _doc_post_approval(cand, sub)
     return me_dict(cand)
 
@@ -1137,24 +1186,12 @@ def _notify_doc_event(
         )
 
 
-def _sweep_stale_reviews(hub) -> None:
-    from users.documents.models import CNH, RG
-    from users.roles import _analysis
-
-    _analysis.sweep_stale_selfies(Candidate, hub)
-    user_ids = list(Candidate.objects.filter(hub=hub).values_list("user_id", flat=True))
-    for model in (RG, CNH):
-        _analysis.sweep_stale_documents(
-            model.objects.filter(document__user_id__in=user_ids), _doc_started_at
-        )
-
-
 def list_document_reviews_for_hub(*, hub) -> list[dict]:
     """Candidatos do polo com o documento parado em REVISÃO (decisão do coordenador — plan/15 B3).
-    Cada item aponta pro POST de decisão que existe. Antes, varre PENDING órfão → review."""
+    Cada item aponta pro POST de decisão que existe. O sweep de PENDING órfão → review saiu do GET
+    (era write numa leitura) pro schedule global `age_stale_review_documents` (auditoria API B4)."""
     from users.roles import _document_ai as doc_ai
 
-    _sweep_stale_reviews(hub)
     out = []
     qs = (
         Candidate.objects.filter(hub=hub, doc_type__isnull=False)
@@ -1162,11 +1199,13 @@ def list_document_reviews_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
+    cands = list(qs)
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
         sub = documents_iface.get_doc_sub(str(cand.user.external_id), cand.doc_type)
         if sub is None or sub.validation_status != doc_ai.REVIEW:
             continue
-        p = profiles.get(cand.user)
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -1425,7 +1464,11 @@ def set_selfie(
     cand.save()
     from django_q.tasks import async_task
 
-    async_task("users.roles.candidate.tasks.validate_candidate_selfie", cand.id)
+    async_task(
+        "users.roles.candidate.tasks.validate_candidate_selfie",
+        cand.id,
+        cluster=settings.Q_SLOW_CLUSTER,
+    )
     return _selfie_ack(cand)
 
 
@@ -1555,14 +1598,16 @@ def run_selfie_validation(candidate_id: int) -> None:
 
 
 def _save_selfie(cand: Candidate, image_bytes: bytes, content_type: str) -> str:
-    from pathlib import Path
+    # Prefixo `selfie/` (PRIVADO, gate de dono em core/media_views) com token aleatório —
+    # o caminho `candidate/<external_id>/selfie.jpg` de antes era PÚBLICO (candidate não está
+    # em MEDIA_PRIVATE_PREFIXES) E enumerável pelo external_id. Espelha o enrollment; o resolver
+    # de dono (core/media.py) já casa Candidate.selfie_image. G13: re-upload apaga a anterior.
+    from core.media import replace_media
 
     ext = _SELFIE_EXT.get(content_type, "jpg")
-    rel = f"candidate/{cand.external_id}/selfie.{ext}"
-    fp = Path(settings.MEDIA_ROOT) / rel
-    fp.parent.mkdir(parents=True, exist_ok=True)
-    fp.write_bytes(image_bytes)
-    return rel
+    return replace_media(
+        old=cand.selfie_image, prefix="selfie", data=image_bytes, ext=ext
+    )
 
 
 def _resolve_selfie(cand: Candidate) -> None:
@@ -1659,11 +1704,9 @@ def decide_selfie(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.selfie_status != _selfie.REVIEW:
         raise CandidateError(
             "A selfie não está em revisão.",
@@ -1741,11 +1784,9 @@ def reset_doc_type(*, candidate_external_id: str, coordinator) -> dict:
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.status in (_S.COMPLETED, _S.APPROVED, _S.REJECTED):
         raise Conflict(
             "O candidato já saiu da coleta — não dá pra trocar o tipo de documento.",
@@ -1797,11 +1838,9 @@ def approve_candidate(*, candidate_external_id: str, coordinator) -> Candidate:
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     # rejeição é SOFT: um candidato REJEITADO continua aguardando e pode ser aprovado depois. Só barra
     # quem ainda está na coleta (não concluiu). `SELFIE` entra: a selfie em review deixa o candidato
     # nessa etapa e o coordenador aprova por aqui.
@@ -1829,11 +1868,9 @@ def reject_candidate(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     # G10: mesmo conjunto de status que `approve_candidate` aceita. Antes exigia COMPLETED — estado
     # que o fluxo atual NUNCA atinge (a selfie aprovada auto-promove; a em review deixa em SELFIE),
     # então rejeitar dava 409 sempre. O candidato aguardando decisão está em SELFIE (selfie review).
@@ -1913,11 +1950,9 @@ def candidate_detail_for_coordinator(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise Forbidden(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     p = profiles.get(cand.user)
     return {
         "document": _candidate_document_dict(cand),
@@ -1957,6 +1992,7 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
     # vazio — o coordenador nunca via os candidatos que precisavam da decisão dele.
     from django.db.models import Q
 
+    from users.roles._listing import capped
     from users.roles._selfie import SelfieStatus
 
     qs = (
@@ -1968,8 +2004,15 @@ def list_awaiting_approval_for_hub(*, hub) -> list[dict]:
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    # teto de segurança + log se truncar (auditoria API C1).
+    cands = capped(
+        qs,
+        event="candidate.awaiting_list_truncated",
+        hub=str(getattr(hub, "external_id", None)),
+    )
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -1985,18 +2028,20 @@ def list_selfie_reviews_for_hub(*, hub) -> list[dict]:
     """Candidatos do polo com a selfie parada em REVISÃO (decisão do coordenador — plan/14).
 
     Cada item aponta pro POST de decisão que já existe (`/candidates/{ext}/selfie/decide`).
-    Antes, varre PENDING órfão (worker morto) → review (`_sweep_stale_reviews`)."""
+    Selfie estourada → review é responsabilidade do schedule `age_stale_candidate_selfies` (não
+    mais deste GET — auditoria API B4)."""
     from users.roles._selfie import SelfieStatus
 
-    _sweep_stale_reviews(hub)
     out = []
     qs = (
         Candidate.objects.filter(hub=hub, selfie_status=SelfieStatus.REVIEW)
         .select_related("user")
         .order_by("updated_at")
     )
-    for cand in qs:
-        p = profiles.get(cand.user)
+    cands = list(qs)
+    pmap = profiles.get_map([c.user_id for c in cands])  # 1 query, não 1/candidato
+    for cand in cands:
+        p = pmap.get(cand.user_id)
         out.append(
             {
                 "external_id": str(cand.external_id),
@@ -2023,11 +2068,9 @@ def candidate_selfie_for_coordinator(
         .first()
     )
     if cand is None:
-        raise CandidateError("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     if cand.hub.coordinator_id != coordinator.id:
-        raise CandidateError(
-            "Você não coordena o polo deste candidato.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Candidato não encontrado.", code="CANDIDATE_NOT_FOUND")
     p = profiles.get(cand.user)
     return {
         "external_id": str(cand.external_id),

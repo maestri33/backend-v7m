@@ -67,6 +67,7 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int = 0,
         timeout: float = 60.0,
+        attempts: int = 3,
     ) -> None:
         self.provider = provider
         self._base_url = base_url.rstrip("/")
@@ -74,6 +75,9 @@ class LLMClient:
         self._default_temperature = temperature
         self._max_tokens = max_tokens
         self._timeout = timeout
+        # tentativas intra-provider: 1 quando a cadeia tem fallback (o próximo provider É o
+        # retry — 3×timeout por provider morto estourava o Q_TIMEOUT do worker); 3 sem fallback.
+        self._attempts = max(1, attempts)
 
     # ---------- low-level ----------
 
@@ -164,7 +168,9 @@ class LLMClient:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(self._timeout, connect=10.0)
         ) as client:
-            resp = await self._send_with_retry(client, payload)
+            resp = await self._send_with_retry(
+                client, payload, max_attempts=self._attempts
+            )
         if resp.status_code >= 400:
             # 429/5xx = retryable (provider em apuros → fallback). Demais 4xx = bug do caller.
             retryable = resp.status_code in RETRYABLE_STATUS

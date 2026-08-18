@@ -255,17 +255,16 @@ def fill_checkout_from_provider(checkout: Checkout) -> None:
     """Cria a cobrança no GATEWAY e preenche o Checkout (URL/QR/payment_id). FAZ REDE — nunca dentro
     do request do register (task async ou lazy no clique do link curto).
 
-    Idempotente: já preenchido → no-op. Mutex curto no cache evita task × clique criarem DUAS
-    cobranças no provider ao mesmo tempo."""
-    from django.core.cache import cache
-
+    Idempotente: já preenchido → no-op. O mutex é a LINHA do Checkout sob select_for_update —
+    atravessa processos. O `cache.add` de antes era LocMem POR PROCESSO (sem CACHES configurado):
+    task no qcluster × clique no gunicorn tinham caches separados, os dois passavam e nasciam
+    DUAS cobranças no gateway — o pagador pagava a que não ficou gravada e o webhook caía em
+    `no_matching_charge`. O segundo builder bloqueia no lock, re-checa e sai. Custo consciente:
+    o lock (1 linha) fica seguro durante o HTTP do gateway — só disputa quem quer o MESMO checkout."""
     if checkout.checkout_url:
         return
-    lock_key = f"checkout_build:{checkout.pk}"
-    if not cache.add(lock_key, 1, 30):  # outro builder em andamento
-        return
-    try:
-        checkout.refresh_from_db()
+    with transaction.atomic():
+        checkout = Checkout.objects.select_for_update().get(pk=checkout.pk)
         if checkout.checkout_url:
             return
         profile = profiles.get(checkout.lead.user)
@@ -275,8 +274,6 @@ def fill_checkout_from_provider(checkout: Checkout) -> None:
             _fill_pix(checkout, profile)
         else:
             _fill_card(checkout, profile)
-    finally:
-        cache.delete(lock_key)
     logger.info(
         "lead.checkout_filled",
         external_id=str(checkout.lead.external_id),
@@ -684,11 +681,16 @@ def mark_paid(*, provider: str, provider_payment_id: str, receipt_url=None) -> b
     if checkout is None:
         return False
 
-    lead = checkout.lead
-    if lead.status == Lead.Status.PAID:
-        return True  # idempotente (webhook re-tentou)
-
     with transaction.atomic():
+        # Lock no Lead ANTES do check de idempotência: CONFIRMED+RECEIVED do mesmo pagamento
+        # chegam em paralelo (2 workers gunicorn) e ambos passavam no check-then-act — matrícula
+        # criada em dobro (IntegrityError → 500 → retry do gateway) e notify duplicada no caminho
+        # bolsista. SEM select_related aqui de propósito: o join faria o FOR UPDATE travar
+        # também User/Promoter (e `of=` não existe no SQLite dos testes).
+        lead = Lead.objects.select_for_update().get(pk=checkout.lead_id)
+        if lead.status == Lead.Status.PAID:
+            return True  # idempotente (webhook re-tentou / evento gêmeo em paralelo)
+
         fields = ["is_paid", "updated_at"]
         checkout.is_paid = True
         if receipt_url:
@@ -839,8 +841,13 @@ def list_leads(*, hub=None, status=None, created_after=None, limit=None) -> list
     data mínima (`created_after`) e `limit`.
 
     HUB = o polo do lead: o promotor pertence ao hub (`Promoter.hub`) OU a matrícula já está no hub
-    (`Enrollment.hub`, pós-pagamento). Sem hub → todos (staff/tools). Coordenador passa o seu hub."""
+    (`Enrollment.hub`, pós-pagamento). Sem hub → todos (staff/tools). Coordenador passa o seu hub.
+
+    Sem `limit` explícito, aplica o teto de segurança (com log se truncar — auditoria API C1);
+    `/staff/leads` numa base de 20k materializava a tabela inteira."""
     from django.db.models import Q
+
+    from users.roles._listing import capped
 
     qs = Lead.objects.select_related("user", "promoter", "checkout").order_by(
         "-created_at"
@@ -854,14 +861,22 @@ def list_leads(*, hub=None, status=None, created_after=None, limit=None) -> list
             Q(promoter__promoter__hub=hub) | Q(user__enrollment__hub=hub)
         ).distinct()
     if limit is not None:
-        qs = qs[:limit]
-    return list(qs)
+        return list(qs[: max(1, limit)])
+    return capped(
+        qs,
+        event="lead.list_truncated",
+        hub=str(getattr(hub, "external_id", None)),
+        status=status,
+    )
 
 
-def lead_to_dict(lead: Lead) -> dict:
-    """Lead pra listagem do hub/staff: dados + LINK de pagamento + COMPROVANTE (Victor)."""
+def lead_to_dict(lead: Lead, pmap: dict | None = None) -> dict:
+    """Lead pra listagem do hub/staff: dados + LINK de pagamento + COMPROVANTE (Victor).
+
+    `pmap` (opcional): `{user_id: Profile}` pré-carregado (leads_to_dicts) — sem ele, 1 query de
+    Profile por lead (N+1 nas listagens grandes de /leads)."""
     c = getattr(lead, "checkout", None)
-    p = profiles.get(lead.user)
+    p = pmap.get(lead.user_id) if pmap is not None else profiles.get(lead.user)
     return {
         "external_id": str(lead.external_id),
         "status": lead.status,
@@ -872,6 +887,14 @@ def lead_to_dict(lead: Lead) -> dict:
         "receipt_url": c.receipt_url if c else None,
         "created_at": lead.created_at.isoformat(),
     }
+
+
+def leads_to_dicts(leads: list) -> list[dict]:
+    """Serializa uma LISTA de leads com 1 query de Profile pra todos (auditoria API C2 — era 1 por
+    lead em /leadership/leads, /staff/leads e /tools/leads)."""
+    leads = list(leads)
+    pmap = profiles.get_map([lead.user_id for lead in leads])
+    return [lead_to_dict(lead, pmap) for lead in leads]
 
 
 def get_lead_for_hub(*, external_id: str, hub) -> Lead | None:

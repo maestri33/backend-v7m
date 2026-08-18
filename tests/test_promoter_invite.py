@@ -108,7 +108,10 @@ def test_promoter_invite_envia_com_idempotencia(monkeypatch):
         notify_send, "send", lambda **kwargs: calls.append(kwargs) or "notification-id"
     )
 
-    assert promoter_iface._send_lead_invite(promoter.user, "5543999999999") == "notification-id"
+    assert (
+        promoter_iface._send_lead_invite(promoter.user, "5543999999999")
+        == "notification-id"
+    )
     assert calls[0]["caller"] == "promoter.lead_invite"
     assert calls[0]["phone"] == "5543999999999"
     assert calls[0]["idempotency_key"]

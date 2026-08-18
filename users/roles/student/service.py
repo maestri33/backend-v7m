@@ -389,7 +389,11 @@ def upload_document(
     def _queue():
         from django_q.tasks import async_task
 
-        async_task("users.roles.student.tasks.validate_document", doc.id)
+        async_task(
+            "users.roles.student.tasks.validate_document",
+            doc.id,
+            cluster=settings.Q_SLOW_CLUSTER,
+        )
 
     transaction.on_commit(_queue)
     logger.info(
@@ -618,7 +622,7 @@ def decide_document(
         student=student, external_id=document_external_id
     ).first()
     if doc is None:
-        raise StudentError("Documento não encontrado.", code="DOCUMENT_NOT_FOUND")
+        raise NotFound("Documento não encontrado.", code="DOCUMENT_NOT_FOUND")
     if doc.validation_status != StudentDocument.Validation.REVIEW:
         raise StudentError(
             "O documento não está em revisão.",
@@ -800,11 +804,9 @@ def resolve_pendency(*, pendency_external_id: str, coordinator) -> StudentPenden
         .first()
     )
     if pend is None:
-        raise StudentError("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
+        raise NotFound("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
     if pend.student.hub.coordinator_id != coordinator.id:
-        raise StudentError(
-            "Você não coordena o polo deste aluno.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Pendência não encontrada.", code="PENDENCY_NOT_FOUND")
     # lock no aluno: a checagem "sem pendência aberta → avança" não pode correr com um open_pendency
     # concorrente (senão o aluno avançaria com pendência aberta). select_for_update trava no Postgres.
     with transaction.atomic():
@@ -1036,9 +1038,7 @@ def _coordinated(student_external_id: str, coordinator) -> Student:
     """Carrega o aluno e exige que `coordinator` seja o coordenador do hub dele."""
     student = _by_external_id(student_external_id)
     if student.hub.coordinator_id != coordinator.id:
-        raise StudentError(
-            "Você não coordena o polo deste aluno.", code="NOT_HUB_COORDINATOR"
-        )
+        raise NotFound("Aluno não encontrado.", code="STUDENT_NOT_FOUND")
     return student
 
 
@@ -1151,6 +1151,10 @@ def list_for_hub(
     detalhe /students/{id}; agora lista/busca por status). Devolve (rows, total) pra paginação."""
     from users.profiles import interface as profiles
 
+    # clamp defensivo (2ª camada além do Field da borda): protege chamadas internas de valores
+    # negativos/absurdos — `qs[-1:...]` levanta ValueError (500). Auditoria API C1.
+    offset = max(0, offset)
+    limit = max(1, min(limit, 200))
     qs = Student.objects.filter(hub=hub).select_related("user").order_by("-created_at")
     if status:
         qs = qs.filter(status=status)
@@ -1198,40 +1202,26 @@ def list_for_staff(*, hub_external_id=None, status=None, limit=200) -> list[dict
     return out
 
 
-def _sweep_stale_reviews(hub) -> None:
-    """Resiliência (Victor 2026-06-17): worker da IA morto → documento do student fica PENDING
-    calado e some da fila de todos (só db-edit destrava, o que o Victor não quer em prod). Ao
-    montar a fila, PENDING que estourou o TTL VIRA `review` → aparece pro coordenador decidir."""
-    from datetime import timedelta
-
-    from users.roles import _analysis
-
-    cutoff = timezone.now() - timedelta(seconds=_analysis.ttl_seconds())
-    StudentDocument.objects.filter(
-        student__hub=hub,
-        validation_status=StudentDocument.Validation.PENDING,
-        updated_at__lt=cutoff,
-    ).update(validation_status=StudentDocument.Validation.REVIEW)
-
-
 def list_document_reviews_for_hub(*, hub) -> list[dict]:
     """Documentos de students do polo parados em REVISÃO (decisão do coordenador — plan/14).
 
     Cada item traz o PAR (student, documento) que o POST de decisão já existente espera
-    (`/students/{ext}/documents/{doc_ext}/decide`). Antes, varre PENDING órfão → review."""
+    (`/students/{ext}/documents/{doc_ext}/decide`). O sweep de PENDING órfão → review saiu do GET
+    (era write numa leitura) pro schedule global `age_stale_review_documents` (auditoria API B4)."""
     from users.profiles import interface as profiles
 
-    _sweep_stale_reviews(hub)
     out = []
-    qs = (
+    docs = list(
         StudentDocument.objects.filter(
             student__hub=hub, validation_status=StudentDocument.Validation.REVIEW
         )
         .select_related("student", "student__user")
         .order_by("updated_at")
     )
-    for doc in qs:
-        p = profiles.get(doc.student.user)
+    # 1 query de Profile pra todos (era 1/documento — auditoria API C2).
+    pmap = profiles.get_map([doc.student.user_id for doc in docs])
+    for doc in docs:
+        p = pmap.get(doc.student.user_id)
         out.append(
             {
                 "student_external_id": str(doc.student.external_id),
